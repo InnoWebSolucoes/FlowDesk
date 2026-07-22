@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { format, startOfWeek, addDays, startOfMonth, getDaysInMonth } from 'date-fns'
-import { ChevronDown, ChevronRight, PartyPopper } from 'lucide-react'
+import { ChevronDown, ChevronRight, PartyPopper, Search } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskCard } from '../../components/shared/TaskCard'
@@ -18,6 +18,8 @@ function TimeBlock({
   categories,
   onComplete,
   onUncomplete,
+  empId,
+  todayStr,
 }: {
   label: string
   tasks: Task[]
@@ -25,7 +27,11 @@ function TimeBlock({
   categories: any[]
   onComplete: (id: string) => void
   onUncomplete: (id: string) => void
+  empId: string
+  todayStr: string
 }) {
+  const { isInProgress: isInProgressFn, setInProgress, clearInProgress } = useTaskStore()
+
   if (tasks.length === 0) return null
   return (
     <div className="mb-5">
@@ -36,9 +42,14 @@ function TimeBlock({
             key={task.id}
             task={task}
             isCompleted={completedIds.has(task.id)}
+            isInProgress={isInProgressFn(task.id, empId, todayStr)}
             category={categories.find(c => c.id === task.categoryId)}
             onComplete={() => onComplete(task.id)}
             onUncomplete={() => onUncomplete(task.id)}
+            onSetInProgress={() => setInProgress(task.id, empId, todayStr)}
+            onClearInProgress={() => clearInProgress(task.id, empId, todayStr)}
+            currentUserId={empId}
+            dueDate={todayStr}
           />
         ))}
       </div>
@@ -54,21 +65,37 @@ export function MyTasks() {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set())
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set([0, 1, 2, 3]))
 
+  // Filters (today tab only)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterPriority, setFilterPriority] = useState('')
+  const [filterCategoryId, setFilterCategoryId] = useState('')
+
   const empId = currentUser!.id
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
 
-  const todayTasks = getTasksDueOnDate(tasks, empId, today)
+  const todayTasksRaw = getTasksDueOnDate(tasks, empId, today)
   const completedToday = completionLogs.filter(l => l.employeeId === empId && l.dueDate === todayStr)
   const completedIds = new Set(completedToday.map(l => l.taskId))
+
+  // Apply filters to today tasks
+  const todayTasks = todayTasksRaw.filter(task => {
+    if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase()) && !task.description.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    if (filterPriority && task.priority !== filterPriority) return false
+    if (filterCategoryId && task.categoryId !== filterCategoryId) return false
+    return true
+  })
 
   const pendingTasks = todayTasks.filter(task => !completedIds.has(task.id))
   const completedTasksList = todayTasks.filter(task => completedIds.has(task.id))
 
-  const totalToday = todayTasks.length
+  const totalToday = todayTasksRaw.length
   const doneToday = completedIds.size
   const progressPct = totalToday > 0 ? Math.round((doneToday / totalToday) * 100) : 0
   const allDone = totalToday > 0 && doneToday === totalToday
+
+  const hasFilters = searchQuery || filterPriority || filterCategoryId
+  const noResults = hasFilters && todayTasks.length === 0 && totalToday > 0
 
   const handleComplete = (taskId: string) => completeTask(taskId, empId, todayStr)
   const handleUncomplete = (taskId: string) => uncompleteTask(taskId, empId, todayStr)
@@ -148,6 +175,40 @@ export function MyTasks() {
 
       {tab === 'today' && (
         <div>
+          {/* Filter bar */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            <div className="relative flex-1 min-w-[160px]">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-subtle" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder={t('mytasks_search')}
+                className="w-full pl-7 pr-3 py-1.5 text-xs bg-surface border border-border rounded-lg text-text-main placeholder-text-subtle focus:outline-none focus:border-primary"
+              />
+            </div>
+            <select
+              value={filterPriority}
+              onChange={e => setFilterPriority(e.target.value)}
+              className="text-xs bg-surface border border-border rounded-lg px-2 py-1.5 text-text-main focus:outline-none focus:border-primary"
+            >
+              <option value="">{t('mytasks_allPriorities')}</option>
+              <option value="high">{t('task_priorityHigh')}</option>
+              <option value="medium">{t('task_priorityMedium')}</option>
+              <option value="low">{t('task_priorityLow')}</option>
+            </select>
+            <select
+              value={filterCategoryId}
+              onChange={e => setFilterCategoryId(e.target.value)}
+              className="text-xs bg-surface border border-border rounded-lg px-2 py-1.5 text-text-main focus:outline-none focus:border-primary"
+            >
+              <option value="">{t('mytasks_allCategories')}</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+
           {totalToday > 0 && (
             <div className="mb-6">
               <div className="flex justify-between text-sm mb-2">
@@ -183,7 +244,13 @@ export function MyTasks() {
             </div>
           )}
 
-          {!allDone && (
+          {noResults && (
+            <div className="text-center py-8">
+              <p className="text-text-muted text-sm">{t('mytasks_noResults')}</p>
+            </div>
+          )}
+
+          {!allDone && !noResults && (
             <>
               <TimeBlock
                 label={t('mytasks_morning')}
@@ -192,6 +259,8 @@ export function MyTasks() {
                 categories={categories}
                 onComplete={handleComplete}
                 onUncomplete={handleUncomplete}
+                empId={empId}
+                todayStr={todayStr}
               />
               <TimeBlock
                 label={t('mytasks_afternoon')}
@@ -200,6 +269,8 @@ export function MyTasks() {
                 categories={categories}
                 onComplete={handleComplete}
                 onUncomplete={handleUncomplete}
+                empId={empId}
+                todayStr={todayStr}
               />
               <TimeBlock
                 label={t('mytasks_endOfDay')}
@@ -208,6 +279,8 @@ export function MyTasks() {
                 categories={categories}
                 onComplete={handleComplete}
                 onUncomplete={handleUncomplete}
+                empId={empId}
+                todayStr={todayStr}
               />
             </>
           )}
@@ -231,6 +304,8 @@ export function MyTasks() {
                       category={categories.find(c => c.id === task.categoryId)}
                       onComplete={() => {}}
                       onUncomplete={() => handleUncomplete(task.id)}
+                      currentUserId={empId}
+                      dueDate={todayStr}
                     />
                   ))}
                 </div>
@@ -288,6 +363,8 @@ export function MyTasks() {
                         category={categories.find(c => c.id === task.categoryId)}
                         onComplete={() => completeTask(task.id, empId, dateStr)}
                         onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
+                        currentUserId={empId}
+                        dueDate={dateStr}
                       />
                     ))}
                   </div>
@@ -345,6 +422,8 @@ export function MyTasks() {
                                 category={categories.find(c => c.id === task.categoryId)}
                                 onComplete={() => completeTask(task.id, empId, dateStr)}
                                 onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
+                                currentUserId={empId}
+                                dueDate={dateStr}
                               />
                             ))}
                           </div>

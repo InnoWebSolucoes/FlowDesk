@@ -43,6 +43,53 @@ export function Overview() {
     return due.length > 0 && (completed / due.length) < 0.5
   }) : []
 
+  // === Alerts computation ===
+  const alerts: string[] = []
+
+  // 1. Overdue one-off tasks
+  for (const task of tasks) {
+    if (task.frequency.type !== 'one-off' || !task.frequency.date) continue
+    if (task.frequency.date >= todayStr) continue
+    // Check if any assigned employee completed it
+    const wasCompleted = task.assignedTo.some(empId =>
+      completionLogs.some(
+        l => l.taskId === task.id && l.employeeId === empId && l.dueDate === task.frequency.date
+      )
+    )
+    if (!wasCompleted) {
+      alerts.push(`${t('overview_alertOverdue')} "${task.title}" (${task.frequency.date})`)
+    }
+  }
+
+  // 2. Overloaded employees
+  const empTaskCounts = employees.map(emp => ({
+    emp,
+    count: getTasksDueOnDate(tasks, emp.id, today).length,
+  }))
+  const totalCount = empTaskCounts.reduce((a, b) => a + b.count, 0)
+  const avg = employees.length > 0 ? totalCount / employees.length : 0
+  if (avg > 0) {
+    for (const { emp, count } of empTaskCounts) {
+      if (count > avg * 1.5) {
+        alerts.push(`${emp.name} ${t('overview_alertOverloaded')} ${count} ${t('overview_alertTasks')}`)
+      }
+    }
+  }
+
+  // 3. Inactive employees (after 12:00, 0 completions, >0 tasks)
+  if (hour >= 12) {
+    for (const emp of employees) {
+      const due = getTasksDueOnDate(tasks, emp.id, today)
+      if (due.length === 0) continue
+      const done = completionLogs.filter(
+        l => l.employeeId === emp.id && l.dueDate === todayStr
+      ).length
+      if (done === 0) {
+        alerts.push(`${emp.name} ${t('overview_alertInactive')}`)
+      }
+    }
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -71,6 +118,24 @@ export function Overview() {
           color={overallRate >= 80 ? 'green' : overallRate >= 50 ? 'amber' : 'red'}
         />
       </div>
+
+      {/* Alerts panel */}
+      {alerts.length > 0 && (
+        <div className="bg-danger-bg border border-danger/20 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={16} className="text-danger" />
+            <h2 className="text-danger font-semibold text-sm">{t('overview_alerts')}</h2>
+          </div>
+          <div className="space-y-2">
+            {alerts.map((alert, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-danger text-xs mt-0.5">•</span>
+                <p className="text-text-main text-xs">{alert}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-surface rounded-xl border border-border p-5">

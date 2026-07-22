@@ -113,3 +113,44 @@ export interface EmployeeStats {
   averageCompletionHour: number
   dailyStats: DailyStats[]
 }
+
+export type TaskStatus = 'pending' | 'in_progress' | 'completed'
+
+export interface TaskAttachment {
+  id: string
+  name: string
+  type: string
+  size: number
+  data: string // base64
+  uploadedAt: string
+  uploadedBy: string
+}
+
+export interface TaskComment {
+  id: string
+  taskId: string
+  authorId: string
+  content: string
+  createdAt: string
+  attachments: TaskAttachment[]
+}
+
+export interface ActivityLog {
+  id: string
+  taskId: string
+  actorId: string
+  action: 'completed' | 'uncompleted' | 'in_progress' | 'commented' | 'file_uploaded'
+  detail?: string
+  timestamp: string
+}
+
+export interface AppNotification {
+  id: string
+  type: 'task_assigned' | 'task_due_today' | 'task_due_tomorrow' | 'task_overdue' | 'comment_added' | 'workload_alert' | 'inactivity_alert'
+  title: string
+  message: string
+  taskId?: string
+  isRead: boolean
+  createdAt: string
+  targetUserId: string // employee ID or 'admin'
+}

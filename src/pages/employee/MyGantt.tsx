@@ -13,7 +13,7 @@ export function MyGantt() {
   const { currentUser } = useAuthStore()
   const { tasks, categories, completionLogs } = useTaskStore()
   const { t, dateLocale } = useT()
-  const [viewMode, setViewMode] = useState<'week' | 'month'>('week')
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('week')
   const [refDate, setRefDate] = useState(new Date())
 
   const empId = currentUser!.id
@@ -25,19 +25,23 @@ export function MyGantt() {
   const monthStart = startOfMonth(refDate)
   const daysInMonth = getDaysInMonth(refDate)
   const monthDays = Array.from({ length: daysInMonth }, (_, i) => addDays(monthStart, i))
-  const days = viewMode === 'week' ? weekDays : monthDays
+  const days = viewMode === 'day' ? [refDate] : viewMode === 'week' ? weekDays : monthDays
 
   const prev = () => {
-    if (viewMode === 'week') setRefDate(d => subWeeks(d, 1))
+    if (viewMode === 'day') setRefDate(d => addDays(d, -1))
+    else if (viewMode === 'week') setRefDate(d => subWeeks(d, 1))
     else setRefDate(d => subMonths(d, 1))
   }
   const next = () => {
-    if (viewMode === 'week') setRefDate(d => addWeeks(d, 1))
+    if (viewMode === 'day') setRefDate(d => addDays(d, 1))
+    else if (viewMode === 'week') setRefDate(d => addWeeks(d, 1))
     else setRefDate(d => addMonths(d, 1))
   }
 
   const isToday = (d: Date) => format(d, 'yyyy-MM-dd') === todayStr
-  const periodLabel = viewMode === 'week'
+  const periodLabel = viewMode === 'day'
+    ? format(refDate, 'EEEE, MMM d, yyyy', dateLocale)
+    : viewMode === 'week'
     ? `${format(weekDays[0], 'MMM d', dateLocale)} – ${format(weekDays[6], 'MMM d, yyyy', dateLocale)}`
     : format(refDate, 'MMMM yyyy', dateLocale)
 
@@ -45,7 +49,7 @@ export function MyGantt() {
     <div className="animate-fade-in">
       <div className="flex items-center gap-3 mb-5 flex-wrap">
         <div className="flex items-center gap-1 bg-surface-2 rounded-lg p-1">
-          {(['week', 'month'] as const).map(v => (
+          {(['day', 'week', 'month'] as const).map(v => (
             <button
               key={v}
               onClick={() => setViewMode(v)}
@@ -53,7 +57,7 @@ export function MyGantt() {
                 viewMode === v ? 'bg-surface text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
               }`}
             >
-              {v === 'week' ? t('gantt_weekView') : t('gantt_monthView')}
+              {v === 'day' ? t('gantt_dayView') : v === 'week' ? t('gantt_weekView') : t('gantt_monthView')}
             </button>
           ))}
         </div>
@@ -85,11 +89,11 @@ export function MyGantt() {
                     isToday(day) ? 'bg-primary-light text-primary' :
                     day.getDay() === 0 || day.getDay() === 6 ? 'text-text-subtle bg-surface-2/30' : 'text-text-muted'
                   }`}
-                  style={{ width: viewMode === 'week' ? '90px' : '32px' }}
+                  style={{ width: viewMode === 'day' ? '200px' : viewMode === 'week' ? '90px' : '32px' }}
                 >
-                  {viewMode === 'week'
-                    ? <>{format(day, 'EEE', dateLocale)}<br />{format(day, 'd MMM', dateLocale)}</>
-                    : format(day, 'd')}
+                  {viewMode === 'month'
+                    ? format(day, 'd')
+                    : <>{format(day, 'EEEE', dateLocale)}<br />{format(day, 'd MMM', dateLocale)}</>}
                 </div>
               ))}
             </div>
@@ -117,11 +121,11 @@ export function MyGantt() {
                         className={`flex-shrink-0 flex items-center justify-center py-2 ${
                           isToday(day) ? 'bg-primary-light/30' : isWeekend ? 'bg-surface-2/20' : ''
                         }`}
-                        style={{ width: viewMode === 'week' ? '90px' : '32px' }}
+                        style={{ width: viewMode === 'day' ? '200px' : viewMode === 'week' ? '90px' : '32px' }}
                         title={isDue ? `${task.title} — ${completed ? t('gantt_done') : t('gantt_pending')}` : undefined}
                       >
                         {isDue && (
-                          viewMode === 'week' ? (
+                          viewMode !== 'month' ? (
                             <div
                               className="rounded text-xs px-1.5 py-0.5 w-full mx-0.5"
                               style={{

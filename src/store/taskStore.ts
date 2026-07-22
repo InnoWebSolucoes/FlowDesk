@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Task, CompletionLog, Category } from '../types'
+import { Task, CompletionLog, Category, TaskComment, TaskAttachment, ActivityLog } from '../types'
 import { sampleTasks, sampleCategories, generateHistoricalData } from '../data/sampleData'
 import { getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOfDay } from '../utils/taskScheduler'
 import { format } from 'date-fns'
@@ -11,6 +11,9 @@ interface TaskState {
   completionLogs: CompletionLog[]
   categories: Category[]
   initialized: boolean
+  taskStatuses: Record<string, 'in_progress'>
+  taskComments: TaskComment[]
+  activityLogs: ActivityLog[]
 
   // Task actions
   addTask: (task: Task) => void
@@ -21,6 +24,20 @@ interface TaskState {
   completeTask: (taskId: string, employeeId: string, dueDate: string) => void
   uncompleteTask: (taskId: string, employeeId: string, dueDate: string) => void
   isTaskCompleted: (taskId: string, employeeId: string, date: string) => boolean
+
+  // In-progress status actions
+  setInProgress: (taskId: string, empId: string, date: string) => void
+  clearInProgress: (taskId: string, empId: string, date: string) => void
+  isInProgress: (taskId: string, empId: string, date: string) => boolean
+
+  // Comment actions
+  addComment: (comment: Omit<TaskComment, 'id' | 'createdAt'> & { attachments: TaskAttachment[] }) => TaskComment
+  deleteComment: (commentId: string) => void
+  getTaskComments: (taskId: string) => TaskComment[]
+
+  // Activity log actions
+  addActivityLog: (log: Omit<ActivityLog, 'id' | 'timestamp'>) => void
+  getActivityLogs: (taskId: string) => ActivityLog[]
 
   // Category actions
   addCategory: (category: Category) => void
@@ -43,6 +60,9 @@ export const useTaskStore = create<TaskState>()(
       completionLogs: [],
       categories: [],
       initialized: false,
+      taskStatuses: {},
+      taskComments: [],
+      activityLogs: [],
 
       initialize: () => {
         const state = get()
@@ -78,6 +98,8 @@ export const useTaskStore = create<TaskState>()(
           timeOfDay,
         }
         set((s) => ({ completionLogs: [...s.completionLogs, log] }))
+
+        get().addActivityLog({ taskId, actorId: employeeId, action: 'completed' })
       },
 
       uncompleteTask: (taskId, employeeId, dueDate) => {
@@ -87,6 +109,8 @@ export const useTaskStore = create<TaskState>()(
               !(log.taskId === taskId && log.employeeId === employeeId && log.dueDate === dueDate)
           ),
         }))
+
+        get().addActivityLog({ taskId, actorId: employeeId, action: 'uncompleted' })
       },
 
       isTaskCompleted: (taskId, employeeId, date) => {
@@ -95,6 +119,66 @@ export const useTaskStore = create<TaskState>()(
           (log) =>
             log.taskId === taskId && log.employeeId === employeeId && log.dueDate === dateStr
         )
+      },
+
+      setInProgress: (taskId, empId, date) => {
+        const key = `${taskId}:${empId}:${date}`
+        set((s) => ({ taskStatuses: { ...s.taskStatuses, [key]: 'in_progress' } }))
+        get().addActivityLog({ taskId, actorId: empId, action: 'in_progress' })
+      },
+
+      clearInProgress: (taskId, empId, date) => {
+        const key = `${taskId}:${empId}:${date}`
+        set((s) => {
+          const next = { ...s.taskStatuses }
+          delete next[key]
+          return { taskStatuses: next }
+        })
+      },
+
+      isInProgress: (taskId, empId, date) => {
+        const key = `${taskId}:${empId}:${date}`
+        return get().taskStatuses[key] === 'in_progress'
+      },
+
+      addComment: (comment) => {
+        const newComment: TaskComment = {
+          ...comment,
+          id: uuidv4(),
+          createdAt: new Date().toISOString(),
+        }
+        set((s) => ({ taskComments: [...s.taskComments, newComment] }))
+        get().addActivityLog({ taskId: comment.taskId, actorId: comment.authorId, action: 'commented' })
+        if (comment.attachments.length > 0) {
+          get().addActivityLog({
+            taskId: comment.taskId,
+            actorId: comment.authorId,
+            action: 'file_uploaded',
+            detail: comment.attachments.map(a => a.name).join(', '),
+          })
+        }
+        return newComment
+      },
+
+      deleteComment: (commentId) => {
+        set((s) => ({ taskComments: s.taskComments.filter(c => c.id !== commentId) }))
+      },
+
+      getTaskComments: (taskId) => {
+        return get().taskComments.filter(c => c.taskId === taskId)
+      },
+
+      addActivityLog: (log) => {
+        const entry: ActivityLog = {
+          ...log,
+          id: uuidv4(),
+          timestamp: new Date().toISOString(),
+        }
+        set((s) => ({ activityLogs: [...s.activityLogs, entry] }))
+      },
+
+      getActivityLogs: (taskId) => {
+        return get().activityLogs.filter(l => l.taskId === taskId)
       },
 
       addCategory: (category) => set((s) => ({ categories: [...s.categories, category] })),

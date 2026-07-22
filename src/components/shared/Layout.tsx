@@ -1,6 +1,7 @@
 import React from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
+import { NotificationBell } from './NotificationBell'
 
 const pageTitles: Record<string, string> = {
   '/admin/overview': 'Overview',
@@ -27,8 +28,9 @@ export function Layout() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top bar */}
-        <header className="bg-surface border-b border-border px-6 py-4 flex items-center md:pl-6 pl-16">
+        <header className="bg-surface border-b border-border px-6 py-4 flex items-center justify-between md:pl-6 pl-16">
           <h1 className="text-text-main font-semibold text-lg">{title}</h1>
+          <NotificationBell />
         </header>
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">

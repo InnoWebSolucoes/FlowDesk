@@ -175,6 +175,7 @@ const en = {
   profile_guidelinesPlaceholder: 'Start writing guidelines for this employee…',
 
   // Gantt
+  gantt_dayView: 'Day View',
   gantt_weekView: 'Week View',
   gantt_monthView: 'Month View',
   gantt_today: 'Today',
@@ -273,6 +274,63 @@ const en = {
 
   // Language toggle label (what clicking shows next)
   lang_switchLabel: 'PT',
+
+  // Notifications
+  notif_bell: 'Notifications',
+  notif_markAllRead: 'Mark all read',
+  notif_empty: 'No notifications',
+  notif_emptyDesc: 'You are all caught up!',
+  notif_taskAssigned: 'New Task Assigned',
+  notif_dueToday: 'Due Today',
+  notif_dueTomorrow: 'Due Tomorrow',
+  notif_overdue: 'Task Overdue',
+  notif_commentAdded: 'New Comment',
+  notif_workloadAlert: 'Workload Alert',
+  notif_inactivityAlert: 'Inactivity Alert',
+
+  // Task status
+  status_pending: 'Pending',
+  status_inProgress: 'In Progress',
+  status_completed: 'Completed',
+  status_startTask: 'Start',
+
+  // Deadline indicator
+  deadline_overdue: 'Overdue',
+  deadline_today: 'Due today',
+  deadline_tomorrow: 'Due tomorrow',
+  deadline_inDays: 'Due in {n} days',
+
+  // Comments
+  comment_title: 'Comments',
+  comment_placeholder: 'Add a comment…',
+  comment_submit: 'Post',
+  comment_noComments: 'No comments yet',
+  comment_attachFile: 'Attach file',
+  comment_download: 'Download',
+  comment_deleteConfirm: 'Delete this comment?',
+
+  // Activity log
+  activity_title: 'Activity',
+  activity_completed: 'marked as complete',
+  activity_uncompleted: 'marked as incomplete',
+  activity_inProgress: 'started working on this',
+  activity_commented: 'added a comment',
+  activity_fileUploaded: 'uploaded a file',
+  activity_noActivity: 'No activity yet',
+
+  // My Tasks filters
+  mytasks_search: 'Search my tasks…',
+  mytasks_allPriorities: 'All priorities',
+  mytasks_allCategories: 'All categories',
+  mytasks_noResults: 'No tasks match your filters',
+
+  // Overview alerts
+  overview_alerts: 'Alerts',
+  overview_alertOverdue: 'Overdue task:',
+  overview_alertOverloaded: 'is overloaded with',
+  overview_alertInactive: 'has not completed any tasks today',
+  overview_alertTasks: 'tasks',
+  overview_noAlerts: 'No alerts',
 }
 
 const pt: typeof en = {
@@ -450,6 +508,7 @@ const pt: typeof en = {
   profile_guidelinesPlaceholder: 'Comece a escrever diretrizes para este funcionário…',
 
   // Gantt
+  gantt_dayView: 'Vista Diária',
   gantt_weekView: 'Vista Semanal',
   gantt_monthView: 'Vista Mensal',
   gantt_today: 'Hoje',
@@ -548,6 +607,63 @@ const pt: typeof en = {
 
   // Language toggle label
   lang_switchLabel: 'EN',
+
+  // Notifications
+  notif_bell: 'Notificações',
+  notif_markAllRead: 'Marcar todas como lidas',
+  notif_empty: 'Sem notificações',
+  notif_emptyDesc: 'Está tudo em dia!',
+  notif_taskAssigned: 'Nova Tarefa Atribuída',
+  notif_dueToday: 'Vence Hoje',
+  notif_dueTomorrow: 'Vence Amanhã',
+  notif_overdue: 'Tarefa Atrasada',
+  notif_commentAdded: 'Novo Comentário',
+  notif_workloadAlert: 'Alerta de Sobrecarga',
+  notif_inactivityAlert: 'Alerta de Inatividade',
+
+  // Task status
+  status_pending: 'Pendente',
+  status_inProgress: 'Em andamento',
+  status_completed: 'Concluído',
+  status_startTask: 'Iniciar',
+
+  // Deadline indicator
+  deadline_overdue: 'Atrasada',
+  deadline_today: 'Vence hoje',
+  deadline_tomorrow: 'Vence amanhã',
+  deadline_inDays: 'Vence em {n} dias',
+
+  // Comments
+  comment_title: 'Comentários',
+  comment_placeholder: 'Adicionar comentário…',
+  comment_submit: 'Publicar',
+  comment_noComments: 'Sem comentários ainda',
+  comment_attachFile: 'Anexar ficheiro',
+  comment_download: 'Descarregar',
+  comment_deleteConfirm: 'Apagar este comentário?',
+
+  // Activity log
+  activity_title: 'Atividade',
+  activity_completed: 'marcou como concluído',
+  activity_uncompleted: 'marcou como incompleto',
+  activity_inProgress: 'começou a trabalhar nisto',
+  activity_commented: 'adicionou um comentário',
+  activity_fileUploaded: 'enviou um ficheiro',
+  activity_noActivity: 'Sem atividade ainda',
+
+  // My Tasks filters
+  mytasks_search: 'Pesquisar tarefas…',
+  mytasks_allPriorities: 'Todas as prioridades',
+  mytasks_allCategories: 'Todas as categorias',
+  mytasks_noResults: 'Nenhuma tarefa corresponde aos filtros',
+
+  // Overview alerts
+  overview_alerts: 'Alertas',
+  overview_alertOverdue: 'Tarefa atrasada:',
+  overview_alertOverloaded: 'tem sobrecarga com',
+  overview_alertInactive: 'não concluiu nenhuma tarefa hoje',
+  overview_alertTasks: 'tarefas',
+  overview_noAlerts: 'Sem alertas',
 }
 
 export const translations: Record<Lang, typeof en> = { en, pt }
