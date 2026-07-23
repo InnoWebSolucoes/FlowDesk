@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import { Sparkles, Loader2, Download, AlertCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
-import { v4 as uuidv4 } from 'uuid'
 import { generateTasks } from '../../lib/anthropic'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
-import { Task, Category } from '../../types'
+import { useAuthStore } from '../../store/authStore'
+import { Task } from '../../types'
 import { Badge } from '../../components/shared/Badge'
 import { EmptyState } from '../../components/shared/EmptyState'
 import { useT } from '../../i18n/useT'
@@ -22,6 +22,7 @@ interface GeneratedTask {
 export function AIOrganiser() {
   const { tasks, categories, addTask, addCategory } = useTaskStore()
   const { employees } = useEmployeeStore()
+  const { currentUser } = useAuthStore()
   const { t } = useT()
 
   const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -79,25 +80,19 @@ export function AIOrganiser() {
     }
   }
 
-  const resolveCategory = (name: string): string => {
+  const resolveCategory = async (name: string): Promise<string> => {
     const existing = categories.find(c => c.name.toLowerCase() === name.toLowerCase())
     if (existing) return existing.id
     const colors = ['#1A5C3A', '#1B4F8A', '#7A4A0A', '#7A2020', '#3A2A7A', '#2A5C1E']
-    const newCat: Category = {
-      id: uuidv4(),
-      name,
-      color: colors[categories.length % colors.length],
-    }
-    addCategory(newCat)
+    const newCat = await addCategory({ name, color: colors[categories.length % colors.length] })
     return newCat.id
   }
 
-  const handleImportAll = () => {
-    const now = new Date().toISOString()
+  const handleImportAll = async () => {
+    if (!currentUser) return
     for (const gt of generated) {
-      const catId = gt._categoryId ?? resolveCategory(gt.categoryName)
-      const task: Task = {
-        id: uuidv4(),
+      const catId = gt._categoryId ?? await resolveCategory(gt.categoryName)
+      const task: Omit<Task, 'id' | 'createdAt'> = {
         title: gt.title,
         description: gt.description,
         assignedTo: selectedEmployees,
@@ -105,11 +100,10 @@ export function AIOrganiser() {
         categoryId: catId,
         priority: gt.priority,
         estimatedMinutes: gt.estimatedMinutes,
-        createdAt: now,
-        createdBy: 'admin-1',
+        createdBy: currentUser.id,
         isActive: true,
       }
-      addTask(task)
+      await addTask(task)
     }
     setImported(true)
     setTimeout(() => setImported(false), 3000)

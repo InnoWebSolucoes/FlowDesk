@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { useEmployeeStore } from '../store/employeeStore'
 import { Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { useT } from '../i18n/useT'
 import { useLanguageStore } from '../store/languageStore'
@@ -9,7 +8,6 @@ import { useLanguageStore } from '../store/languageStore'
 export function Login() {
   const navigate = useNavigate()
   const login = useAuthStore(s => s.login)
-  const employees = useEmployeeStore(s => s.employees)
   const { toggle, lang } = useLanguageStore()
   const { t } = useT()
 
@@ -28,8 +26,7 @@ export function Login() {
       return
     }
     setLoading(true)
-    await new Promise(r => setTimeout(r, 400))
-    const success = login(email.toLowerCase().trim(), password, employees)
+    const { success } = await login(email.toLowerCase().trim(), password)
     setLoading(false)
     if (success) {
       const user = useAuthStore.getState().currentUser
@@ -128,28 +125,6 @@ export function Login() {
               )}
             </button>
           </form>
-
-          {/* Test credentials */}
-          <div className="mt-5 pt-4 border-t border-border">
-            <p className="text-text-subtle text-xs mb-2 font-medium">{t('login_testCredentials')}</p>
-            <div className="space-y-1">
-              {[
-                { role: 'Admin', email: 'admin@flowdesk.com', pass: 'admin123' },
-                { role: 'Ana (SM)', email: 'ana@innoweb.com', pass: 'employee123' },
-                { role: 'Carlos (Ads)', email: 'carlos@innoweb.com', pass: 'employee123' },
-              ].map(c => (
-                <button
-                  key={c.email}
-                  type="button"
-                  onClick={() => { setEmail(c.email); setPassword(c.pass) }}
-                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md hover:bg-surface-2 transition-colors text-left"
-                >
-                  <span className="text-xs font-medium text-text-muted">{c.role}</span>
-                  <span className="text-xs text-text-subtle">{c.email}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Language toggle */}

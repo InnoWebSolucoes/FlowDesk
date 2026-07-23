@@ -4,6 +4,7 @@ import { useAuthStore } from './store/authStore'
 import { useTaskStore } from './store/taskStore'
 import { useEmployeeStore } from './store/employeeStore'
 import { useToolStore } from './store/toolStore'
+import { useNotificationStore } from './store/notificationStore'
 import { Layout } from './components/shared/Layout'
 
 // Pages
@@ -20,6 +21,17 @@ import { MyGantt } from './pages/employee/MyGantt'
 import { Toolbox } from './pages/employee/Toolbox'
 import { Guidelines } from './pages/employee/Guidelines'
 
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-bg flex items-center justify-center">
+      <svg className="animate-spin w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+      </svg>
+    </div>
+  )
+}
+
 function ProtectedRoute({
   children,
   requiredRole,
@@ -27,9 +39,10 @@ function ProtectedRoute({
   children: React.ReactNode
   requiredRole?: 'admin' | 'employee'
 }) {
-  const { isAuthenticated, currentUser } = useAuthStore()
+  const { status, currentUser } = useAuthStore()
 
-  if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (status === 'loading') return <LoadingScreen />
+  if (status === 'unauthenticated') return <Navigate to="/login" replace />
 
   if (requiredRole && currentUser?.role !== requiredRole) {
     if (currentUser?.role === 'admin') return <Navigate to="/admin/overview" replace />
@@ -40,15 +53,27 @@ function ProtectedRoute({
 }
 
 function AppInitializer({ children }: { children: React.ReactNode }) {
+  const authStatus = useAuthStore(s => s.status)
+  const initAuth = useAuthStore(s => s.initialize)
   const initTasks = useTaskStore(s => s.initialize)
   const initEmployees = useEmployeeStore(s => s.initialize)
   const initTools = useToolStore(s => s.initialize)
+  const initNotifications = useNotificationStore(s => s.initialize)
 
   useEffect(() => {
-    initEmployees()
-    initTasks()
-    initTools()
+    initAuth()
   }, [])
+
+  useEffect(() => {
+    if (authStatus === 'authenticated') {
+      initEmployees()
+      initTasks()
+      initTools()
+      initNotifications()
+    }
+  }, [authStatus])
+
+  if (authStatus === 'loading') return <LoadingScreen />
 
   return <>{children}</>
 }

@@ -1,124 +1,194 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { supabase } from '../lib/supabaseClient'
 import { Employee, CompletionLog, EmployeeStats, DailyStats, Task } from '../types'
-import { sampleEmployees } from '../data/sampleData'
 import { getTasksDueOnDate } from '../utils/taskScheduler'
 import { format, subDays, parseISO } from 'date-fns'
 
-interface EmployeeState {
-  employees: Employee[]
-  initialized: boolean
-
-  addEmployee: (employee: Employee) => void
-  updateEmployee: (id: string, updates: Partial<Employee>) => void
-  deleteEmployee: (id: string) => void
-  getEmployeeStats: (employeeId: string, completionLogs: CompletionLog[], tasks: Task[]) => EmployeeStats
-  initialize: () => void
+interface CreateEmployeeInput {
+  name: string
+  email: string
+  password: string
+  jobTitle: string
+  department: string
 }
 
-export const useEmployeeStore = create<EmployeeState>()(
-  persist(
-    (set, get) => ({
-      employees: [],
-      initialized: false,
+interface EmployeeState {
+  employees: Employee[]
+  loading: boolean
 
-      initialize: () => {
-        if (get().initialized) return
-        set({ employees: sampleEmployees, initialized: true })
-      },
+  initialize: () => Promise<void>
+  createEmployee: (input: CreateEmployeeInput) => Promise<{ success: boolean; error?: string }>
+  updateEmployee: (id: string, updates: Partial<Employee>) => Promise<void>
+  deleteEmployee: (id: string) => Promise<{ success: boolean; error?: string }>
+  getEmployeeStats: (employeeId: string, completionLogs: CompletionLog[], tasks: Task[]) => EmployeeStats
+}
 
-      addEmployee: (employee) => set((s) => ({ employees: [...s.employees, employee] })),
-      updateEmployee: (id, updates) =>
-        set((s) => ({
-          employees: s.employees.map((e) => (e.id === id ? { ...e, ...updates } : e)),
-        })),
-      deleteEmployee: (id) => set((s) => ({ employees: s.employees.filter((e) => e.id !== id) })),
+function toEmployee(row: any): Employee {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: 'employee',
+    avatarInitials: row.avatar_initials,
+    joinDate: row.join_date,
+    jobTitle: row.job_title ?? '',
+    department: row.department ?? '',
+    managerId: row.manager_id,
+  }
+}
 
-      getEmployeeStats: (employeeId, completionLogs, tasks) => {
-        const empLogs = completionLogs.filter((l) => l.employeeId === employeeId)
-        const today = new Date()
-        const dailyStats: DailyStats[] = []
+export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
+  employees: [],
+  loading: false,
 
-        for (let i = 29; i >= 0; i--) {
-          const date = subDays(today, i)
-          const dow = date.getDay()
-          if (dow === 0 || dow === 6) continue
+  initialize: async () => {
+    set({ loading: true })
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, email, name, avatar_initials, join_date, job_title, department, manager_id')
+      .eq('role', 'employee')
+      .order('name')
 
-          const dateStr = format(date, 'yyyy-MM-dd')
-          const dueTasks = getTasksDueOnDate(tasks, employeeId, date)
-          const assigned = dueTasks.length
-          const completed = empLogs.filter((l) => l.dueDate === dateStr).length
+    if (!error && data) {
+      set({ employees: data.map(toEmployee), loading: false })
+    } else {
+      set({ loading: false })
+    }
+  },
 
-          dailyStats.push({
-            date: dateStr,
-            employeeId,
-            assigned,
-            completed,
-            completionRate: assigned > 0 ? Math.round((completed / assigned) * 100) : 0,
-          })
+  createEmployee: async (input) => {
+    const { data, error } = await supabase.functions.invoke('create-employee', {
+      body: input,
+    })
+
+    if (error) {
+      let message = error.message
+      try {
+        const ctx = (error as any).context
+        if (ctx?.json) {
+          const body = await ctx.json()
+          if (body?.error) message = body.error
         }
+      } catch {
+        // ignore parse failures, fall back to error.message
+      }
+      return { success: false, error: message }
+    }
 
-        const totalAssigned = dailyStats.reduce((a, d) => a + d.assigned, 0)
-        const totalCompleted = dailyStats.reduce((a, d) => a + d.completed, 0)
-        const completionRate = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0
+    if (data?.error) {
+      return { success: false, error: data.error }
+    }
 
-        // Streak calculation (most recent days first)
-        let currentStreak = 0
-        let longestStreak = 0
-        let tempStreak = 0
-        const reversedDays = [...dailyStats].reverse()
+    await get().initialize()
+    return { success: true }
+  },
 
-        for (let i = 0; i < reversedDays.length; i++) {
-          const day = reversedDays[i]
-          if (day.assigned === 0) continue
-          if (day.completionRate >= 80) {
-            tempStreak++
-            if (i === 0 || reversedDays.slice(0, i).every(d => d.assigned === 0 || d.completionRate >= 80)) {
-              currentStreak = tempStreak
-            }
-            longestStreak = Math.max(longestStreak, tempStreak)
-          } else {
-            if (currentStreak === tempStreak && i > 0) currentStreak = tempStreak
-            tempStreak = 0
-          }
+  updateEmployee: async (id, updates) => {
+    const patch: Record<string, unknown> = {}
+    if (updates.name !== undefined) patch.name = updates.name
+    if (updates.jobTitle !== undefined) patch.job_title = updates.jobTitle
+    if (updates.department !== undefined) patch.department = updates.department
+    if (updates.avatarInitials !== undefined) patch.avatar_initials = updates.avatarInitials
+
+    await supabase.from('users').update(patch).eq('id', id)
+    set((s) => ({
+      employees: s.employees.map((e) => (e.id === id ? { ...e, ...updates } : e)),
+    }))
+  },
+
+  deleteEmployee: async (id) => {
+    const { data, error } = await supabase.functions.invoke('delete-employee', {
+      body: { employeeId: id },
+    })
+
+    if (error || data?.error) {
+      return { success: false, error: data?.error ?? error?.message }
+    }
+
+    set((s) => ({ employees: s.employees.filter((e) => e.id !== id) }))
+    return { success: true }
+  },
+
+  getEmployeeStats: (employeeId, completionLogs, tasks) => {
+    const empLogs = completionLogs.filter((l) => l.employeeId === employeeId)
+    const today = new Date()
+    const dailyStats: DailyStats[] = []
+
+    for (let i = 29; i >= 0; i--) {
+      const date = subDays(today, i)
+      const dow = date.getDay()
+      if (dow === 0 || dow === 6) continue
+
+      const dateStr = format(date, 'yyyy-MM-dd')
+      const dueTasks = getTasksDueOnDate(tasks, employeeId, date)
+      const assigned = dueTasks.length
+      const completed = empLogs.filter((l) => l.dueDate === dateStr).length
+
+      dailyStats.push({
+        date: dateStr,
+        employeeId,
+        assigned,
+        completed,
+        completionRate: assigned > 0 ? Math.round((completed / assigned) * 100) : 0,
+      })
+    }
+
+    const totalAssigned = dailyStats.reduce((a, d) => a + d.assigned, 0)
+    const totalCompleted = dailyStats.reduce((a, d) => a + d.completed, 0)
+    const completionRate = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0
+
+    let currentStreak = 0
+    let longestStreak = 0
+    let tempStreak = 0
+    const reversedDays = [...dailyStats].reverse()
+
+    for (let i = 0; i < reversedDays.length; i++) {
+      const day = reversedDays[i]
+      if (day.assigned === 0) continue
+      if (day.completionRate >= 80) {
+        tempStreak++
+        if (i === 0 || reversedDays.slice(0, i).every(d => d.assigned === 0 || d.completionRate >= 80)) {
+          currentStreak = tempStreak
         }
+        longestStreak = Math.max(longestStreak, tempStreak)
+      } else {
+        if (currentStreak === tempStreak && i > 0) currentStreak = tempStreak
+        tempStreak = 0
+      }
+    }
 
-        // Compute currentStreak properly (consecutive days from today backward)
-        let streak = 0
-        for (const day of reversedDays) {
-          if (day.assigned === 0) continue
-          if (day.completionRate >= 80) {
-            streak++
-          } else {
-            break
-          }
-        }
-        currentStreak = streak
+    let streak = 0
+    for (const day of reversedDays) {
+      if (day.assigned === 0) continue
+      if (day.completionRate >= 80) {
+        streak++
+      } else {
+        break
+      }
+    }
+    currentStreak = streak
 
-        const missedTasks = dailyStats.reduce(
-          (acc, d) => acc + Math.max(0, d.assigned - d.completed),
-          0
-        )
+    const missedTasks = dailyStats.reduce(
+      (acc, d) => acc + Math.max(0, d.assigned - d.completed),
+      0
+    )
 
-        const hours = empLogs.map(
-          (l) => parseISO(l.completedAt).getHours() + parseISO(l.completedAt).getMinutes() / 60
-        )
-        const averageCompletionHour =
-          hours.length > 0 ? hours.reduce((a, b) => a + b, 0) / hours.length : 12
+    const hours = empLogs.map(
+      (l) => parseISO(l.completedAt).getHours() + parseISO(l.completedAt).getMinutes() / 60
+    )
+    const averageCompletionHour =
+      hours.length > 0 ? hours.reduce((a, b) => a + b, 0) / hours.length : 12
 
-        return {
-          employeeId,
-          totalAssigned,
-          totalCompleted,
-          completionRate,
-          currentStreak,
-          longestStreak,
-          missedTasks,
-          averageCompletionHour,
-          dailyStats,
-        }
-      },
-    }),
-    { name: 'flowdesk-employees' }
-  )
-)
+    return {
+      employeeId,
+      totalAssigned,
+      totalCompleted,
+      completionRate,
+      currentStreak,
+      longestStreak,
+      missedTasks,
+      averageCompletionHour,
+      dailyStats,
+    }
+  },
+}))

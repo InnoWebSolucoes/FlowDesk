@@ -1,46 +1,74 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { supabase } from '../lib/supabaseClient'
 import { User } from '../types'
-import { adminUser } from '../data/sampleData'
+
+type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
 interface AuthState {
   currentUser: User | null
-  isAuthenticated: boolean
-  login: (email: string, password: string, employees: User[]) => boolean
-  logout: () => void
+  status: AuthStatus
+  initialize: () => Promise<void>
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  logout: () => Promise<void>
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      currentUser: null,
-      isAuthenticated: false,
+async function fetchProfile(userId: string): Promise<User | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, email, name, role, avatar_initials, join_date')
+    .eq('id', userId)
+    .single()
 
-      login: (email, password, employees) => {
-        // Check admin
-        if (email === adminUser.email && password === adminUser.password) {
-          set({ currentUser: adminUser as User, isAuthenticated: true })
-          return true
-        }
+  if (error || !data) return null
 
-        // Check employees
-        const employee = employees.find(
-          (e) => e.email === email && e.password === password
-        )
-        if (employee) {
-          set({ currentUser: employee, isAuthenticated: true })
-          return true
-        }
+  return {
+    id: data.id,
+    email: data.email,
+    name: data.name,
+    role: data.role,
+    avatarInitials: data.avatar_initials,
+    joinDate: data.join_date,
+  }
+}
 
-        return false
-      },
+export const useAuthStore = create<AuthState>()((set) => ({
+  currentUser: null,
+  status: 'loading',
 
-      logout: () => {
-        set({ currentUser: null, isAuthenticated: false })
-      },
-    }),
-    {
-      name: 'flowdesk-auth',
+  initialize: async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) {
+      const profile = await fetchProfile(session.user.id)
+      set({ currentUser: profile, status: profile ? 'authenticated' : 'unauthenticated' })
+    } else {
+      set({ currentUser: null, status: 'unauthenticated' })
     }
-  )
-)
+
+    supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const profile = await fetchProfile(session.user.id)
+        set({ currentUser: profile, status: profile ? 'authenticated' : 'unauthenticated' })
+      } else {
+        set({ currentUser: null, status: 'unauthenticated' })
+      }
+    })
+  },
+
+  login: async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error || !data.user) {
+      return { success: false, error: error?.message }
+    }
+    const profile = await fetchProfile(data.user.id)
+    if (!profile) {
+      return { success: false, error: 'Profile not found' }
+    }
+    set({ currentUser: profile, status: 'authenticated' })
+    return { success: true }
+  },
+
+  logout: async () => {
+    await supabase.auth.signOut()
+    set({ currentUser: null, status: 'unauthenticated' })
+  },
+}))

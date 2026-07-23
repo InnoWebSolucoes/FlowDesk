@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/authStore'
 import { EmptyState } from '../../components/shared/EmptyState'
 import { format, parseISO } from 'date-fns'
 import { useT } from '../../i18n/useT'
+import { Document } from '../../types'
 
 const TABS = ['websites', 'documents'] as const
 type Tab = typeof TABS[number]
@@ -25,7 +26,7 @@ function fileIcon(type: string): string {
 
 export function Toolbox() {
   const { currentUser } = useAuthStore()
-  const { websites, documents, folders, uploadDocument, deleteDocument, createFolder, deleteFolder } = useToolStore()
+  const { websites, documents, folders, uploadDocument, deleteDocument, createFolder, deleteFolder, getDocumentUrl } = useToolStore()
   const { t, dateLocale } = useT()
 
   const [tab, setTab] = useState<Tab>('websites')
@@ -65,16 +66,18 @@ export function Toolbox() {
     setUploading(false)
   }
 
-  const handleDownload = (doc: any) => {
+  const handleDownload = async (doc: Document) => {
+    const url = await getDocumentUrl(doc.storagePath)
+    if (!url) return
     const a = document.createElement('a')
-    a.href = doc.data
+    a.href = url
     a.download = doc.name
     a.click()
   }
 
-  const handleCreateFolder = () => {
+  const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return
-    createFolder(newFolderName.trim(), empId)
+    await createFolder(newFolderName.trim(), empId)
     setNewFolderName('')
     setShowFolderInput(false)
   }

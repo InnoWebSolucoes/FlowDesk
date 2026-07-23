@@ -3,7 +3,6 @@ export type Role = 'admin' | 'employee'
 export interface User {
   id: string
   email: string
-  password: string
   name: string
   role: Role
   avatarInitials: string
@@ -14,7 +13,7 @@ export interface Employee extends User {
   role: 'employee'
   jobTitle: string
   department: string
-  managerId: string
+  managerId: string | null
 }
 
 export type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'one-off'
@@ -76,7 +75,7 @@ export interface Document {
   size: number
   uploadedAt: string
   uploadedBy: string
-  data: string // base64
+  storagePath: string // Supabase Storage object path
   folderId?: string
 }
 
@@ -121,7 +120,7 @@ export interface TaskAttachment {
   name: string
   type: string
   size: number
-  data: string // base64
+  storagePath: string // Supabase Storage object path
   uploadedAt: string
   uploadedBy: string
 }
@@ -152,5 +151,6 @@ export interface AppNotification {
   taskId?: string
   isRead: boolean
   createdAt: string
-  targetUserId: string // employee ID or 'admin'
+  targetUserId: string | null // employee id, or null when targetRole is set
+  targetRole: Role | null // 'admin' to notify all admins, else null
 }

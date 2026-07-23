@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react'
 import { Plus, Search, Pencil, Trash2, X, Check, ListTodo } from 'lucide-react'
-import { v4 as uuidv4 } from 'uuid'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
+import { useAuthStore } from '../../store/authStore'
 import { Task, TaskFrequency, Priority, Category, FrequencyType } from '../../types'
 import { Badge } from '../../components/shared/Badge'
 import { EmptyState } from '../../components/shared/EmptyState'
@@ -37,7 +37,7 @@ function TaskForm({
   onCancel: () => void
   categories: Category[]
   employees: import('../../types').Employee[]
-  onAddCategory: (cat: Category) => void
+  onAddCategory: (cat: Omit<Category, 'id'>) => Promise<Category>
 }) {
   const { t } = useT()
   const DAY_NAMES = [t('task_sun'), t('task_mon'), t('task_tue'), t('task_wed'), t('task_thu'), t('task_fri'), t('task_sat')]
@@ -86,10 +86,9 @@ function TaskForm({
     else set('assignedTo', [...curr, id])
   }
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (!newCatName.trim()) return
-    const cat: Category = { id: uuidv4(), name: newCatName.trim(), color: newCatColor }
-    onAddCategory(cat)
+    const cat = await onAddCategory({ name: newCatName.trim(), color: newCatColor })
     set('categoryId', cat.id)
     setNewCatName('')
     setShowCatForm(false)
@@ -263,6 +262,7 @@ function TaskForm({
 export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: string }) {
   const { tasks, categories, addTask, updateTask, deleteTask, addCategory } = useTaskStore()
   const { employees } = useEmployeeStore()
+  const { currentUser } = useAuthStore()
   const { t } = useT()
 
   const DAY_NAMES = [t('task_sun'), t('task_mon'), t('task_tue'), t('task_wed'), t('task_thu'), t('task_fri'), t('task_sat')]
@@ -308,17 +308,18 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
     else { setSortCol(col); setSortDir('asc') }
   }
 
-  const handleSave = (data: any) => {
+  const handleSave = async (data: any) => {
     if (editing === 'new') {
-      addTask({ ...data, id: uuidv4(), createdAt: new Date().toISOString(), createdBy: 'admin-1' })
+      if (!currentUser) return
+      await addTask({ ...data, createdBy: currentUser.id })
     } else if (editing) {
-      updateTask(editing.id, data)
+      await updateTask(editing.id, data)
     }
     setEditing(null)
   }
 
-  const handleDelete = (id: string) => {
-    if (confirm(t('task_deleteConfirm'))) deleteTask(id)
+  const handleDelete = async (id: string) => {
+    if (confirm(t('task_deleteConfirm'))) await deleteTask(id)
   }
 
   const freqLabel = (task: Task) => {

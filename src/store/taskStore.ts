@@ -1,201 +1,358 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { supabase } from '../lib/supabaseClient'
 import { Task, CompletionLog, Category, TaskComment, TaskAttachment, ActivityLog } from '../types'
-import { sampleTasks, sampleCategories, generateHistoricalData } from '../data/sampleData'
 import { getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOfDay } from '../utils/taskScheduler'
 import { format } from 'date-fns'
-import { v4 as uuidv4 } from 'uuid'
 
 interface TaskState {
   tasks: Task[]
   completionLogs: CompletionLog[]
   categories: Category[]
-  initialized: boolean
+  loading: boolean
   taskStatuses: Record<string, 'in_progress'>
   taskComments: TaskComment[]
   activityLogs: ActivityLog[]
 
-  // Task actions
-  addTask: (task: Task) => void
-  updateTask: (id: string, updates: Partial<Task>) => void
-  deleteTask: (id: string) => void
+  initialize: () => Promise<void>
 
-  // Completion actions
-  completeTask: (taskId: string, employeeId: string, dueDate: string) => void
-  uncompleteTask: (taskId: string, employeeId: string, dueDate: string) => void
+  addTask: (task: Omit<Task, 'id' | 'createdAt'>) => Promise<void>
+  updateTask: (id: string, updates: Partial<Task>) => Promise<void>
+  deleteTask: (id: string) => Promise<void>
+
+  completeTask: (taskId: string, employeeId: string, dueDate: string) => Promise<void>
+  uncompleteTask: (taskId: string, employeeId: string, dueDate: string) => Promise<void>
   isTaskCompleted: (taskId: string, employeeId: string, date: string) => boolean
 
-  // In-progress status actions
-  setInProgress: (taskId: string, empId: string, date: string) => void
-  clearInProgress: (taskId: string, empId: string, date: string) => void
+  setInProgress: (taskId: string, empId: string, date: string) => Promise<void>
+  clearInProgress: (taskId: string, empId: string, date: string) => Promise<void>
   isInProgress: (taskId: string, empId: string, date: string) => boolean
 
-  // Comment actions
-  addComment: (comment: Omit<TaskComment, 'id' | 'createdAt'> & { attachments: TaskAttachment[] }) => TaskComment
-  deleteComment: (commentId: string) => void
+  addComment: (comment: Omit<TaskComment, 'id' | 'createdAt'> & { attachments: TaskAttachment[] }) => Promise<TaskComment>
+  deleteComment: (commentId: string) => Promise<void>
   getTaskComments: (taskId: string) => TaskComment[]
 
-  // Activity log actions
-  addActivityLog: (log: Omit<ActivityLog, 'id' | 'timestamp'>) => void
+  addActivityLog: (log: Omit<ActivityLog, 'id' | 'timestamp'>) => Promise<void>
   getActivityLogs: (taskId: string) => ActivityLog[]
 
-  // Category actions
-  addCategory: (category: Category) => void
-  updateCategory: (id: string, updates: Partial<Category>) => void
-  deleteCategory: (id: string) => void
+  addCategory: (category: Omit<Category, 'id'>) => Promise<Category>
+  updateCategory: (id: string, updates: Partial<Category>) => Promise<void>
+  deleteCategory: (id: string) => Promise<void>
 
-  // Query helpers
   getTasksDueToday: (employeeId: string, date: Date) => Task[]
   getTasksDueThisWeek: (employeeId: string, weekStart: Date) => Record<string, Task[]>
   getTasksDueThisMonth: (employeeId: string, month: number, year: number) => Record<number, Task[]>
-
-  // Init
-  initialize: () => void
 }
 
-export const useTaskStore = create<TaskState>()(
-  persist(
-    (set, get) => ({
-      tasks: [],
-      completionLogs: [],
-      categories: [],
-      initialized: false,
-      taskStatuses: {},
-      taskComments: [],
-      activityLogs: [],
+function toTask(row: any): Task {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    assignedTo: (row.task_assignments ?? []).map((a: any) => a.employee_id),
+    frequency: row.frequency,
+    categoryId: row.category_id,
+    priority: row.priority,
+    associatedTool: row.associated_tool ?? undefined,
+    estimatedMinutes: row.estimated_minutes,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    isActive: row.is_active,
+  }
+}
 
-      initialize: () => {
-        const state = get()
-        if (state.initialized) return
-        const historicalLogs = generateHistoricalData(sampleTasks)
-        set({
-          tasks: sampleTasks,
-          categories: sampleCategories,
-          completionLogs: historicalLogs,
-          initialized: true,
-        })
-      },
+function toCompletionLog(row: any): CompletionLog {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    employeeId: row.employee_id,
+    completedAt: row.completed_at,
+    dueDate: row.due_date,
+    wasLate: row.was_late,
+    timeOfDay: row.time_of_day,
+  }
+}
 
-      addTask: (task) => set((s) => ({ tasks: [...s.tasks, task] })),
-      updateTask: (id, updates) =>
-        set((s) => ({ tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)) })),
-      deleteTask: (id) => set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) })),
+function toComment(row: any): TaskComment {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    authorId: row.author_id,
+    content: row.content,
+    createdAt: row.created_at,
+    attachments: (row.task_attachments ?? []).map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      size: a.size,
+      storagePath: a.storage_path,
+      uploadedAt: a.uploaded_at,
+      uploadedBy: a.uploaded_by,
+    })),
+  }
+}
 
-      completeTask: (taskId, employeeId, dueDate) => {
-        const now = new Date()
-        const isoNow = now.toISOString()
-        const hour = now.getHours()
-        const wasLate = hour >= 16
-        const timeOfDay = getTimeOfDay(isoNow)
+function toActivityLog(row: any): ActivityLog {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    actorId: row.actor_id,
+    action: row.action,
+    detail: row.detail ?? undefined,
+    timestamp: row.timestamp,
+  }
+}
 
-        const log: CompletionLog = {
-          id: uuidv4(),
-          taskId,
-          employeeId,
-          completedAt: isoNow,
-          dueDate,
-          wasLate,
-          timeOfDay,
-        }
-        set((s) => ({ completionLogs: [...s.completionLogs, log] }))
+export const useTaskStore = create<TaskState>()((set, get) => ({
+  tasks: [],
+  completionLogs: [],
+  categories: [],
+  loading: false,
+  taskStatuses: {},
+  taskComments: [],
+  activityLogs: [],
 
-        get().addActivityLog({ taskId, actorId: employeeId, action: 'completed' })
-      },
+  initialize: async () => {
+    set({ loading: true })
 
-      uncompleteTask: (taskId, employeeId, dueDate) => {
-        set((s) => ({
-          completionLogs: s.completionLogs.filter(
-            (log) =>
-              !(log.taskId === taskId && log.employeeId === employeeId && log.dueDate === dueDate)
-          ),
-        }))
+    const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes] = await Promise.all([
+      supabase.from('tasks').select('*, task_assignments(employee_id)'),
+      supabase.from('categories').select('*'),
+      supabase.from('completion_logs').select('*'),
+      supabase.from('task_statuses').select('*'),
+      supabase.from('task_comments').select('*, task_attachments(*)'),
+      supabase.from('activity_logs').select('*'),
+    ])
 
-        get().addActivityLog({ taskId, actorId: employeeId, action: 'uncompleted' })
-      },
-
-      isTaskCompleted: (taskId, employeeId, date) => {
-        const dateStr = date.length === 10 ? date : format(new Date(date), 'yyyy-MM-dd')
-        return get().completionLogs.some(
-          (log) =>
-            log.taskId === taskId && log.employeeId === employeeId && log.dueDate === dateStr
-        )
-      },
-
-      setInProgress: (taskId, empId, date) => {
-        const key = `${taskId}:${empId}:${date}`
-        set((s) => ({ taskStatuses: { ...s.taskStatuses, [key]: 'in_progress' } }))
-        get().addActivityLog({ taskId, actorId: empId, action: 'in_progress' })
-      },
-
-      clearInProgress: (taskId, empId, date) => {
-        const key = `${taskId}:${empId}:${date}`
-        set((s) => {
-          const next = { ...s.taskStatuses }
-          delete next[key]
-          return { taskStatuses: next }
-        })
-      },
-
-      isInProgress: (taskId, empId, date) => {
-        const key = `${taskId}:${empId}:${date}`
-        return get().taskStatuses[key] === 'in_progress'
-      },
-
-      addComment: (comment) => {
-        const newComment: TaskComment = {
-          ...comment,
-          id: uuidv4(),
-          createdAt: new Date().toISOString(),
-        }
-        set((s) => ({ taskComments: [...s.taskComments, newComment] }))
-        get().addActivityLog({ taskId: comment.taskId, actorId: comment.authorId, action: 'commented' })
-        if (comment.attachments.length > 0) {
-          get().addActivityLog({
-            taskId: comment.taskId,
-            actorId: comment.authorId,
-            action: 'file_uploaded',
-            detail: comment.attachments.map(a => a.name).join(', '),
-          })
-        }
-        return newComment
-      },
-
-      deleteComment: (commentId) => {
-        set((s) => ({ taskComments: s.taskComments.filter(c => c.id !== commentId) }))
-      },
-
-      getTaskComments: (taskId) => {
-        return get().taskComments.filter(c => c.taskId === taskId)
-      },
-
-      addActivityLog: (log) => {
-        const entry: ActivityLog = {
-          ...log,
-          id: uuidv4(),
-          timestamp: new Date().toISOString(),
-        }
-        set((s) => ({ activityLogs: [...s.activityLogs, entry] }))
-      },
-
-      getActivityLogs: (taskId) => {
-        return get().activityLogs.filter(l => l.taskId === taskId)
-      },
-
-      addCategory: (category) => set((s) => ({ categories: [...s.categories, category] })),
-      updateCategory: (id, updates) =>
-        set((s) => ({
-          categories: s.categories.map((c) => (c.id === id ? { ...c, ...updates } : c)),
-        })),
-      deleteCategory: (id) => set((s) => ({ categories: s.categories.filter((c) => c.id !== id) })),
-
-      getTasksDueToday: (employeeId, date) => getTasksDueOnDate(get().tasks, employeeId, date),
-      getTasksDueThisWeek: (employeeId, weekStart) =>
-        getTasksDueThisWeek(get().tasks, employeeId, weekStart),
-      getTasksDueThisMonth: (employeeId, month, year) =>
-        getTasksDueThisMonth(get().tasks, employeeId, month, year),
-    }),
-    {
-      name: 'flowdesk-tasks',
+    const taskStatuses: Record<string, 'in_progress'> = {}
+    for (const row of statusesRes.data ?? []) {
+      taskStatuses[`${row.task_id}:${row.employee_id}:${row.due_date}`] = 'in_progress'
     }
-  )
-)
+
+    set({
+      tasks: (tasksRes.data ?? []).map(toTask),
+      categories: categoriesRes.data ?? [],
+      completionLogs: (logsRes.data ?? []).map(toCompletionLog),
+      taskStatuses,
+      taskComments: (commentsRes.data ?? []).map(toComment),
+      activityLogs: (activityRes.data ?? []).map(toActivityLog),
+      loading: false,
+    })
+  },
+
+  addTask: async (task) => {
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert({
+        title: task.title,
+        description: task.description,
+        frequency: task.frequency,
+        category_id: task.categoryId,
+        priority: task.priority,
+        associated_tool: task.associatedTool ?? null,
+        estimated_minutes: task.estimatedMinutes,
+        created_by: task.createdBy,
+        is_active: task.isActive,
+      })
+      .select()
+      .single()
+
+    if (error || !data) return
+
+    if (task.assignedTo.length > 0) {
+      await supabase
+        .from('task_assignments')
+        .insert(task.assignedTo.map((employeeId) => ({ task_id: data.id, employee_id: employeeId })))
+    }
+
+    set((s) => ({ tasks: [...s.tasks, toTask({ ...data, task_assignments: task.assignedTo.map(id => ({ employee_id: id })) })] }))
+  },
+
+  updateTask: async (id, updates) => {
+    const patch: Record<string, unknown> = {}
+    if (updates.title !== undefined) patch.title = updates.title
+    if (updates.description !== undefined) patch.description = updates.description
+    if (updates.frequency !== undefined) patch.frequency = updates.frequency
+    if (updates.categoryId !== undefined) patch.category_id = updates.categoryId
+    if (updates.priority !== undefined) patch.priority = updates.priority
+    if (updates.associatedTool !== undefined) patch.associated_tool = updates.associatedTool
+    if (updates.estimatedMinutes !== undefined) patch.estimated_minutes = updates.estimatedMinutes
+    if (updates.isActive !== undefined) patch.is_active = updates.isActive
+
+    if (Object.keys(patch).length > 0) {
+      await supabase.from('tasks').update(patch).eq('id', id)
+    }
+
+    if (updates.assignedTo !== undefined) {
+      await supabase.from('task_assignments').delete().eq('task_id', id)
+      if (updates.assignedTo.length > 0) {
+        await supabase
+          .from('task_assignments')
+          .insert(updates.assignedTo.map((employeeId) => ({ task_id: id, employee_id: employeeId })))
+      }
+    }
+
+    set((s) => ({ tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)) }))
+  },
+
+  deleteTask: async (id) => {
+    await supabase.from('tasks').delete().eq('id', id)
+    set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) }))
+  },
+
+  completeTask: async (taskId, employeeId, dueDate) => {
+    const now = new Date()
+    const isoNow = now.toISOString()
+    const wasLate = now.getHours() >= 16
+    const timeOfDay = getTimeOfDay(isoNow)
+
+    const { data, error } = await supabase
+      .from('completion_logs')
+      .insert({
+        task_id: taskId,
+        employee_id: employeeId,
+        completed_at: isoNow,
+        due_date: dueDate,
+        was_late: wasLate,
+        time_of_day: timeOfDay,
+      })
+      .select()
+      .single()
+
+    if (!error && data) {
+      set((s) => ({ completionLogs: [...s.completionLogs, toCompletionLog(data)] }))
+      await get().addActivityLog({ taskId, actorId: employeeId, action: 'completed' })
+    }
+  },
+
+  uncompleteTask: async (taskId, employeeId, dueDate) => {
+    await supabase
+      .from('completion_logs')
+      .delete()
+      .eq('task_id', taskId)
+      .eq('employee_id', employeeId)
+      .eq('due_date', dueDate)
+
+    set((s) => ({
+      completionLogs: s.completionLogs.filter(
+        (log) => !(log.taskId === taskId && log.employeeId === employeeId && log.dueDate === dueDate)
+      ),
+    }))
+
+    await get().addActivityLog({ taskId, actorId: employeeId, action: 'uncompleted' })
+  },
+
+  isTaskCompleted: (taskId, employeeId, date) => {
+    const dateStr = date.length === 10 ? date : format(new Date(date), 'yyyy-MM-dd')
+    return get().completionLogs.some(
+      (log) => log.taskId === taskId && log.employeeId === employeeId && log.dueDate === dateStr
+    )
+  },
+
+  setInProgress: async (taskId, empId, date) => {
+    const key = `${taskId}:${empId}:${date}`
+    await supabase.from('task_statuses').upsert({ task_id: taskId, employee_id: empId, due_date: date, status: 'in_progress' })
+    set((s) => ({ taskStatuses: { ...s.taskStatuses, [key]: 'in_progress' } }))
+    await get().addActivityLog({ taskId, actorId: empId, action: 'in_progress' })
+  },
+
+  clearInProgress: async (taskId, empId, date) => {
+    const key = `${taskId}:${empId}:${date}`
+    await supabase.from('task_statuses').delete().eq('task_id', taskId).eq('employee_id', empId).eq('due_date', date)
+    set((s) => {
+      const next = { ...s.taskStatuses }
+      delete next[key]
+      return { taskStatuses: next }
+    })
+  },
+
+  isInProgress: (taskId, empId, date) => {
+    const key = `${taskId}:${empId}:${date}`
+    return get().taskStatuses[key] === 'in_progress'
+  },
+
+  addComment: async (comment) => {
+    const { data, error } = await supabase
+      .from('task_comments')
+      .insert({ task_id: comment.taskId, author_id: comment.authorId, content: comment.content })
+      .select()
+      .single()
+
+    if (error || !data) throw error ?? new Error('Failed to add comment')
+
+    if (comment.attachments.length > 0) {
+      await supabase.from('task_attachments').insert(
+        comment.attachments.map((a) => ({
+          comment_id: data.id,
+          name: a.name,
+          type: a.type,
+          size: a.size,
+          storage_path: a.storagePath,
+          uploaded_by: a.uploadedBy,
+        }))
+      )
+    }
+
+    const newComment: TaskComment = {
+      id: data.id,
+      taskId: data.task_id,
+      authorId: data.author_id,
+      content: data.content,
+      createdAt: data.created_at,
+      attachments: comment.attachments,
+    }
+
+    set((s) => ({ taskComments: [...s.taskComments, newComment] }))
+    await get().addActivityLog({ taskId: comment.taskId, actorId: comment.authorId, action: 'commented' })
+    if (comment.attachments.length > 0) {
+      await get().addActivityLog({
+        taskId: comment.taskId,
+        actorId: comment.authorId,
+        action: 'file_uploaded',
+        detail: comment.attachments.map((a) => a.name).join(', '),
+      })
+    }
+    return newComment
+  },
+
+  deleteComment: async (commentId) => {
+    await supabase.from('task_comments').delete().eq('id', commentId)
+    set((s) => ({ taskComments: s.taskComments.filter((c) => c.id !== commentId) }))
+  },
+
+  getTaskComments: (taskId) => get().taskComments.filter((c) => c.taskId === taskId),
+
+  addActivityLog: async (log) => {
+    const { data, error } = await supabase
+      .from('activity_logs')
+      .insert({ task_id: log.taskId, actor_id: log.actorId, action: log.action, detail: log.detail ?? null })
+      .select()
+      .single()
+
+    if (!error && data) {
+      set((s) => ({ activityLogs: [...s.activityLogs, toActivityLog(data)] }))
+    }
+  },
+
+  getActivityLogs: (taskId) => get().activityLogs.filter((l) => l.taskId === taskId),
+
+  addCategory: async (category) => {
+    const { data, error } = await supabase.from('categories').insert(category).select().single()
+    if (error || !data) throw error ?? new Error('Failed to add category')
+    set((s) => ({ categories: [...s.categories, data] }))
+    return data
+  },
+
+  updateCategory: async (id, updates) => {
+    await supabase.from('categories').update(updates).eq('id', id)
+    set((s) => ({ categories: s.categories.map((c) => (c.id === id ? { ...c, ...updates } : c)) }))
+  },
+
+  deleteCategory: async (id) => {
+    await supabase.from('categories').delete().eq('id', id)
+    set((s) => ({ categories: s.categories.filter((c) => c.id !== id) }))
+  },
+
+  getTasksDueToday: (employeeId, date) => getTasksDueOnDate(get().tasks, employeeId, date),
+  getTasksDueThisWeek: (employeeId, weekStart) => getTasksDueThisWeek(get().tasks, employeeId, weekStart),
+  getTasksDueThisMonth: (employeeId, month, year) => getTasksDueThisMonth(get().tasks, employeeId, month, year),
+}))

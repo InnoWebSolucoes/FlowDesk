@@ -58,6 +58,7 @@ export function NotificationBell() {
             message: task.title,
             taskId: task.id,
             targetUserId: empId,
+            targetRole: null,
           })
         }
         // Also alert admin
@@ -66,7 +67,8 @@ export function NotificationBell() {
           title: t('notif_overdue'),
           message: task.title,
           taskId: task.id,
-          targetUserId: 'admin',
+          targetUserId: null,
+          targetRole: 'admin',
         })
       } else if (taskDate === todayStr) {
         for (const empId of task.assignedTo) {
@@ -76,6 +78,7 @@ export function NotificationBell() {
             message: task.title,
             taskId: task.id,
             targetUserId: empId,
+            targetRole: null,
           })
         }
       } else if (taskDate === tomorrowStr) {
@@ -86,6 +89,7 @@ export function NotificationBell() {
             message: task.title,
             taskId: task.id,
             targetUserId: empId,
+            targetRole: null,
           })
         }
       }
@@ -102,7 +106,8 @@ export function NotificationBell() {
               type: 'workload_alert',
               title: t('notif_workloadAlert'),
               message: `${emp.name}: ${counts[i]} tasks`,
-              targetUserId: 'admin',
+              targetUserId: null,
+              targetRole: 'admin',
             })
           }
         })

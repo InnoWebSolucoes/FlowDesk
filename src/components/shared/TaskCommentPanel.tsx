@@ -3,6 +3,7 @@ import { Paperclip, Send, ChevronDown, ChevronRight, Download, Trash2 } from 'lu
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useAuthStore } from '../../store/authStore'
+import { supabase } from '../../lib/supabaseClient'
 import { TaskAttachment } from '../../types'
 import { format, parseISO } from 'date-fns'
 import { useT } from '../../i18n/useT'
@@ -29,12 +30,6 @@ function initials(name: string) {
     .slice(0, 2)
 }
 
-function base64ToBlob(base64: string, type: string) {
-  const byteChars = atob(base64.split(',')[1] ?? base64)
-  const byteNums = Array.from(byteChars).map(c => c.charCodeAt(0))
-  return new Blob([new Uint8Array(byteNums)], { type })
-}
-
 export function TaskCommentPanel({ taskId, currentUserId, currentUserName }: TaskCommentPanelProps) {
   const { t } = useT()
   const { getTaskComments, addComment, deleteComment, getActivityLogs } = useTaskStore()
@@ -43,6 +38,7 @@ export function TaskCommentPanel({ taskId, currentUserId, currentUserName }: Tas
 
   const [commentText, setCommentText] = useState('')
   const [pendingAttachments, setPendingAttachments] = useState<TaskAttachment[]>([])
+  const [uploading, setUploading] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -57,56 +53,62 @@ export function TaskCommentPanel({ taskId, currentUserId, currentUserName }: Tas
     return emp?.name ?? authorId
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
-    files.forEach(file => {
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        const data = ev.target?.result as string
-        const attachment: TaskAttachment = {
-          id: uuidv4(),
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          data,
-          uploadedAt: new Date().toISOString(),
-          uploadedBy: currentUserId,
-        }
-        setPendingAttachments(prev => [...prev, attachment])
-      }
-      reader.readAsDataURL(file)
-    })
-    // Reset input
     if (fileInputRef.current) fileInputRef.current.value = ''
+
+    setUploading(true)
+    for (const file of files) {
+      const attachmentId = uuidv4()
+      const path = `task-attachments/${taskId}/${attachmentId}-${file.name}`
+      const { error } = await supabase.storage.from('attachments').upload(path, file)
+      if (error) continue
+
+      const attachment: TaskAttachment = {
+        id: attachmentId,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        storagePath: path,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: currentUserId,
+      }
+      setPendingAttachments(prev => [...prev, attachment])
+    }
+    setUploading(false)
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!commentText.trim() && pendingAttachments.length === 0) return
     setSubmitting(true)
-    addComment({
-      taskId,
-      authorId: currentUserId,
-      content: commentText.trim(),
-      attachments: pendingAttachments,
-    })
-    setCommentText('')
-    setPendingAttachments([])
-    setSubmitting(false)
+    try {
+      await addComment({
+        taskId,
+        authorId: currentUserId,
+        content: commentText.trim(),
+        attachments: pendingAttachments,
+      })
+      setCommentText('')
+      setPendingAttachments([])
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleDownload = (attachment: TaskAttachment) => {
-    const blob = base64ToBlob(attachment.data, attachment.type)
-    const url = URL.createObjectURL(blob)
+  const handleDownload = async (attachment: TaskAttachment) => {
+    const { data, error } = await supabase.storage
+      .from('attachments')
+      .createSignedUrl(attachment.storagePath, 60)
+    if (error || !data) return
     const a = document.createElement('a')
-    a.href = url
+    a.href = data.signedUrl
     a.download = attachment.name
     a.click()
-    URL.revokeObjectURL(url)
   }
 
-  const handleDelete = (commentId: string) => {
+  const handleDelete = async (commentId: string) => {
     if (window.confirm(t('comment_deleteConfirm'))) {
-      deleteComment(commentId)
+      await deleteComment(commentId)
     }
   }
 
@@ -264,7 +266,7 @@ export function TaskCommentPanel({ taskId, currentUserId, currentUserName }: Tas
           />
           <button
             onClick={handleSubmit}
-            disabled={submitting || (!commentText.trim() && pendingAttachments.length === 0)}
+            disabled={submitting || uploading || (!commentText.trim() && pendingAttachments.length === 0)}
             className="flex items-center gap-1.5 text-xs bg-primary text-white px-3 py-1.5 rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Send size={11} />

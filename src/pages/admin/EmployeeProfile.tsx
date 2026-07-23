@@ -4,6 +4,7 @@ import { ArrowLeft, Globe } from 'lucide-react'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useToolStore } from '../../store/toolStore'
+import { useAuthStore } from '../../store/authStore'
 import { TaskManager } from './TaskManager'
 import { Analytics } from './Analytics'
 import { EmptyState } from '../../components/shared/EmptyState'
@@ -22,6 +23,7 @@ export function EmployeeProfile() {
   const { employees } = useEmployeeStore()
   const { tasks, categories, completionLogs } = useTaskStore()
   const { websites, getGuidelines, saveGuidelines } = useToolStore()
+  const { currentUser } = useAuthStore()
   const { t, dateLocale } = useT()
 
   const [tab, setTab] = useState<Tab>('tasks')
@@ -46,9 +48,9 @@ export function EmployeeProfile() {
 
   const empWebsites = websites.filter(w => w.assignedTo.includes(emp.id))
 
-  const handleSaveGuide = () => {
-    if (!editor || !id) return
-    saveGuidelines(id, editor.getHTML(), 'admin-1')
+  const handleSaveGuide = async () => {
+    if (!editor || !id || !currentUser) return
+    await saveGuidelines(id, editor.getHTML(), currentUser.id)
     setGuideSaved(true)
     setTimeout(() => setGuideSaved(false), 2000)
   }
