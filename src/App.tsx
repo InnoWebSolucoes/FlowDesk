@@ -15,9 +15,7 @@ import { AIOrganiser } from './pages/admin/AIOrganiser'
 import { Employees } from './pages/admin/Employees'
 import { EmployeeProfile } from './pages/admin/EmployeeProfile'
 import { Analytics } from './pages/admin/Analytics'
-import { GanttChart } from './pages/admin/GanttChart'
 import { MyTasks } from './pages/employee/MyTasks'
-import { MyGantt } from './pages/employee/MyGantt'
 import { Toolbox } from './pages/employee/Toolbox'
 import { Guidelines } from './pages/employee/Guidelines'
 
@@ -102,7 +100,6 @@ export default function App() {
             <Route path="employees" element={<Employees />} />
             <Route path="employees/:id" element={<EmployeeProfile />} />
             <Route path="analytics" element={<Analytics />} />
-            <Route path="gantt" element={<GanttChart />} />
           </Route>
 
           {/* Employee routes */}
@@ -116,7 +113,6 @@ export default function App() {
           >
             <Route index element={<Navigate to="tasks" replace />} />
             <Route path="tasks" element={<MyTasks />} />
-            <Route path="gantt" element={<MyGantt />} />
             <Route path="toolbox" element={<Toolbox />} />
             <Route path="guidelines" element={<Guidelines />} />
           </Route>

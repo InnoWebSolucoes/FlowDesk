@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, ListTodo, Sparkles, Users, BarChart3,
-  GanttChartSquare, CheckSquare, Calendar, Wrench, BookOpen,
+  CheckSquare, Wrench, BookOpen,
   LogOut, Menu, X
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
@@ -22,12 +22,10 @@ export function Sidebar() {
     { to: '/admin/ai-organiser', label: t('nav_aiOrganiser'), icon: <Sparkles size={18} /> },
     { to: '/admin/employees', label: t('nav_employees'), icon: <Users size={18} /> },
     { to: '/admin/analytics', label: t('nav_analytics'), icon: <BarChart3 size={18} /> },
-    { to: '/admin/gantt', label: t('nav_ganttChart'), icon: <GanttChartSquare size={18} /> },
   ]
 
   const employeeNav = [
     { to: '/employee/tasks', label: t('nav_myTasks'), icon: <CheckSquare size={18} /> },
-    { to: '/employee/gantt', label: t('nav_mySchedule'), icon: <Calendar size={18} /> },
     { to: '/employee/toolbox', label: t('nav_toolbox'), icon: <Wrench size={18} /> },
     { to: '/employee/guidelines', label: t('nav_guidelines'), icon: <BookOpen size={18} /> },
   ]

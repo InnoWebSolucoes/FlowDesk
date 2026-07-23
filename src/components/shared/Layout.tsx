@@ -9,9 +9,7 @@ const pageTitles: Record<string, string> = {
   '/admin/ai-organiser': 'AI Organiser',
   '/admin/employees': 'Employees',
   '/admin/analytics': 'Analytics',
-  '/admin/gantt': 'Gantt Chart',
   '/employee/tasks': 'My Tasks',
-  '/employee/gantt': 'My Schedule',
   '/employee/toolbox': 'Toolbox',
   '/employee/guidelines': 'Guidelines',
 }

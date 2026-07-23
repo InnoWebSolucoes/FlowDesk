@@ -20,9 +20,7 @@ const en = {
   nav_aiOrganiser: 'AI Organiser',
   nav_employees: 'Employees',
   nav_analytics: 'Analytics',
-  nav_ganttChart: 'Gantt Chart',
   nav_myTasks: 'My Tasks',
-  nav_mySchedule: 'My Schedule',
   nav_toolbox: 'Toolbox',
   nav_guidelines: 'Guidelines',
 
@@ -188,16 +186,6 @@ const en = {
   profile_lastUpdated: 'Last updated',
   profile_saved: '✓ Saved!',
   profile_guidelinesPlaceholder: 'Start writing guidelines for this employee…',
-
-  // Gantt
-  gantt_dayView: 'Day View',
-  gantt_weekView: 'Week View',
-  gantt_monthView: 'Month View',
-  gantt_today: 'Today',
-  gantt_employee: 'Employee',
-  gantt_task: 'Task',
-  gantt_done: 'Done ✓',
-  gantt_pending: 'Pending',
 
   // My Tasks
   mytasks_today: 'Today',
@@ -368,9 +356,7 @@ const pt: typeof en = {
   nav_aiOrganiser: 'Organizador IA',
   nav_employees: 'Funcionários',
   nav_analytics: 'Análises',
-  nav_ganttChart: 'Gráfico de Gantt',
   nav_myTasks: 'Minhas Tarefas',
-  nav_mySchedule: 'Meu Calendário',
   nav_toolbox: 'Ferramentas',
   nav_guidelines: 'Diretrizes',
 
@@ -536,16 +522,6 @@ const pt: typeof en = {
   profile_lastUpdated: 'Última atualização',
   profile_saved: '✓ Salvo!',
   profile_guidelinesPlaceholder: 'Comece a escrever diretrizes para este funcionário…',
-
-  // Gantt
-  gantt_dayView: 'Vista Diária',
-  gantt_weekView: 'Vista Semanal',
-  gantt_monthView: 'Vista Mensal',
-  gantt_today: 'Hoje',
-  gantt_employee: 'Funcionário',
-  gantt_task: 'Tarefa',
-  gantt_done: 'Feito ✓',
-  gantt_pending: 'Pendente',
 
   // My Tasks
   mytasks_today: 'Hoje',
