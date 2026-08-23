@@ -37,7 +37,14 @@ export function ProjectTodos() {
   const [sortMode, setSortMode] = useState<SortMode>('manual')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [linkingId, setLinkingId] = useState<string | null>(null)
-  const [activeListId, setActiveListId] = useState<string | null>(null)
+  // Remembered per project so a reload returns to the list you were on.
+  const [activeListId, setActiveListId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(`flowdesk:todoList:${project.id}`)
+    } catch {
+      return null
+    }
+  })
   const [renamingListId, setRenamingListId] = useState<string | null>(null)
   const [listNameDraft, setListNameDraft] = useState('')
 
@@ -53,6 +60,15 @@ export function ProjectTodos() {
   )
 
   // Fall back to the first list whenever the active one goes away.
+  const selectList = (id: string) => {
+    setActiveListId(id)
+    try {
+      localStorage.setItem(`flowdesk:todoList:${project.id}`, id)
+    } catch {
+      // Private mode or blocked storage — the tab just won't be remembered.
+    }
+  }
+
   const currentListId = activeListId && lists.some((l) => l.id === activeListId)
     ? activeListId
     : lists[0]?.id ?? null
@@ -86,17 +102,33 @@ export function ProjectTodos() {
   const openCountFor = (listId: string) =>
     todos.filter((t) => t.listId === listId && !t.isCompleted).length
 
+  /**
+   * Split bulk input into individual todos. Newlines always separate; commas
+   * do too, so a quick "a, b, c" works — but only when the text has no line
+   * breaks, so a single pasted line containing a comma isn't torn in half.
+   */
+  const parseTitles = (raw: string): string[] => {
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    const parts = lines.length > 1 ? lines : (lines[0] ?? '').split(',')
+    return parts
+      .map((p) => p.trim().replace(/^[-*•\d.)\s]+/, '').trim())
+      .filter(Boolean)
+  }
+
+  const pendingTitles = parseTitles(newTitle)
+
   const handleAdd = async () => {
-    const title = newTitle.trim()
-    if (!title || !currentListId) return
+    if (!currentListId || pendingTitles.length === 0) return
     setNewTitle('')
-    await createTodo(project.id, { title, listId: currentListId })
+    for (const title of pendingTitles) {
+      await createTodo(project.id, { title, listId: currentListId })
+    }
   }
 
   const handleAddList = async () => {
     const created = await createTodoList(project.id, `List ${lists.length + 1}`)
     if (created) {
-      setActiveListId(created.id)
+      selectList(created.id)
       setRenamingListId(created.id)
       setListNameDraft(created.name)
     }
@@ -309,7 +341,7 @@ export function ProjectTodos() {
                     setRenamingListId(list.id)
                     setListNameDraft(list.name)
                   } else {
-                    setActiveListId(list.id)
+                    selectList(list.id)
                   }
                 }}
                 className={`text-sm font-medium whitespace-nowrap transition-colors ${
@@ -351,23 +383,51 @@ export function ProjectTodos() {
         </button>
       </div>
 
-      {/* Add box */}
-      <div className="flex gap-2 mb-4">
-        <input
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-          placeholder={currentListId ? 'Add a todo…' : 'Create a list first'}
-          disabled={!currentListId}
-          className="flex-1 px-3 py-2.5 rounded-lg bg-surface border border-border text-sm text-text-main focus:outline-none focus:border-primary disabled:opacity-50"
-        />
-        <button
-          onClick={handleAdd}
-          disabled={!newTitle.trim() || !currentListId}
-          className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark disabled:opacity-40 transition-colors"
-        >
-          <Plus size={15} /> Add
-        </button>
+      {/* Add box: accepts several todos at once, separated by commas or lines */}
+      <div className="mb-4">
+        <div className="flex gap-2 items-start">
+          <textarea
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter submits; Shift+Enter adds a line for multi-item entry.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleAdd()
+              }
+            }}
+            rows={newTitle.includes('\n') ? Math.min(8, newTitle.split('\n').length + 1) : 1}
+            placeholder={
+              currentListId
+                ? 'Add todos — separate with commas, or Shift+Enter for a new line'
+                : 'Create a list first'
+            }
+            disabled={!currentListId}
+            className="flex-1 px-3 py-2.5 rounded-lg bg-surface border border-border text-sm text-text-main resize-none focus:outline-none focus:border-primary disabled:opacity-50"
+          />
+          <button
+            onClick={handleAdd}
+            disabled={pendingTitles.length === 0 || !currentListId}
+            className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-primary-dark disabled:opacity-40 transition-colors flex-shrink-0"
+          >
+            <Plus size={15} />
+            {pendingTitles.length > 1 ? `Add ${pendingTitles.length}` : 'Add'}
+          </button>
+        </div>
+
+        {/* Preview, so a comma-split is visible before committing to it */}
+        {pendingTitles.length > 1 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {pendingTitles.map((title, i) => (
+              <span
+                key={i}
+                className="text-[11px] text-text-muted bg-surface-2 border border-border px-2 py-0.5 rounded"
+              >
+                {title}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Controls */}

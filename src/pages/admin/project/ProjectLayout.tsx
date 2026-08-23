@@ -12,12 +12,14 @@ const TABS = [
 
 export function ProjectLayout() {
   const { projectId } = useParams<{ projectId: string }>()
-  const { projects, loading, getProject } = useProjectStore()
+  const { initialized, getProject } = useProjectStore()
 
   const project = projectId ? getProject(projectId) : undefined
 
-  // Wait for the store before deciding the project doesn't exist.
-  if (loading && projects.length === 0) {
+  // On a reload the store starts empty, so wait for the first fetch to settle
+  // before deciding the project doesn't exist — otherwise a deep link to a
+  // project bounces to the index before its data ever arrives.
+  if (!initialized) {
     return <div className="text-text-muted text-sm py-8">Loading project…</div>
   }
   if (!project) return <Navigate to="/admin/projects" replace />

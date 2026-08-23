@@ -13,6 +13,8 @@ interface ProjectState {
   items: ResourceItem[]
   todos: ProjectTodo[]
   loading: boolean
+  /** False until the first projects fetch settles, so routes don't bail early. */
+  initialized: boolean
   resourcesLoadedFor: string | null
   todosLoadedFor: string | null
 
@@ -183,6 +185,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   todos: [],
   todoLists: [],
   loading: false,
+  initialized: false,
   resourcesLoadedFor: null,
   todosLoadedFor: null,
 
@@ -193,7 +196,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       .select('*')
       .order('created_at')
 
-    set({ projects: error || !data ? [] : data.map(toProject), loading: false })
+    set({
+      projects: error || !data ? [] : data.map(toProject),
+      loading: false,
+      initialized: true,
+    })
   },
 
   createProject: async (input) => {
