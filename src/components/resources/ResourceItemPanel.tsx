@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { X, Upload, Trash2, ExternalLink, Plus, Download } from 'lucide-react'
+import {
+  X, Upload, Trash2, ExternalLink, Plus, Download, History, Check, FolderOpen, Copy,
+} from 'lucide-react'
+import { format, parseISO } from 'date-fns'
 import { ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { fileKind, FileKindIcon, formatFileSize } from './ResourceThumbnail'
@@ -10,7 +13,11 @@ interface Props {
 }
 
 export function ResourceItemPanel({ item, onClose }: Props) {
-  const { updateItem, replaceItemFile, removeItemFile, deleteItem, setItemLinks, getFileUrl } = useProjectStore()
+  const {
+    updateItem, removeItemFile, deleteItem, setItemLinks, getFileUrl,
+    addItemVersion, makeVersionCurrent, deleteItemVersion,
+    setItemClusters, duplicateItem, clusters,
+  } = useProjectStore()
 
   const [title, setTitle] = useState(item.title)
   const [description, setDescription] = useState(item.description)
@@ -38,6 +45,11 @@ export function ResourceItemPanel({ item, onClose }: Props) {
 
   const fileUrl = signed && signed.path === item.storagePath ? signed.url : null
 
+  const projectClusters = useMemo(
+    () => clusters.filter((c) => c.projectId === item.projectId),
+    [clusters, item.projectId]
+  )
+
   const kind = useMemo(() => fileKind(item.mimeType), [item.mimeType])
 
   const dirty =
@@ -56,11 +68,12 @@ export function ResourceItemPanel({ item, onClose }: Props) {
   }
 
   // Replacing the file keeps title, description and links untouched.
-  const handleReplaceFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  /** Uploading archives the current file as a version rather than losing it. */
+  const handleNewVersion = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setBusy(true)
-    await replaceItemFile(item.id, file)
+    await addItemVersion(item.id, file)
     setBusy(false)
     e.target.value = ''
   }
@@ -137,9 +150,9 @@ export function ResourceItemPanel({ item, onClose }: Props) {
             <label className="flex-1 cursor-pointer">
               <span className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-medium text-text-muted hover:bg-surface-2 transition-colors">
                 <Upload size={14} />
-                {item.storagePath ? 'Replace file' : 'Attach file'}
+                {item.storagePath ? 'Upload new version' : 'Attach file'}
               </span>
-              <input type="file" className="hidden" onChange={handleReplaceFile} disabled={busy} />
+              <input type="file" className="hidden" onChange={handleNewVersion} disabled={busy} />
             </label>
             {item.storagePath && (
               <button
@@ -153,9 +166,94 @@ export function ResourceItemPanel({ item, onClose }: Props) {
           </div>
           {item.storagePath && (
             <p className="text-[11px] text-text-subtle mt-1.5">
-              Replacing the file keeps the title, description and links below.
+              The current file is archived below, and the title, description and links are kept.
             </p>
           )}
+        </section>
+
+        {/* Version history */}
+        {item.versions.length > 0 && (
+          <section>
+            <label className="flex items-center gap-1.5 text-xs font-medium text-text-muted mb-2">
+              <History size={13} /> Previous versions ({item.versions.length})
+            </label>
+            <div className="space-y-1.5">
+              {item.versions.map((v) => (
+                <div
+                  key={v.id}
+                  className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-border bg-surface-2"
+                >
+                  <span className="text-text-muted flex-shrink-0">
+                    <FileKindIcon mime={v.mimeType} fileName={v.fileName} size={14} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] text-text-main truncate">{v.fileName}</p>
+                    <p className="text-[10px] text-text-subtle">
+                      {format(parseISO(v.createdAt), 'd MMM yyyy, HH:mm')} · {formatFileSize(v.size)}
+                    </p>
+                  </div>
+                  <VersionActions
+                    onOpen={async () => {
+                      const url = await getFileUrl(v.storagePath)
+                      if (url) window.open(url, '_blank', 'noopener,noreferrer')
+                    }}
+                    onRestore={() => makeVersionCurrent(item.id, v.id)}
+                    onDelete={() => {
+                      if (confirm(`Delete version "${v.fileName}"? This cannot be undone.`)) {
+                        deleteItemVersion(item.id, v.id)
+                      }
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Cluster tags */}
+        <section>
+          <label className="flex items-center gap-1.5 text-xs font-medium text-text-muted mb-2">
+            <FolderOpen size={13} /> Appears in
+          </label>
+          <p className="text-[11px] text-text-subtle mb-2">
+            One document, shown in every cluster you tick. It isn't copied.
+          </p>
+          <div className="space-y-1 max-h-44 overflow-y-auto">
+            {projectClusters.length === 0 && (
+              <p className="text-xs text-text-subtle italic">No clusters in this project yet.</p>
+            )}
+            {projectClusters.map((c) => {
+              const checked = item.clusterIds.includes(c.id)
+              return (
+                <label
+                  key={c.id}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-2 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() =>
+                      setItemClusters(
+                        item.id,
+                        checked
+                          ? item.clusterIds.filter((id) => id !== c.id)
+                          : [...item.clusterIds, c.id]
+                      )
+                    }
+                    className="accent-primary"
+                  />
+                  <span
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: c.color }}
+                  />
+                  <span className="text-xs text-text-main truncate flex-1">{c.title}</span>
+                  {c.id === item.clusterId && (
+                    <span className="text-[10px] text-text-subtle">home</span>
+                  )}
+                </label>
+              )
+            })}
+          </div>
         </section>
 
         {/* Metadata */}
@@ -258,6 +356,13 @@ export function ResourceItemPanel({ item, onClose }: Props) {
           {busy ? 'Saving…' : saved ? 'Saved' : 'Save changes'}
         </button>
         <button
+          onClick={() => duplicateItem(item.id)}
+          className="px-3 py-2 rounded-lg border border-border text-text-muted hover:text-primary hover:border-primary transition-colors"
+          title="Duplicate — a real copy, separate from this one"
+        >
+          <Copy size={15} />
+        </button>
+        <button
           onClick={handleDelete}
           className="px-3 py-2 rounded-lg border border-border text-text-muted hover:text-danger hover:border-danger transition-colors"
           title="Delete item"
@@ -266,5 +371,34 @@ export function ResourceItemPanel({ item, onClose }: Props) {
         </button>
       </footer>
     </aside>
+  )
+}
+
+/** Open / restore / delete for one archived version. */
+function VersionActions({
+  onOpen,
+  onRestore,
+  onDelete,
+}: {
+  onOpen: () => void
+  onRestore: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="flex items-center gap-0.5 flex-shrink-0">
+      <button onClick={onOpen} className="text-text-subtle hover:text-primary p-1 rounded" title="Open this version">
+        <ExternalLink size={12} />
+      </button>
+      <button
+        onClick={onRestore}
+        className="text-text-subtle hover:text-success p-1 rounded"
+        title="Make this the current version"
+      >
+        <Check size={13} />
+      </button>
+      <button onClick={onDelete} className="text-text-subtle hover:text-danger p-1 rounded" title="Delete this version">
+        <Trash2 size={12} />
+      </button>
+    </div>
   )
 }

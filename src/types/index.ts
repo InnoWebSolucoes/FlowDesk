@@ -46,6 +46,18 @@ export interface ResourceCluster {
   createdAt: string
 }
 
+/** One archived iteration of a document's file. */
+export interface ResourceItemVersion {
+  id: string
+  itemId: string
+  storagePath: string
+  fileName: string
+  mimeType: string | null
+  size: number | null
+  label: string
+  createdAt: string
+}
+
 export interface ResourceItemLink {
   id: string
   itemId: string
@@ -74,6 +86,14 @@ export interface ResourceItem {
   createdAt: string
   updatedAt: string
   links: ResourceItemLink[]
+  /** Past iterations of the file, newest first. The current file is separate. */
+  versions: ResourceItemVersion[]
+  /**
+   * Every cluster this document appears in. `clusterId` is its home on the
+   * canvas; these are the additional clusters it's tagged into. One document,
+   * many places — never a copy.
+   */
+  clusterIds: string[]
 }
 
 export interface ProjectTodoLink {

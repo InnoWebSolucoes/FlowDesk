@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import {
-  Project, ResourceCluster, ResourceItem, ResourceItemLink,
+  Project, ResourceCluster, ResourceItem, ResourceItemLink, ResourceItemVersion,
   ProjectTodo, ProjectTodoLink, ProjectTodoList,
 } from '../types'
 
@@ -40,6 +40,15 @@ interface ProjectState {
 
   setItemLinks: (itemId: string, links: { id?: string; label: string; url: string }[]) => Promise<void>
   getFileUrl: (storagePath: string) => Promise<string | null>
+
+  // Versions: a stack of file iterations under one document.
+  addItemVersion: (itemId: string, file: File, label?: string) => Promise<void>
+  makeVersionCurrent: (itemId: string, versionId: string) => Promise<void>
+  deleteItemVersion: (itemId: string, versionId: string) => Promise<void>
+
+  // Tags: the clusters a document appears in, beyond its home.
+  setItemClusters: (itemId: string, clusterIds: string[]) => Promise<void>
+  duplicateItem: (itemId: string) => Promise<ResourceItem | null>
 
   // Todo lists
   todoLists: ProjectTodoList[]
@@ -116,6 +125,19 @@ function toItemLink(row: any): ResourceItemLink {
   }
 }
 
+function toItemVersion(row: any): ResourceItemVersion {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    storagePath: row.storage_path,
+    fileName: row.file_name,
+    mimeType: row.mime_type,
+    size: row.size,
+    label: row.label ?? '',
+    createdAt: row.created_at,
+  }
+}
+
 function toItem(row: any): ResourceItem {
   return {
     id: row.id,
@@ -132,6 +154,10 @@ function toItem(row: any): ResourceItem {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     links: (row.resource_item_links ?? []).map(toItemLink).sort((a: ResourceItemLink, b: ResourceItemLink) => a.sortOrder - b.sortOrder),
+    versions: (row.resource_item_versions ?? [])
+      .map(toItemVersion)
+      .sort((a: ResourceItemVersion, b: ResourceItemVersion) => b.createdAt.localeCompare(a.createdAt)),
+    clusterIds: (row.resource_item_clusters ?? []).map((c: any) => c.cluster_id),
   }
 }
 
@@ -244,7 +270,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   loadResources: async (projectId) => {
     const [clustersRes, itemsRes] = await Promise.all([
       supabase.from('resource_clusters').select('*').eq('project_id', projectId),
-      supabase.from('resource_items').select('*, resource_item_links(*)').eq('project_id', projectId),
+      supabase.from('resource_items').select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)').eq('project_id', projectId),
     ])
 
     set({
@@ -328,7 +354,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         x: input.x ?? 0,
         y: input.y ?? 0,
       })
-      .select('*, resource_item_links(*)')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
       .single()
 
     if (error || !data) return null
@@ -353,6 +379,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           size: file.size,
         }
       }
+    }
+
+    // The home cluster is also the item's first tag, so the tag table alone
+    // describes everywhere a document appears.
+    if (clusterId) {
+      await supabase.from('resource_item_clusters').insert({ item_id: item.id, cluster_id: clusterId })
+      item = { ...item, clusterIds: [clusterId] }
     }
 
     set((s) => ({ items: [...s.items, item] }))
@@ -429,10 +462,34 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   moveItem: async (id, clusterId, x, y) => {
+    const prev = get().items.find((i) => i.id === id)
+    const oldHome = prev?.clusterId ?? null
+
+    // Moving swaps the home tag for the new one, leaving any other tags alone:
+    // a document tagged into several clusters keeps appearing in all of them.
+    const nextTags = (() => {
+      const tags = new Set(prev?.clusterIds ?? [])
+      if (oldHome) tags.delete(oldHome)
+      if (clusterId) tags.add(clusterId)
+      return [...tags]
+    })()
+
     // Optimistic: apply locally first so the node stays where it was dropped
     // instead of flashing back to its old position during the round-trip.
-    set((s) => ({ items: s.items.map((i) => (i.id === id ? { ...i, clusterId, x, y } : i)) }))
+    set((s) => ({
+      items: s.items.map((i) => (i.id === id ? { ...i, clusterId, x, y, clusterIds: nextTags } : i)),
+    }))
+
     await supabase.from('resource_items').update({ cluster_id: clusterId, x, y }).eq('id', id)
+
+    if (oldHome && oldHome !== clusterId) {
+      await supabase.from('resource_item_clusters').delete().eq('item_id', id).eq('cluster_id', oldHome)
+    }
+    if (clusterId && clusterId !== oldHome) {
+      await supabase
+        .from('resource_item_clusters')
+        .upsert({ item_id: id, cluster_id: clusterId }, { onConflict: 'item_id,cluster_id' })
+    }
   },
 
   setItemLinks: async (itemId, links) => {
@@ -455,6 +512,179 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 60 * 60)
     if (error || !data) return null
     return data.signedUrl
+  },
+
+  // ─── Versions ─────────────────────────────────────────────────────────────
+
+  /**
+   * Push a new file onto the document. The file that was current is archived as
+   * a version first, so nothing is ever lost by uploading a newer copy.
+   */
+  addItemVersion: async (itemId, file, label = '') => {
+    const item = get().items.find((i) => i.id === itemId)
+    if (!item) return
+
+    // Unique path per version, so archived files don't overwrite each other.
+    const path = `resources/${item.projectId}/${itemId}-v${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_')}`
+    const { error } = await supabase.storage.from(BUCKET).upload(path, file)
+    if (error) return
+
+    // Archive whatever is current before replacing it.
+    if (item.storagePath) {
+      await supabase.from('resource_item_versions').insert({
+        item_id: itemId,
+        storage_path: item.storagePath,
+        file_name: item.fileName ?? 'file',
+        mime_type: item.mimeType,
+        size: item.size,
+      })
+    }
+
+    const patch = {
+      storage_path: path,
+      file_name: file.name,
+      mime_type: file.type || 'application/octet-stream',
+      size: file.size,
+      updated_at: new Date().toISOString(),
+    }
+    await supabase.from('resource_items').update(patch).eq('id', itemId)
+
+    // Re-read so the version list reflects the archive insert above.
+    const { data } = await supabase
+      .from('resource_items')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+      .eq('id', itemId)
+      .single()
+
+    if (data) {
+      const fresh = toItem(data)
+      set((s) => ({ items: s.items.map((i) => (i.id === itemId ? fresh : i)) }))
+    }
+  },
+
+  /** Swap an archived version with the current file — the current one is kept. */
+  makeVersionCurrent: async (itemId, versionId) => {
+    const item = get().items.find((i) => i.id === itemId)
+    const version = item?.versions.find((v) => v.id === versionId)
+    if (!item || !version) return
+
+    // The outgoing current file takes the promoted version's row, so the
+    // history keeps exactly one entry per file rather than growing on promote.
+    if (item.storagePath) {
+      await supabase
+        .from('resource_item_versions')
+        .update({
+          storage_path: item.storagePath,
+          file_name: item.fileName ?? 'file',
+          mime_type: item.mimeType,
+          size: item.size,
+        })
+        .eq('id', versionId)
+    } else {
+      await supabase.from('resource_item_versions').delete().eq('id', versionId)
+    }
+
+    await supabase
+      .from('resource_items')
+      .update({
+        storage_path: version.storagePath,
+        file_name: version.fileName,
+        mime_type: version.mimeType,
+        size: version.size,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', itemId)
+
+    const { data } = await supabase
+      .from('resource_items')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+      .eq('id', itemId)
+      .single()
+
+    if (data) {
+      const fresh = toItem(data)
+      set((s) => ({ items: s.items.map((i) => (i.id === itemId ? fresh : i)) }))
+    }
+  },
+
+  deleteItemVersion: async (itemId, versionId) => {
+    const item = get().items.find((i) => i.id === itemId)
+    const version = item?.versions.find((v) => v.id === versionId)
+    if (!version) return
+
+    await supabase.storage.from(BUCKET).remove([version.storagePath])
+    await supabase.from('resource_item_versions').delete().eq('id', versionId)
+
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === itemId ? { ...i, versions: i.versions.filter((v) => v.id !== versionId) } : i
+      ),
+    }))
+  },
+
+  // ─── Cluster tags ─────────────────────────────────────────────────────────
+
+  /** Set the full list of clusters this document appears in. */
+  setItemClusters: async (itemId, clusterIds) => {
+    await supabase.from('resource_item_clusters').delete().eq('item_id', itemId)
+    if (clusterIds.length > 0) {
+      await supabase
+        .from('resource_item_clusters')
+        .insert(clusterIds.map((cluster_id) => ({ item_id: itemId, cluster_id })))
+    }
+    set((s) => ({ items: s.items.map((i) => (i.id === itemId ? { ...i, clusterIds } : i)) }))
+  },
+
+  /** A genuine copy: separate row, separate file, same metadata and links. */
+  duplicateItem: async (itemId) => {
+    const item = get().items.find((i) => i.id === itemId)
+    if (!item) return null
+
+    const { data, error } = await supabase
+      .from('resource_items')
+      .insert({
+        project_id: item.projectId,
+        cluster_id: item.clusterId,
+        title: `${item.title} (copy)`,
+        description: item.description,
+        x: item.x + 40,
+        y: item.y + 40,
+      })
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+      .single()
+
+    if (error || !data) return null
+    let copy = toItem(data)
+
+    // Copy the file itself so the two documents are genuinely independent.
+    if (item.storagePath) {
+      const path = `resources/${item.projectId}/${copy.id}-${(item.fileName ?? 'file').replace(/[^\w.-]+/g, '_')}`
+      const { error: copyErr } = await supabase.storage.from(BUCKET).copy(item.storagePath, path)
+      if (!copyErr) {
+        await supabase
+          .from('resource_items')
+          .update({ storage_path: path, file_name: item.fileName, mime_type: item.mimeType, size: item.size })
+          .eq('id', copy.id)
+        copy = { ...copy, storagePath: path, fileName: item.fileName, mimeType: item.mimeType, size: item.size }
+      }
+    }
+
+    if (item.links.length > 0) {
+      await supabase.from('resource_item_links').insert(
+        item.links.map((l, idx) => ({ item_id: copy.id, label: l.label, url: l.url, sort_order: idx }))
+      )
+      copy = { ...copy, links: item.links.map((l) => ({ ...l, itemId: copy.id })) }
+    }
+
+    if (item.clusterIds.length > 0) {
+      await supabase
+        .from('resource_item_clusters')
+        .insert(item.clusterIds.map((cluster_id) => ({ item_id: copy.id, cluster_id })))
+      copy = { ...copy, clusterIds: [...item.clusterIds] }
+    }
+
+    set((s) => ({ items: [...s.items, copy] }))
+    return copy
   },
 
   // ─── Todos ────────────────────────────────────────────────────────────────

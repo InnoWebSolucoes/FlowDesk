@@ -46,6 +46,9 @@ const CLUSTER_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '
 
 interface Props {
   projectId: string
+  /** Current cluster, owned by the page so the folder view shares it. */
+  clusterId: string | null
+  onNavigate: (clusterId: string | null) => void
 }
 
 /** Lay new nodes out on a spiral so they never spawn on top of each other. */
@@ -55,11 +58,11 @@ function spawnPosition(index: number) {
   return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }
 }
 
-export function ResourceCanvas({ projectId }: Props) {
+export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   const {
     clusters, items, resourcesLoadedFor, loadResources,
     createCluster, updateCluster, deleteCluster,
-    createItem, moveItem, getFileUrl,
+    createItem, moveItem, getFileUrl, deleteItem, duplicateItem, setItemClusters,
   } = useProjectStore()
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -68,8 +71,9 @@ export function ResourceCanvas({ projectId }: Props) {
     resetView, zoomBy, setViewport,
   } = useCanvasViewport(containerRef)
 
-  // The cluster we are currently zoomed into (null = project root).
-  const [currentClusterId, setCurrentClusterId] = useState<string | null>(null)
+  // The cluster we're zoomed into (null = project root), owned by the page.
+  const currentClusterId = clusterId
+  const setCurrentClusterId = onNavigate
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [renamingClusterId, setRenamingClusterId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -82,6 +86,8 @@ export function ResourceCanvas({ projectId }: Props) {
   // Cluster the dragged item would drop into, for the highlight.
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  // Right-click menu on an item card, positioned in screen coordinates.
+  const [menu, setMenu] = useState<{ itemId: string; x: number; y: number } | null>(null)
 
   // Suppresses the zoom watcher while a level change settles, so the landing
   // scale can't immediately re-trigger it.
@@ -126,8 +132,15 @@ export function ResourceCanvas({ projectId }: Props) {
     () => clusters.filter((c) => c.parentClusterId === currentClusterId),
     [clusters, currentClusterId]
   )
+  // A document appears in every cluster it's tagged into, not just its home.
+  // At the top level, items with no tags at all are shown.
   const visibleItems = useMemo(
-    () => items.filter((i) => i.clusterId === currentClusterId),
+    () =>
+      items.filter((i) =>
+        currentClusterId
+          ? i.clusterIds.includes(currentClusterId)
+          : i.clusterIds.length === 0
+      ),
     [items, currentClusterId]
   )
 
@@ -832,7 +845,7 @@ export function ResourceCanvas({ projectId }: Props) {
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="flex flex-wrap gap-1.5 justify-center max-w-[70%]">
                     {items
-                      .filter((i) => i.clusterId === cluster.id)
+                      .filter((i) => i.clusterIds.includes(cluster.id))
                       .slice(0, 6)
                       .map((i) => (
                         <div
@@ -938,7 +951,12 @@ export function ResourceCanvas({ projectId }: Props) {
                 if (!dragId) setSelectedItemId(item.id)
               }}
               onDoubleClick={(e) => { e.stopPropagation(); openItem(item) }}
-              title={`${item.title}\nClick for details · double-click to open the file`}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setMenu({ itemId: item.id, x: e.clientX, y: e.clientY })
+              }}
+              title={`${item.title}\nClick for details · double-click to open · right-click for more`}
               className={`group absolute rounded-xl border bg-surface overflow-hidden cursor-pointer select-none hover:shadow-lg active:cursor-grabbing ${
                 // No transition on the dragged node, or it lags the pointer.
                 dragId === item.id ? '' : 'transition-all'
@@ -1000,6 +1018,56 @@ export function ResourceCanvas({ projectId }: Props) {
           </div>
         )}
       </div>
+
+      {/* Right-click menu. Fixed-positioned, so it escapes the canvas transform. */}
+      {menu && (() => {
+        const target = items.find((i) => i.id === menu.itemId)
+        if (!target) return null
+        const act = (fn: () => void) => () => { fn(); setMenu(null) }
+        return (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }} />
+            <div
+              className="fixed z-50 w-44 py-1 bg-surface border border-border rounded-lg shadow-xl"
+              style={{ left: menu.x, top: menu.y }}
+            >
+              {[
+                ['Open', () => openItem(target)],
+                ['Details', () => setSelectedItemId(target.id)],
+                ['Duplicate', () => duplicateItem(target.id)],
+              ].map(([label, fn]) => (
+                <button
+                  key={label as string}
+                  onClick={act(fn as () => void)}
+                  className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                >
+                  {label as string}
+                </button>
+              ))}
+              {currentClusterId && (
+                <button
+                  onClick={act(() =>
+                    setItemClusters(target.id, target.clusterIds.filter((id) => id !== currentClusterId))
+                  )}
+                  className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                  title="Untag from this cluster; the document stays in its others"
+                >
+                  Remove from this cluster
+                </button>
+              )}
+              <div className="h-px bg-border my-1" />
+              <button
+                onClick={act(() => {
+                  if (confirm(`Delete "${target.title}" everywhere? This cannot be undone.`)) deleteItem(target.id)
+                })}
+                className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
+              >
+                Delete permanently
+              </button>
+            </div>
+          </>
+        )
+      })()}
 
       {/* Keyed on id so the edit form re-seeds when a different item is selected. */}
       {selectedItem && (
