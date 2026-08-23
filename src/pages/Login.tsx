@@ -8,15 +8,18 @@ import { useLanguageStore } from '../store/languageStore'
 export function Login() {
   const navigate = useNavigate()
   const login = useAuthStore(s => s.login)
+  const requestPasswordReset = useAuthStore(s => s.requestPasswordReset)
   const { toggle, lang } = useLanguageStore()
   const { t } = useT()
 
+  const [mode, setMode] = useState<'login' | 'forgot'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,6 +40,34 @@ export function Login() {
     }
   }
 
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (!email) {
+      setError(t('login_errorEmpty'))
+      return
+    }
+    setLoading(true)
+    await requestPasswordReset(email.toLowerCase().trim())
+    setLoading(false)
+    // Always show the same confirmation, regardless of whether the email exists,
+    // so the form can't be used to enumerate registered accounts.
+    setResetSent(true)
+  }
+
+  const switchToForgot = () => {
+    setMode('forgot')
+    setError('')
+    setResetSent(false)
+  }
+
+  const switchToLogin = () => {
+    setMode('login')
+    setError('')
+    setResetSent(false)
+    setPassword('')
+  }
+
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
@@ -51,80 +82,161 @@ export function Login() {
 
         {/* Card */}
         <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
-          <h2 className="text-text-main font-semibold text-base mb-5">{t('login_heading')}</h2>
+          {mode === 'login' ? (
+            <>
+              <h2 className="text-text-main font-semibold text-base mb-5">{t('login_heading')}</h2>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-text-main text-sm font-medium mb-1.5">{t('login_email')}</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder={t('login_emailPlaceholder')}
-                className="w-full border border-border rounded-lg px-3 py-2.5 text-sm text-text-main bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
-                autoComplete="email"
-              />
-            </div>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-text-main text-sm font-medium mb-1.5">{t('login_email')}</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder={t('login_emailPlaceholder')}
+                    className="w-full border border-border rounded-lg px-3 py-2.5 text-sm text-text-main bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+                    autoComplete="email"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-text-main text-sm font-medium mb-1.5">{t('login_password')}</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full border border-border rounded-lg px-3 py-2.5 pr-10 text-sm text-text-main bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
-                  autoComplete="current-password"
-                />
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-text-main text-sm font-medium">{t('login_password')}</label>
+                    <button
+                      type="button"
+                      onClick={switchToForgot}
+                      className="text-xs text-primary hover:text-primary-dark transition-colors"
+                    >
+                      {t('login_forgotPassword')}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full border border-border rounded-lg px-3 py-2.5 pr-10 text-sm text-text-main bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-text-subtle hover:text-text-muted transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    id="remember"
+                    type="checkbox"
+                    checked={remember}
+                    onChange={e => setRemember(e.target.checked)}
+                    className="w-4 h-4 accent-primary rounded"
+                  />
+                  <label htmlFor="remember" className="text-text-muted text-sm cursor-pointer">
+                    {t('login_remember')}
+                  </label>
+                </div>
+
+                {error && (
+                  <div className="flex items-center gap-2 bg-danger-bg border border-danger/20 rounded-lg px-3 py-2.5 text-danger text-sm">
+                    <AlertCircle size={14} className="flex-shrink-0" />
+                    {error}
+                  </div>
+                )}
+
                 <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-subtle hover:text-text-muted transition-colors"
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-primary hover:bg-primary-dark text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      {t('login_submitting')}
+                    </span>
+                  ) : (
+                    t('login_submit')
+                  )}
                 </button>
-              </div>
-            </div>
+              </form>
+            </>
+          ) : (
+            <>
+              <h2 className="text-text-main font-semibold text-base mb-1.5">{t('login_forgotHeading')}</h2>
 
-            <div className="flex items-center gap-2">
-              <input
-                id="remember"
-                type="checkbox"
-                checked={remember}
-                onChange={e => setRemember(e.target.checked)}
-                className="w-4 h-4 accent-primary rounded"
-              />
-              <label htmlFor="remember" className="text-text-muted text-sm cursor-pointer">
-                {t('login_remember')}
-              </label>
-            </div>
-
-            {error && (
-              <div className="flex items-center gap-2 bg-danger-bg border border-danger/20 rounded-lg px-3 py-2.5 text-danger text-sm">
-                <AlertCircle size={14} className="flex-shrink-0" />
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-primary hover:bg-primary-dark text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  {t('login_submitting')}
-                </span>
+              {resetSent ? (
+                <>
+                  <p className="text-text-muted text-sm mb-5">{t('login_resetSent')}</p>
+                  <button
+                    type="button"
+                    onClick={switchToLogin}
+                    className="w-full bg-primary hover:bg-primary-dark text-white font-medium py-2.5 rounded-lg text-sm transition-colors"
+                  >
+                    {t('login_backToSignIn')}
+                  </button>
+                </>
               ) : (
-                t('login_submit')
+                <>
+                  <p className="text-text-muted text-sm mb-5">{t('login_forgotSubtitle')}</p>
+                  <form onSubmit={handleForgotSubmit} className="space-y-4">
+                    <div>
+                      <label className="block text-text-main text-sm font-medium mb-1.5">{t('login_email')}</label>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        placeholder={t('login_emailPlaceholder')}
+                        className="w-full border border-border rounded-lg px-3 py-2.5 text-sm text-text-main bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+                        autoComplete="email"
+                        autoFocus
+                      />
+                    </div>
+
+                    {error && (
+                      <div className="flex items-center gap-2 bg-danger-bg border border-danger/20 rounded-lg px-3 py-2.5 text-danger text-sm">
+                        <AlertCircle size={14} className="flex-shrink-0" />
+                        {error}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full bg-primary hover:bg-primary-dark text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {loading ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          {t('login_submitting')}
+                        </span>
+                      ) : (
+                        t('login_sendResetLink')
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={switchToLogin}
+                      className="w-full text-text-muted hover:text-text-main text-sm transition-colors"
+                    >
+                      {t('login_backToSignIn')}
+                    </button>
+                  </form>
+                </>
               )}
-            </button>
-          </form>
+            </>
+          )}
         </div>
 
         {/* Language toggle */}

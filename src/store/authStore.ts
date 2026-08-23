@@ -10,6 +10,8 @@ interface AuthState {
   initialize: () => Promise<void>
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
+  requestPasswordReset: (email: string) => Promise<{ success: boolean; error?: string }>
+  updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>
 }
 
 async function fetchProfile(userId: string): Promise<User | null> {
@@ -70,5 +72,19 @@ export const useAuthStore = create<AuthState>()((set) => ({
   logout: async () => {
     await supabase.auth.signOut()
     set({ currentUser: null, status: 'unauthenticated' })
+  },
+
+  requestPasswordReset: async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    if (error) return { success: false, error: error.message }
+    return { success: true }
+  },
+
+  updatePassword: async (newPassword) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (error) return { success: false, error: error.message }
+    return { success: true }
   },
 }))
