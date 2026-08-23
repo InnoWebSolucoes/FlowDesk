@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronRight, Home, Plus, FolderPlus, ZoomIn, ZoomOut, Maximize2, Link2, Pencil, Check, X,
-  ExternalLink, CornerLeftUp,
+  ExternalLink, CornerLeftUp, Search, FolderOpen,
 } from 'lucide-react'
 import { ResourceCluster, ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
@@ -12,6 +12,26 @@ import { ResourceThumbnail } from './ResourceThumbnail'
 const ITEM_W = 132
 const THUMB_H = 92
 const ITEM_H = THUMB_H + 38
+
+/** How far outside a bubble a dragged card still counts as a drop on it. */
+const DROP_SLOP = ITEM_W / 2
+
+/**
+ * The cluster a card at (x, y) would drop into: the nearest bubble at this
+ * level whose edge the card reaches. Shared by the drag preview and the drop.
+ */
+function dropTargetAt(
+  clusters: ResourceCluster[],
+  parentId: string | null,
+  x: number,
+  y: number
+): ResourceCluster | undefined {
+  return clusters
+    .filter((c) => c.parentClusterId === parentId)
+    .map((c) => ({ c, dist: Math.hypot(c.x - x, c.y - y) }))
+    .filter(({ c, dist }) => dist < c.radius + DROP_SLOP)
+    .sort((a, b) => a.dist - b.dist)[0]?.c
+}
 const CLUSTER_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444']
 
 interface Props {
@@ -44,6 +64,13 @@ export function ResourceCanvas({ projectId }: Props) {
   const [renamingClusterId, setRenamingClusterId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [dragId, setDragId] = useState<string | null>(null)
+  // Cluster the dragged item would drop into, for the highlight.
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+
+  // Suppresses the zoom watcher while a level change settles, so the landing
+  // scale can't immediately re-trigger it.
+  const navLock = useRef(false)
 
   const dragState = useRef<{
     id: string
@@ -89,6 +116,76 @@ export function ResourceCanvas({ projectId }: Props) {
 
   const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) ?? null : null
 
+  /**
+   * Search the whole project, not just the level in view: titles, descriptions,
+   * file names and link labels/URLs for items; titles for clusters. Results
+   * carry their path so you can tell duplicates apart and jump straight there.
+   */
+  const searchResults = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return null
+
+    const pathOf = (clusterId: string | null): string => {
+      const parts: string[] = []
+      let id = clusterId
+      while (id) {
+        const c = clusters.find((x) => x.id === id)
+        if (!c) break
+        parts.unshift(c.title)
+        id = c.parentClusterId
+      }
+      return parts.length > 0 ? parts.join(' › ') : 'Top level'
+    }
+
+    const itemHits = items
+      .filter((i) =>
+        i.title.toLowerCase().includes(q) ||
+        i.description.toLowerCase().includes(q) ||
+        (i.fileName ?? '').toLowerCase().includes(q) ||
+        i.links.some((l) => l.label.toLowerCase().includes(q) || l.url.toLowerCase().includes(q))
+      )
+      .map((i) => ({ kind: 'item' as const, id: i.id, label: i.title, item: i, path: pathOf(i.clusterId) }))
+
+    const clusterHits = clusters
+      .filter((c) => c.title.toLowerCase().includes(q))
+      .map((c) => ({ kind: 'cluster' as const, id: c.id, label: c.title, cluster: c, path: pathOf(c.parentClusterId) }))
+
+    return [...clusterHits, ...itemHits]
+  }, [query, items, clusters])
+
+  const matchedIds = useMemo(
+    () => new Set((searchResults ?? []).map((r) => r.id)),
+    [searchResults]
+  )
+
+  /** Jump to a search hit: open the level that holds it and centre it. */
+  const goToResult = useCallback(
+    (result: { kind: 'item' | 'cluster'; id: string }) => {
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!rect) return
+
+      if (result.kind === 'item') {
+        const item = items.find((i) => i.id === result.id)
+        if (!item) return
+        navLock.current = true
+        setCurrentClusterId(item.clusterId)
+        setViewport({ x: rect.width / 2 - item.x, y: rect.height / 2 - item.y, scale: 1 })
+        setSelectedItemId(item.id)
+        setTimeout(() => { navLock.current = false }, 180)
+      } else {
+        const cluster = clusters.find((c) => c.id === result.id)
+        if (!cluster) return
+        navLock.current = true
+        // Show the cluster in its parent so you see the bubble itself.
+        setCurrentClusterId(cluster.parentClusterId)
+        setViewport({ x: rect.width / 2 - cluster.x, y: rect.height / 2 - cluster.y, scale: 1 })
+        setTimeout(() => { navLock.current = false }, 180)
+      }
+      setQuery('')
+    },
+    [items, clusters, setViewport]
+  )
+
   const countsFor = useCallback(
     (clusterId: string) => {
       const childClusters = clusters.filter((c) => c.parentClusterId === clusterId).length
@@ -130,6 +227,12 @@ export function ResourceCanvas({ projectId }: Props) {
           ? { items: s.items.map((i) => (i.id === d.id ? { ...i, x, y } : i)) }
           : { clusters: s.clusters.map((c) => (c.id === d.id ? { ...c, x, y } : c)) }
       )
+
+      // Preview which cluster this would land in.
+      if (d.kind === 'item') {
+        const hit = dropTargetAt(useProjectStore.getState().clusters, currentClusterId, x, y)
+        setDropTargetId(hit?.id ?? null)
+      }
     }
 
     const onUp = (e?: PointerEvent) => {
@@ -138,6 +241,7 @@ export function ResourceCanvas({ projectId }: Props) {
 
       dragState.current = null
       setDragId(null)
+      setDropTargetId(null)
       if (!d) return
 
       // A click that never moved shouldn't write a position back.
@@ -148,12 +252,9 @@ export function ResourceCanvas({ projectId }: Props) {
         const item = store.items.find((i) => i.id === d.id)
         if (!item) return
 
-        // Dropping an item inside a cluster bubble re-parents it into that cluster.
-        const target = store.clusters.find(
-          (c) =>
-            c.parentClusterId === currentClusterId &&
-            Math.hypot(c.x - item.x, c.y - item.y) < c.radius
-        )
+        // Dropping an item on a cluster bubble re-parents it. The card only has
+        // to touch the bubble, not sit centred in it.
+        const target = dropTargetAt(store.clusters, currentClusterId, item.x, item.y)
 
         if (target) {
           // Place it near the centre of its new home rather than at the drop point.
@@ -195,8 +296,6 @@ export function ResourceCanvas({ projectId }: Props) {
    * viewport at the cluster's world position at the scale we're already at.
    * `navLock` suppresses the zoom watcher while the new scale settles.
    */
-  const navLock = useRef(false)
-
   const enterCluster = useCallback(
     (cluster: ResourceCluster) => {
       if (navLock.current) return
@@ -410,6 +509,61 @@ export function ResourceCanvas({ projectId }: Props) {
         </nav>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Search across the whole project */}
+          <div className="relative">
+            <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-subtle pointer-events-none" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setQuery('')
+                if (e.key === 'Enter' && searchResults?.[0]) goToResult(searchResults[0])
+              }}
+              placeholder="Search resources…"
+              className="w-40 sm:w-52 pl-7 pr-6 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-text-main focus:outline-none focus:border-primary"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-subtle hover:text-text-main"
+                title="Clear"
+              >
+                <X size={12} />
+              </button>
+            )}
+
+            {/* Results dropdown */}
+            {searchResults && (
+              <div className="absolute top-full right-0 mt-1 w-80 max-h-72 overflow-y-auto bg-surface border border-border rounded-lg shadow-xl z-40">
+                {searchResults.length === 0 ? (
+                  <p className="text-text-subtle text-xs text-center py-6">No matches.</p>
+                ) : (
+                  searchResults.map((r) => (
+                    <button
+                      key={`${r.kind}-${r.id}`}
+                      onClick={() => goToResult(r)}
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-2 text-left transition-colors"
+                    >
+                      <span className="flex-shrink-0 text-text-muted">
+                        {r.kind === 'cluster'
+                          ? <FolderOpen size={14} style={{ color: r.cluster.color }} />
+                          : <ResourceThumbnail item={r.item} width={20} height={20} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-xs text-text-main truncate">{r.label}</span>
+                        <span className="block text-[10px] text-text-subtle truncate">
+                          {r.kind === 'cluster' ? 'Cluster · ' : ''}{r.path}
+                        </span>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
           <button onClick={() => zoomBy(1 / 1.25)} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title="Zoom out">
             <ZoomOut size={15} />
           </button>
@@ -544,12 +698,15 @@ export function ResourceCanvas({ projectId }: Props) {
                 <button
                   onPointerDown={(e) => startDrag(e, cluster.id, 'cluster', cluster.x, cluster.y)}
                   onClick={(e) => { e.stopPropagation(); if (!dragId) enterCluster(cluster) }}
-                  className="rounded-full border-2 border-dashed transition-colors hover:brightness-105 active:cursor-grabbing"
+                  className={`rounded-full border-2 transition-all hover:brightness-105 active:cursor-grabbing ${
+                    dropTargetId === cluster.id ? 'border-solid scale-105' : 'border-dashed'
+                  }`}
                   style={{
                     width: cluster.radius * 2,
                     height: cluster.radius * 2,
-                    borderColor: `${cluster.color}66`,
-                    backgroundColor: `${cluster.color}14`,
+                    // Solid ring and a stronger fill while a drop would land here.
+                    borderColor: dropTargetId === cluster.id ? cluster.color : `${cluster.color}66`,
+                    backgroundColor: dropTargetId === cluster.id ? `${cluster.color}33` : `${cluster.color}14`,
                   }}
                   title={`Open "${cluster.title}"`}
                 >
@@ -594,9 +751,12 @@ export function ResourceCanvas({ projectId }: Props) {
               onClick={(e) => { e.stopPropagation(); if (!dragId) setSelectedItemId(item.id) }}
               onDoubleClick={(e) => { e.stopPropagation(); openItem(item) }}
               title={`${item.title}\nDouble-click to open`}
-              className={`group absolute rounded-xl border bg-surface overflow-hidden cursor-pointer select-none transition-shadow hover:shadow-lg active:cursor-grabbing ${
+              className={`group absolute rounded-xl border bg-surface overflow-hidden cursor-pointer select-none transition-all hover:shadow-lg active:cursor-grabbing ${
                 selectedItemId === item.id ? 'border-primary ring-2 ring-primary/25' : 'border-border'
-              }`}
+              } ${
+                // While searching, fade everything that doesn't match.
+                searchResults && !matchedIds.has(item.id) ? 'opacity-25' : ''
+              } ${searchResults && matchedIds.has(item.id) ? 'ring-2 ring-primary' : ''}`}
               style={{ left: item.x - ITEM_W / 2, top: item.y - ITEM_H / 2, width: ITEM_W }}
             >
               {/* draggable=false stops the browser's native image drag, which

@@ -302,18 +302,33 @@ export function ProjectTodos() {
               }`}
             >
               <button
-                onClick={() => setActiveListId(list.id)}
-                onDoubleClick={() => { setRenamingListId(list.id); setListNameDraft(list.name) }}
+                onClick={() => {
+                  // First click selects the list; clicking the one already open
+                  // starts renaming it.
+                  if (isActive) {
+                    setRenamingListId(list.id)
+                    setListNameDraft(list.name)
+                  } else {
+                    setActiveListId(list.id)
+                  }
+                }}
                 className={`text-sm font-medium whitespace-nowrap transition-colors ${
                   isActive ? 'text-primary' : 'text-text-muted hover:text-text-main'
                 }`}
-                title="Double-click to rename"
+                title={isActive ? 'Click to rename' : list.name}
               >
                 {list.name}
               </button>
               <span className="text-[10px] text-text-subtle bg-surface-2 px-1.5 py-0.5 rounded">
                 {openCountFor(list.id)}
               </span>
+              <button
+                onClick={() => { setRenamingListId(list.id); setListNameDraft(list.name) }}
+                className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-text-main transition-opacity p-0.5"
+                title="Rename list"
+              >
+                <Pencil size={11} />
+              </button>
               {lists.length > 1 && (
                 <button
                   onClick={() => handleDeleteList(list.id, list.name)}

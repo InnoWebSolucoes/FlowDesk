@@ -10,11 +10,11 @@ const MIN_SCALE = 0.15
 const MAX_SCALE = 3
 
 /** Zoom step per notch. Lower = less sensitive. */
-const WHEEL_STEP = 1.42
+const WHEEL_STEP = 1.6
 /** Pinch fires many small events per gesture, so it needs a gentler step. */
-const PINCH_STEP = 1.24
+const PINCH_STEP = 1.34
 /** Button zoom step. */
-const BUTTON_STEP = 1.5
+const BUTTON_STEP = 1.6
 
 /**
  * Zoom thresholds that drive cluster navigation. Both levels land at scale 1
