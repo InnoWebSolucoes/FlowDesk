@@ -249,10 +249,13 @@ export function ResourceCanvas({ projectId }: Props) {
 
     if (viewport.scale >= ZOOM_ENTER_THRESHOLD) {
       const centre = centreWorld()
-      // The cluster under the centre of the viewport, if any.
-      const target = visibleClusters.find(
-        (c) => Math.hypot(c.x - centre.x, c.y - centre.y) < c.radius
-      )
+      // The cluster nearest the centre of the viewport. The generous radius
+      // means you only have to be aiming at a bubble, not dead-centre on it.
+      const target = visibleClusters
+        .map((c) => ({ c, dist: Math.hypot(c.x - centre.x, c.y - centre.y) }))
+        .filter(({ c, dist }) => dist < c.radius * 1.35)
+        .sort((a, b) => a.dist - b.dist)[0]?.c
+
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (target) enterCluster(target)
       return

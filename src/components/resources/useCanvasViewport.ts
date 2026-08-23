@@ -10,19 +10,19 @@ const MIN_SCALE = 0.15
 const MAX_SCALE = 3
 
 /** Zoom step per notch. Lower = less sensitive. */
-const WHEEL_STEP = 1.3
+const WHEEL_STEP = 1.42
 /** Pinch fires many small events per gesture, so it needs a gentler step. */
-const PINCH_STEP = 1.16
+const PINCH_STEP = 1.24
 /** Button zoom step. */
-const BUTTON_STEP = 1.4
+const BUTTON_STEP = 1.5
 
 /**
  * Zoom thresholds that drive cluster navigation. Both levels land at scale 1
  * after a swap, so these sit well either side of it — the gap is the hysteresis
  * that stops a single gesture from cascading through several levels.
  */
-export const ZOOM_ENTER_THRESHOLD = 2.2
-export const ZOOM_EXIT_THRESHOLD = 0.45
+export const ZOOM_ENTER_THRESHOLD = 1.45
+export const ZOOM_EXIT_THRESHOLD = 0.62
 
 /**
  * Pan/zoom viewport for the resources canvas.
