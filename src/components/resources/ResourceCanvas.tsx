@@ -850,6 +850,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
                       .map((i) => (
                         <div
                           key={i.id}
+                          data-resource-item
                           onPointerDown={(e) => {
                             // Start the drag at the bubble's position: the item's
                             // own x/y are relative to the cluster's interior.
@@ -944,6 +945,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
           {visibleItems.map((item) => (
             <div
               key={item.id}
+              data-resource-item
               onPointerDown={(e) => startDrag(e, item.id, 'item', item.x, item.y)}
               onClick={(e) => {
                 e.stopPropagation()

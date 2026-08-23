@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   X, Upload, Trash2, ExternalLink, Plus, Download, History, Check, FolderOpen, Copy,
 } from 'lucide-react'
@@ -24,6 +24,7 @@ export function ResourceItemPanel({ item, onClose }: Props) {
   const [links, setLinks] = useState<{ id?: string; label: string; url: string }[]>(
     item.links.map((l) => ({ id: l.id, label: l.label, url: l.url }))
   )
+  const panelRef = useRef<HTMLElement>(null)
   // Keyed by storage path so a removed or replaced file never shows a stale URL.
   const [signed, setSigned] = useState<{ path: string; url: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -49,6 +50,41 @@ export function ResourceItemPanel({ item, onClose }: Props) {
     () => clusters.filter((c) => c.projectId === item.projectId),
     [clusters, item.projectId]
   )
+
+  /**
+   * Dismiss on a click outside the panel, or on Escape. Bound on pointerdown so
+   * it fires before a canvas node's own click handler re-opens the panel.
+   */
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      const el = panelRef.current
+      const target = e.target as Node
+      if (!el || el.contains(target)) return
+      // A file dialog or confirm() can steal focus mid-edit; only close for
+      // clicks that land in the document itself.
+      if (!document.contains(target)) return
+      // Clicking another document swaps the panel over to it rather than
+      // closing — the parent re-renders it with a new key.
+      if (target instanceof Element && target.closest('[data-resource-item]')) return
+      onClose()
+    }
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+
+    // Deferred a tick so the click that opened the panel doesn't close it.
+    const id = setTimeout(() => {
+      window.addEventListener('pointerdown', onPointerDown)
+      window.addEventListener('keydown', onKey)
+    }, 0)
+
+    return () => {
+      clearTimeout(id)
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
 
   const kind = useMemo(() => fileKind(item.mimeType), [item.mimeType])
 
@@ -85,7 +121,10 @@ export function ResourceItemPanel({ item, onClose }: Props) {
   }
 
   return (
-    <aside className="absolute top-0 right-0 h-full w-full sm:w-[380px] bg-surface border-l border-border shadow-xl flex flex-col z-30">
+    <aside
+      ref={panelRef}
+      className="absolute top-0 right-0 h-full w-full sm:w-[380px] bg-surface border-l border-border shadow-xl flex flex-col z-30"
+    >
       <header className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <FileKindIcon mime={item.mimeType} />
