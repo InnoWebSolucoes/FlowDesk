@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, ListTodo, Sparkles, Users, BarChart3,
-  CheckSquare, Wrench, BookOpen,
+  CheckSquare, Wrench, BookOpen, Building2,
   LogOut, Menu, X
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
@@ -17,6 +17,7 @@ export function Sidebar() {
   const { t } = useT()
 
   const adminNav = [
+    { to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> },
     { to: '/admin/overview', label: t('nav_overview'), icon: <LayoutDashboard size={18} /> },
     { to: '/admin/tasks', label: t('nav_taskManager'), icon: <ListTodo size={18} /> },
     { to: '/admin/ai-organiser', label: t('nav_aiOrganiser'), icon: <Sparkles size={18} /> },

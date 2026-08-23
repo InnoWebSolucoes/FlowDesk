@@ -14,6 +14,99 @@ export interface Employee extends User {
   jobTitle: string
   department: string
   managerId: string | null
+  projectId: string | null
+}
+
+export interface Project {
+  id: string
+  name: string
+  companyName: string
+  description: string
+  industry: string
+  website?: string
+  contactName?: string
+  contactEmail?: string
+  contactPhone?: string
+  address?: string
+  color: string
+  isArchived: boolean
+  createdAt: string
+}
+
+/** A bubble on the resources canvas. Clusters nest arbitrarily deep. */
+export interface ResourceCluster {
+  id: string
+  projectId: string
+  parentClusterId: string | null
+  title: string
+  color: string
+  x: number
+  y: number
+  radius: number
+  createdAt: string
+}
+
+export interface ResourceItemLink {
+  id: string
+  itemId: string
+  label: string
+  url: string
+  sortOrder: number
+}
+
+/**
+ * A node on the resources canvas: an uploaded file, a set of links, or both.
+ * The file (storagePath/fileName/mimeType/size) is separable from the metadata
+ * so it can be replaced without disturbing the title, description or links.
+ */
+export interface ResourceItem {
+  id: string
+  projectId: string
+  clusterId: string | null
+  title: string
+  description: string
+  storagePath: string | null
+  fileName: string | null
+  mimeType: string | null
+  size: number | null
+  x: number
+  y: number
+  createdAt: string
+  updatedAt: string
+  links: ResourceItemLink[]
+}
+
+export interface ProjectTodoLink {
+  id: string
+  todoId: string
+  itemId: string | null
+  clusterId: string | null
+}
+
+/** A named todo list within a project, e.g. "Onboarding". */
+export interface ProjectTodoList {
+  id: string
+  projectId: string
+  name: string
+  color: string
+  sortOrder: number
+  createdAt: string
+}
+
+/** Manager-only todo. Never visible to employees. */
+export interface ProjectTodo {
+  id: string
+  projectId: string
+  listId: string | null
+  title: string
+  notes: string
+  priority: Priority
+  isCompleted: boolean
+  completedAt: string | null
+  dueDate: string | null
+  sortOrder: number
+  createdAt: string
+  links: ProjectTodoLink[]
 }
 
 export type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'one-off'
@@ -36,6 +129,7 @@ export interface Category {
 
 export interface Task {
   id: string
+  projectId: string
   title: string
   description: string
   assignedTo: string[] // employee IDs

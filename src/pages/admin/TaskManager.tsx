@@ -13,7 +13,8 @@ const PRIORITY_OPTIONS: Priority[] = ['low', 'medium', 'high']
 const FREQ_OPTIONS: FrequencyType[] = ['daily', 'weekly', 'monthly', 'one-off']
 
 const defaultFreq = (): TaskFrequency => ({ type: 'daily' })
-const defaultTask = (): Omit<Task, 'id' | 'createdAt' | 'createdBy'> => ({
+// projectId is derived from the assignees at save time, so it isn't part of the form.
+const defaultTask = (): Omit<Task, 'id' | 'createdAt' | 'createdBy' | 'projectId'> => ({
   title: '',
   description: '',
   assignedTo: [],
@@ -311,7 +312,13 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
   const handleSave = async (data: any) => {
     if (editing === 'new') {
       if (!currentUser) return
-      await addTask({ ...data, createdBy: currentUser.id })
+      // An employee belongs to exactly one project, so the assignees fix the task's project.
+      const projectId = employees.find(e => e.id === data.assignedTo[0])?.projectId
+      if (!projectId) {
+        alert(t('task_errorNoProject'))
+        return
+      }
+      await addTask({ ...data, projectId, createdBy: currentUser.id })
     } else if (editing) {
       await updateTask(editing.id, data)
     }
