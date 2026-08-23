@@ -16,6 +16,9 @@ const ITEM_H = THUMB_H + 38
 /** How far outside a bubble a dragged card still counts as a drop on it. */
 const DROP_SLOP = ITEM_W / 2
 
+/** World-space distance before a press counts as a drag rather than a click. */
+const DRAG_THRESHOLD = 3
+
 /**
  * The cluster a card at (x, y) would drop into: the nearest bubble at this
  * level whose edge the card reaches. Shared by the drag preview and the drop.
@@ -64,6 +67,9 @@ export function ResourceCanvas({ projectId }: Props) {
   const [renamingClusterId, setRenamingClusterId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [dragId, setDragId] = useState<string | null>(null)
+  // Live position of the node being dragged. Kept out of the store so a drag
+  // re-renders only this component, not every node on the canvas.
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
   // Cluster the dragged item would drop into, for the highlight.
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -72,6 +78,13 @@ export function ResourceCanvas({ projectId }: Props) {
   // scale can't immediately re-trigger it.
   const navLock = useRef(false)
 
+  /**
+   * Id of the node that was just dragged. The browser fires `click` after
+   * `pointerup`, by which point drag state is already cleared — without this
+   * the click that ends a drag would also open the cluster or select the item.
+   */
+  const draggedRef = useRef<string | null>(null)
+
   const dragState = useRef<{
     id: string
     kind: 'item' | 'cluster'
@@ -79,6 +92,12 @@ export function ResourceCanvas({ projectId }: Props) {
     offsetY: number
     pointerId: number
     moved: boolean
+    /** Where the drag began, to tell a click from a drag. */
+    startX: number
+    startY: number
+    /** Latest position, written every pointermove, read on release. */
+    x: number
+    y: number
   } | null>(null)
 
   useEffect(() => {
@@ -115,6 +134,13 @@ export function ResourceCanvas({ projectId }: Props) {
   }, [currentClusterId, clusters])
 
   const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) ?? null : null
+
+  /**
+   * Position to render a node at. The node being dragged follows the pointer
+   * from local state; everything else reads its stored position.
+   */
+  const posOf = (node: { id: string; x: number; y: number }) =>
+    dragId === node.id && dragPos ? dragPos : node
 
   /**
    * Search the whole project, not just the level in view: titles, descriptions,
@@ -205,68 +231,87 @@ export function ResourceCanvas({ projectId }: Props) {
     e.preventDefault()
 
     const world = screenToWorld(e.clientX, e.clientY)
-    dragState.current = { id, kind, offsetX: world.x - x, offsetY: world.y - y, pointerId: e.pointerId, moved: false }
+    dragState.current = {
+      id, kind,
+      offsetX: world.x - x,
+      offsetY: world.y - y,
+      pointerId: e.pointerId,
+      moved: false,
+      startX: x, startY: y,
+      x, y,
+    }
     setDragId(id)
+    setDragPos({ x, y })
   }
 
   useEffect(() => {
     if (!dragId) return
 
+    let frame = 0
+
     const onMove = (e: PointerEvent) => {
       const d = dragState.current
       if (!d || e.pointerId !== d.pointerId) return
-      d.moved = true
 
       const world = screenToWorld(e.clientX, e.clientY)
       const x = world.x - d.offsetX
       const y = world.y - d.offsetY
 
-      // Optimistic local move; persisted on pointer-up.
-      useProjectStore.setState((s) =>
-        d.kind === 'item'
-          ? { items: s.items.map((i) => (i.id === d.id ? { ...i, x, y } : i)) }
-          : { clusters: s.clusters.map((c) => (c.id === d.id ? { ...c, x, y } : c)) }
-      )
+      // Ignore sub-pixel jitter so a plain click never counts as a drag.
+      if (!d.moved && Math.hypot(x - d.startX, y - d.startY) > DRAG_THRESHOLD) d.moved = true
 
-      // Preview which cluster this would land in.
-      if (d.kind === 'item') {
-        const hit = dropTargetAt(useProjectStore.getState().clusters, currentClusterId, x, y)
-        setDropTargetId(hit?.id ?? null)
-      }
+      d.x = x
+      d.y = y
+
+      // Coalesce to one update per frame: pointermove can fire far faster than
+      // the display refreshes, and each extra render is pure lag.
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        const cur = dragState.current
+        if (!cur) return
+
+        setDragPos({ x: cur.x, y: cur.y })
+        if (cur.kind === 'item') {
+          const hit = dropTargetAt(useProjectStore.getState().clusters, currentClusterId, cur.x, cur.y)
+          setDropTargetId(hit?.id ?? null)
+        }
+      })
     }
 
     const onUp = (e?: PointerEvent) => {
       const d = dragState.current
       if (d && e && e.pointerId !== d.pointerId) return
 
+      if (frame) { cancelAnimationFrame(frame); frame = 0 }
+
       dragState.current = null
       setDragId(null)
+      setDragPos(null)
       setDropTargetId(null)
       if (!d) return
 
-      // A click that never moved shouldn't write a position back.
+      // A click that never moved shouldn't write a position back. Record that
+      // this gesture was a drag so the click handler can ignore it.
       if (!d.moved) return
+      draggedRef.current = d.id
 
       const store = useProjectStore.getState()
       if (d.kind === 'item') {
-        const item = store.items.find((i) => i.id === d.id)
-        if (!item) return
-
         // Dropping an item on a cluster bubble re-parents it. The card only has
         // to touch the bubble, not sit centred in it.
-        const target = dropTargetAt(store.clusters, currentClusterId, item.x, item.y)
+        const target = dropTargetAt(store.clusters, currentClusterId, d.x, d.y)
 
         if (target) {
           // Place it near the centre of its new home rather than at the drop point.
           const siblings = store.items.filter((i) => i.clusterId === target.id).length
           const pos = spawnPosition(siblings)
-          moveItem(item.id, target.id, pos.x, pos.y)
+          moveItem(d.id, target.id, pos.x, pos.y)
         } else {
-          moveItem(item.id, currentClusterId, item.x, item.y)
+          moveItem(d.id, currentClusterId, d.x, d.y)
         }
       } else {
-        const cluster = store.clusters.find((c) => c.id === d.id)
-        if (cluster) updateCluster(cluster.id, { x: cluster.x, y: cluster.y })
+        updateCluster(d.id, { x: d.x, y: d.y })
       }
     }
 
@@ -635,7 +680,10 @@ export function ResourceCanvas({ projectId }: Props) {
               <div
                 key={cluster.id}
                 className="absolute group"
-                style={{ left: cluster.x - cluster.radius, top: cluster.y - cluster.radius }}
+                style={{
+                  left: posOf(cluster).x - cluster.radius,
+                  top: posOf(cluster).y - cluster.radius,
+                }}
               >
                 {/* Title hovering above the bubble */}
                 <div
@@ -697,10 +745,15 @@ export function ResourceCanvas({ projectId }: Props) {
                 {/* The bubble */}
                 <button
                   onPointerDown={(e) => startDrag(e, cluster.id, 'cluster', cluster.x, cluster.y)}
-                  onClick={(e) => { e.stopPropagation(); if (!dragId) enterCluster(cluster) }}
-                  className={`rounded-full border-2 transition-all hover:brightness-105 active:cursor-grabbing ${
-                    dropTargetId === cluster.id ? 'border-solid scale-105' : 'border-dashed'
-                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    // A click that ends a drag must not also open the cluster.
+                    if (draggedRef.current === cluster.id) { draggedRef.current = null; return }
+                    if (!dragId) enterCluster(cluster)
+                  }}
+                  className={`rounded-full border-2 hover:brightness-105 active:cursor-grabbing ${
+                    dragId === cluster.id ? '' : 'transition-all'
+                  } ${dropTargetId === cluster.id ? 'border-solid scale-105' : 'border-dashed'}`}
                   style={{
                     width: cluster.radius * 2,
                     height: cluster.radius * 2,
@@ -748,16 +801,27 @@ export function ResourceCanvas({ projectId }: Props) {
             <div
               key={item.id}
               onPointerDown={(e) => startDrag(e, item.id, 'item', item.x, item.y)}
-              onClick={(e) => { e.stopPropagation(); if (!dragId) setSelectedItemId(item.id) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (draggedRef.current === item.id) { draggedRef.current = null; return }
+                if (!dragId) setSelectedItemId(item.id)
+              }}
               onDoubleClick={(e) => { e.stopPropagation(); openItem(item) }}
               title={`${item.title}\nDouble-click to open`}
-              className={`group absolute rounded-xl border bg-surface overflow-hidden cursor-pointer select-none transition-all hover:shadow-lg active:cursor-grabbing ${
+              className={`group absolute rounded-xl border bg-surface overflow-hidden cursor-pointer select-none hover:shadow-lg active:cursor-grabbing ${
+                // No transition on the dragged node, or it lags the pointer.
+                dragId === item.id ? '' : 'transition-all'
+              } ${
                 selectedItemId === item.id ? 'border-primary ring-2 ring-primary/25' : 'border-border'
               } ${
                 // While searching, fade everything that doesn't match.
                 searchResults && !matchedIds.has(item.id) ? 'opacity-25' : ''
               } ${searchResults && matchedIds.has(item.id) ? 'ring-2 ring-primary' : ''}`}
-              style={{ left: item.x - ITEM_W / 2, top: item.y - ITEM_H / 2, width: ITEM_W }}
+              style={{
+                left: posOf(item).x - ITEM_W / 2,
+                top: posOf(item).y - ITEM_H / 2,
+                width: ITEM_W,
+              }}
             >
               {/* draggable=false stops the browser's native image drag, which
                   would steal the pointer and strand the node mid-drag. */}
