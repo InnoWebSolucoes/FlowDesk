@@ -38,6 +38,7 @@ interface TaskState {
   updateCategory: (id: string, updates: Partial<Category>) => Promise<void>
   deleteCategory: (id: string) => Promise<void>
 
+  getProjectTasks: (projectId: string) => Task[]
   getTasksDueToday: (employeeId: string, date: Date) => Task[]
   getTasksDueThisWeek: (employeeId: string, weekStart: Date) => Record<string, Task[]>
   getTasksDueThisMonth: (employeeId: string, month: number, year: number) => Record<number, Task[]>
@@ -46,6 +47,7 @@ interface TaskState {
 function toTask(row: any): Task {
   return {
     id: row.id,
+    projectId: row.project_id,
     title: row.title,
     description: row.description,
     assignedTo: (row.task_assignments ?? []).map((a: any) => a.employee_id),
@@ -143,6 +145,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     const { data, error } = await supabase
       .from('tasks')
       .insert({
+        project_id: task.projectId,
         title: task.title,
         description: task.description,
         frequency: task.frequency,
@@ -352,6 +355,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     set((s) => ({ categories: s.categories.filter((c) => c.id !== id) }))
   },
 
+  getProjectTasks: (projectId) => get().tasks.filter((t) => t.projectId === projectId),
   getTasksDueToday: (employeeId, date) => getTasksDueOnDate(get().tasks, employeeId, date),
   getTasksDueThisWeek: (employeeId, weekStart) => getTasksDueThisWeek(get().tasks, employeeId, weekStart),
   getTasksDueThisMonth: (employeeId, month, year) => getTasksDueThisMonth(get().tasks, employeeId, month, year),

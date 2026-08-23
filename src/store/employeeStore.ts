@@ -10,6 +10,7 @@ interface CreateEmployeeInput {
   password: string
   jobTitle: string
   department: string
+  projectId?: string | null
 }
 
 interface EmployeeState {
@@ -21,6 +22,7 @@ interface EmployeeState {
   updateEmployee: (id: string, updates: Partial<Employee>) => Promise<void>
   deleteEmployee: (id: string) => Promise<{ success: boolean; error?: string }>
   getEmployeeStats: (employeeId: string, completionLogs: CompletionLog[], tasks: Task[]) => EmployeeStats
+  getProjectEmployees: (projectId: string) => Employee[]
 }
 
 function toEmployee(row: any): Employee {
@@ -34,6 +36,7 @@ function toEmployee(row: any): Employee {
     jobTitle: row.job_title ?? '',
     department: row.department ?? '',
     managerId: row.manager_id,
+    projectId: row.project_id ?? null,
   }
 }
 
@@ -45,7 +48,7 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     set({ loading: true })
     const { data, error } = await supabase
       .from('users')
-      .select('id, email, name, avatar_initials, join_date, job_title, department, manager_id')
+      .select('id, email, name, avatar_initials, join_date, job_title, department, manager_id, project_id')
       .eq('role', 'employee')
       .order('name')
 
@@ -89,6 +92,7 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     if (updates.jobTitle !== undefined) patch.job_title = updates.jobTitle
     if (updates.department !== undefined) patch.department = updates.department
     if (updates.avatarInitials !== undefined) patch.avatar_initials = updates.avatarInitials
+    if (updates.projectId !== undefined) patch.project_id = updates.projectId
 
     await supabase.from('users').update(patch).eq('id', id)
     set((s) => ({
@@ -108,6 +112,8 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     set((s) => ({ employees: s.employees.filter((e) => e.id !== id) }))
     return { success: true }
   },
+
+  getProjectEmployees: (projectId) => get().employees.filter((e) => e.projectId === projectId),
 
   getEmployeeStats: (employeeId, completionLogs, tasks) => {
     const empLogs = completionLogs.filter((l) => l.employeeId === employeeId)

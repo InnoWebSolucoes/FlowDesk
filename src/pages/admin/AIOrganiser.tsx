@@ -90,9 +90,15 @@ export function AIOrganiser() {
 
   const handleImportAll = async () => {
     if (!currentUser) return
+
+    // An employee belongs to exactly one project, so the selection fixes the project.
+    const projectId = employees.find(e => e.id === selectedEmployees[0])?.projectId
+    if (!projectId) return
+
     for (const gt of generated) {
       const catId = gt._categoryId ?? await resolveCategory(gt.categoryName)
       const task: Omit<Task, 'id' | 'createdAt'> = {
+        projectId,
         title: gt.title,
         description: gt.description,
         assignedTo: selectedEmployees,

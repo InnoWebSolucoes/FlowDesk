@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar'
 import { NotificationBell } from './NotificationBell'
 
 const pageTitles: Record<string, string> = {
+  '/admin/projects': 'Projects',
   '/admin/overview': 'Overview',
   '/admin/tasks': 'Task Manager',
   '/admin/ai-organiser': 'AI Organiser',
