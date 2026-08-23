@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronRight, Home, Plus, FolderPlus, ZoomIn, ZoomOut, Maximize2, Link2, Pencil, Check, X,
-  ExternalLink, CornerLeftUp, Search, FolderOpen,
+  CornerLeftUp, Search, FolderOpen, Settings2,
 } from 'lucide-react'
 import { ResourceCluster, ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
@@ -18,6 +18,13 @@ const DROP_SLOP = ITEM_W / 2
 
 /** World-space distance before a press counts as a drag rather than a click. */
 const DRAG_THRESHOLD = 3
+
+/**
+ * How far from the centre of the cluster you're inside an item must be dragged
+ * before it leaves that cluster. A cluster's contents sit near the origin, so
+ * this is comfortably outside the packed area.
+ */
+const EJECT_RADIUS = 420
 
 /**
  * The cluster a card at (x, y) would drop into: the nearest bubble at this
@@ -70,6 +77,8 @@ export function ResourceCanvas({ projectId }: Props) {
   // Live position of the node being dragged. Kept out of the store so a drag
   // re-renders only this component, not every node on the canvas.
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
+  // Set while dragging a preview out of a bubble, so the ghost knows to render.
+  const [pullingOut, setPullingOut] = useState(false)
   // Cluster the dragged item would drop into, for the highlight.
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -98,6 +107,8 @@ export function ResourceCanvas({ projectId }: Props) {
     /** Latest position, written every pointermove, read on release. */
     x: number
     y: number
+    /** Set when dragging a preview out of a bubble on the parent level. */
+    pullOutOf?: string
   } | null>(null)
 
   useEffect(() => {
@@ -223,7 +234,14 @@ export function ResourceCanvas({ projectId }: Props) {
 
   // ─── Drag ──────────────────────────────────────────────────────────────────
 
-  const startDrag = (e: React.PointerEvent, id: string, kind: 'item' | 'cluster', x: number, y: number) => {
+  const startDrag = (
+    e: React.PointerEvent,
+    id: string,
+    kind: 'item' | 'cluster',
+    x: number,
+    y: number,
+    opts?: { pullOutOf?: string }
+  ) => {
     if (e.button !== 0) return
     e.stopPropagation()
     // Prevent the browser starting a text/image selection drag, which would
@@ -239,9 +257,11 @@ export function ResourceCanvas({ projectId }: Props) {
       moved: false,
       startX: x, startY: y,
       x, y,
+      pullOutOf: opts?.pullOutOf,
     }
     setDragId(id)
     setDragPos({ x, y })
+    setPullingOut(!!opts?.pullOutOf)
   }
 
   useEffect(() => {
@@ -273,7 +293,12 @@ export function ResourceCanvas({ projectId }: Props) {
 
         setDragPos({ x: cur.x, y: cur.y })
         if (cur.kind === 'item') {
-          const hit = dropTargetAt(useProjectStore.getState().clusters, currentClusterId, cur.x, cur.y)
+          const hit = dropTargetAt(
+            useProjectStore.getState().clusters.filter((c) => c.id !== cur.pullOutOf),
+            currentClusterId,
+            cur.x,
+            cur.y
+          )
           setDropTargetId(hit?.id ?? null)
         }
       })
@@ -288,6 +313,7 @@ export function ResourceCanvas({ projectId }: Props) {
       dragState.current = null
       setDragId(null)
       setDragPos(null)
+      setPullingOut(false)
       setDropTargetId(null)
       if (!d) return
 
@@ -299,14 +325,36 @@ export function ResourceCanvas({ projectId }: Props) {
       const store = useProjectStore.getState()
       if (d.kind === 'item') {
         // Dropping an item on a cluster bubble re-parents it. The card only has
-        // to touch the bubble, not sit centred in it.
-        const target = dropTargetAt(store.clusters, currentClusterId, d.x, d.y)
+        // to touch the bubble, not sit centred in it. When pulling a preview out
+        // of a bubble, that bubble is excluded so it doesn't snap straight back.
+        const target = dropTargetAt(
+          store.clusters.filter((c) => c.id !== d.pullOutOf),
+          currentClusterId,
+          d.x,
+          d.y
+        )
 
         if (target) {
           // Place it near the centre of its new home rather than at the drop point.
           const siblings = store.items.filter((i) => i.clusterId === target.id).length
           const pos = spawnPosition(siblings)
           moveItem(d.id, target.id, pos.x, pos.y)
+        } else if (d.pullOutOf) {
+          // Pulled out of a bubble on this level: it lands here, where dropped.
+          moveItem(d.id, currentClusterId, d.x, d.y)
+        } else if (currentClusterId && Math.hypot(d.x, d.y) > EJECT_RADIUS) {
+          // Dragged clear of the cluster we're inside: move it up to the parent
+          // and drop it just outside that cluster's bubble.
+          const here = store.clusters.find((c) => c.id === currentClusterId)
+          const parentId = here?.parentClusterId ?? null
+          const angle = Math.atan2(d.y, d.x)
+          const dist = (here?.radius ?? 160) + ITEM_W
+          moveItem(
+            d.id,
+            parentId,
+            (here?.x ?? 0) + Math.cos(angle) * dist,
+            (here?.y ?? 0) + Math.sin(angle) * dist
+          )
         } else {
           moveItem(d.id, currentClusterId, d.x, d.y)
         }
@@ -766,16 +814,32 @@ export function ResourceCanvas({ projectId }: Props) {
                   <span className="sr-only">Open {cluster.title}</span>
                 </button>
 
-                {/* A hint of what's inside, so a cluster isn't an empty circle */}
+                {/* A hint of what's inside, so a cluster isn't an empty circle.
+                    The previews are draggable, so a document can be pulled
+                    straight out of a bubble without entering it first. */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="flex flex-wrap gap-1.5 justify-center max-w-[70%] opacity-60">
+                  <div className="flex flex-wrap gap-1.5 justify-center max-w-[70%]">
                     {items
                       .filter((i) => i.clusterId === cluster.id)
                       .slice(0, 6)
                       .map((i) => (
                         <div
                           key={i.id}
-                          className="w-9 h-9 rounded-md border border-border overflow-hidden bg-surface"
+                          onPointerDown={(e) => {
+                            // Start the drag at the bubble's position: the item's
+                            // own x/y are relative to the cluster's interior.
+                            e.stopPropagation()
+                            startDrag(e, i.id, 'item', cluster.x, cluster.y, { pullOutOf: cluster.id })
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (draggedRef.current === i.id) { draggedRef.current = null; return }
+                            openItem(i)
+                          }}
+                          title={`${i.title}\nClick to open · drag out to remove from ${cluster.title}`}
+                          className={`w-9 h-9 rounded-md border border-border overflow-hidden bg-surface pointer-events-auto cursor-pointer hover:ring-2 hover:ring-primary hover:opacity-100 ${
+                            dragId === i.id ? 'opacity-0' : 'opacity-60'
+                          }`}
                         >
                           <ResourceThumbnail item={i} width={36} height={36} />
                         </div>
@@ -796,6 +860,60 @@ export function ResourceCanvas({ projectId }: Props) {
             )
           })}
 
+          {/* Eject boundary: drag an item past this to move it out of the
+              cluster you're inside. Only while actually dragging one. */}
+          {currentClusterId && dragId && dragPos && (
+            <div
+              className="absolute rounded-full border-2 border-dashed pointer-events-none transition-colors"
+              style={{
+                left: -EJECT_RADIUS,
+                top: -EJECT_RADIUS,
+                width: EJECT_RADIUS * 2,
+                height: EJECT_RADIUS * 2,
+                borderColor:
+                  Math.hypot(dragPos.x, dragPos.y) > EJECT_RADIUS
+                    ? 'rgb(220 38 38 / 0.7)'
+                    : 'rgb(148 163 184 / 0.35)',
+              }}
+            >
+              <span
+                className="absolute left-1/2 -translate-x-1/2 text-[11px] font-medium px-2 py-0.5 rounded bg-surface border border-border"
+                style={{
+                  top: -12,
+                  color: Math.hypot(dragPos.x, dragPos.y) > EJECT_RADIUS ? 'rgb(220 38 38)' : undefined,
+                }}
+              >
+                {Math.hypot(dragPos.x, dragPos.y) > EJECT_RADIUS
+                  ? 'Release to move out of this cluster'
+                  : 'Drag past here to leave the cluster'}
+              </span>
+            </div>
+          )}
+
+          {/* Ghost for an item being pulled out of a bubble: it still belongs to
+              that cluster, so it isn't in visibleItems until the drop lands. */}
+          {dragId && dragPos && pullingOut && (() => {
+            const ghost = items.find((i) => i.id === dragId)
+            if (!ghost) return null
+            return (
+              <div
+                className="absolute rounded-xl border-2 border-primary bg-surface overflow-hidden shadow-lg pointer-events-none"
+                style={{
+                  left: dragPos.x - ITEM_W / 2,
+                  top: dragPos.y - ITEM_H / 2,
+                  width: ITEM_W,
+                }}
+              >
+                <ResourceThumbnail item={ghost} width={ITEM_W} height={THUMB_H} />
+                <div className="px-2 py-1.5 border-t border-border">
+                  <p className="text-[11px] text-text-main leading-tight line-clamp-2 break-words">
+                    {ghost.title}
+                  </p>
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Item nodes: a preview card, so each file looks like what it is. */}
           {visibleItems.map((item) => (
             <div
@@ -804,10 +922,9 @@ export function ResourceCanvas({ projectId }: Props) {
               onClick={(e) => {
                 e.stopPropagation()
                 if (draggedRef.current === item.id) { draggedRef.current = null; return }
-                if (!dragId) setSelectedItemId(item.id)
+                if (!dragId) openItem(item)
               }}
-              onDoubleClick={(e) => { e.stopPropagation(); openItem(item) }}
-              title={`${item.title}\nDouble-click to open`}
+              title={`${item.title}\nClick to open · ⚙ for details`}
               className={`group absolute rounded-xl border bg-surface overflow-hidden cursor-pointer select-none hover:shadow-lg active:cursor-grabbing ${
                 // No transition on the dragged node, or it lags the pointer.
                 dragId === item.id ? '' : 'transition-all'
@@ -828,17 +945,16 @@ export function ResourceCanvas({ projectId }: Props) {
               <div className="relative pointer-events-none" draggable={false}>
                 <ResourceThumbnail item={item} width={ITEM_W} height={THUMB_H} />
 
-                {/* Open button, revealed on hover over the card */}
-                {(item.storagePath || item.links.length > 0) && (
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); openItem(item) }}
-                    className="absolute top-1 right-1 pointer-events-auto opacity-0 group-hover:opacity-100 focus:opacity-100 bg-surface/90 border border-border rounded-md p-1 text-text-muted hover:text-primary transition-opacity"
-                    title="Open"
-                  >
-                    <ExternalLink size={12} />
-                  </button>
-                )}
+                {/* Details button: clicking the card itself opens the file, so
+                    the info/edit panel needs its own affordance. */}
+                <button
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); setSelectedItemId(item.id) }}
+                  className="absolute top-1 right-1 pointer-events-auto opacity-0 group-hover:opacity-100 focus:opacity-100 bg-surface/90 border border-border rounded-md p-1 text-text-muted hover:text-primary transition-opacity"
+                  title="Details, links and file"
+                >
+                  <Settings2 size={12} />
+                </button>
               </div>
 
               <div className="px-2 py-1.5 border-t border-border">
