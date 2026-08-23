@@ -312,14 +312,16 @@ export function ResourceCanvas({ projectId }: Props) {
 
       dragState.current = null
       setDragId(null)
-      setDragPos(null)
       setPullingOut(false)
       setDropTargetId(null)
-      if (!d) return
 
-      // A click that never moved shouldn't write a position back. Record that
-      // this gesture was a drag so the click handler can ignore it.
-      if (!d.moved) return
+      if (!d || !d.moved) {
+        // A click that never moved shouldn't write a position back.
+        setDragPos(null)
+        return
+      }
+
+      // Record that this gesture was a drag so the click handler can ignore it.
       draggedRef.current = d.id
 
       const store = useProjectStore.getState()
@@ -361,6 +363,10 @@ export function ResourceCanvas({ projectId }: Props) {
       } else {
         updateCluster(d.id, { x: d.x, y: d.y })
       }
+
+      // Cleared last: the store writes above are optimistic and synchronous, so
+      // by now the node already renders at its dropped position.
+      setDragPos(null)
     }
 
     const onCancel = () => onUp()

@@ -6,7 +6,7 @@ export interface Viewport {
   scale: number
 }
 
-const MIN_SCALE = 0.15
+const MIN_SCALE = 0.08
 const MAX_SCALE = 3
 
 /** Zoom step per notch. Lower = less sensitive. */
@@ -18,11 +18,14 @@ const BUTTON_STEP = 1.6
 
 /**
  * Zoom thresholds that drive cluster navigation. Both levels land at scale 1
- * after a swap, so these sit well either side of it — the gap is the hysteresis
- * that stops a single gesture from cascading through several levels.
+ * after a swap, so these sit either side of it — the gap is the hysteresis that
+ * stops a single gesture from cascading through several levels.
+ *
+ * Exit sits several steps below the landing scale on purpose: you need room to
+ * zoom out and survey a whole cluster before it decides you're leaving it.
  */
 export const ZOOM_ENTER_THRESHOLD = 1.45
-export const ZOOM_EXIT_THRESHOLD = 0.62
+export const ZOOM_EXIT_THRESHOLD = 0.3
 
 /**
  * Pan/zoom viewport for the resources canvas.

@@ -285,8 +285,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (updates.parentClusterId !== undefined) patch.parent_cluster_id = updates.parentClusterId
     if (Object.keys(patch).length === 0) return
 
-    await supabase.from('resource_clusters').update(patch).eq('id', id)
+    // Optimistic, for the same reason as moveItem: a dragged bubble must not
+    // snap back to its old position while the write is in flight.
     set((s) => ({ clusters: s.clusters.map((c) => (c.id === id ? { ...c, ...updates } : c)) }))
+    await supabase.from('resource_clusters').update(patch).eq('id', id)
   },
 
   deleteCluster: async (id) => {
@@ -427,8 +429,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   moveItem: async (id, clusterId, x, y) => {
-    await supabase.from('resource_items').update({ cluster_id: clusterId, x, y }).eq('id', id)
+    // Optimistic: apply locally first so the node stays where it was dropped
+    // instead of flashing back to its old position during the round-trip.
     set((s) => ({ items: s.items.map((i) => (i.id === id ? { ...i, clusterId, x, y } : i)) }))
+    await supabase.from('resource_items').update({ cluster_id: clusterId, x, y }).eq('id', id)
   },
 
   setItemLinks: async (itemId, links) => {
