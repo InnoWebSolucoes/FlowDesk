@@ -1,7 +1,9 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { NavLink, Outlet, useParams, Navigate, Link } from 'react-router-dom'
 import { Building2, Info, FolderOpen, Users, ListTodo, ChevronLeft } from 'lucide-react'
 import { useProjectStore } from '../../../store/projectStore'
+import { useEmployeeStore } from '../../../store/employeeStore'
+import { useTaskStore } from '../../../store/taskStore'
 
 const TABS = [
   { to: 'about', label: 'About', icon: Info },
@@ -13,8 +15,22 @@ const TABS = [
 export function ProjectLayout() {
   const { projectId } = useParams<{ projectId: string }>()
   const { initialized, getProject } = useProjectStore()
+  const setEmployeeScope = useEmployeeStore((s) => s.setProjectScope)
+  const setTaskScope = useTaskStore((s) => s.setProjectScope)
 
   const project = projectId ? getProject(projectId) : undefined
+
+  // Narrow the employee and task stores to this project, so the pages nested
+  // below (Overview, Tasks, Analytics…) show only its data without each having
+  // to filter. Cleared on the way out.
+  useEffect(() => {
+    setEmployeeScope(projectId ?? null)
+    setTaskScope(projectId ?? null)
+    return () => {
+      setEmployeeScope(null)
+      setTaskScope(null)
+    }
+  }, [projectId, setEmployeeScope, setTaskScope])
 
   // On a reload the store starts empty, so wait for the first fetch to settle
   // before deciding the project doesn't exist — otherwise a deep link to a

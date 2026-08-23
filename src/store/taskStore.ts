@@ -5,7 +5,12 @@ import { getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOf
 import { format } from 'date-fns'
 
 interface TaskState {
+  /** Tasks of the project being viewed, or all when unscoped. */
   tasks: Task[]
+  /** Every task, regardless of scope. */
+  allTasks: Task[]
+  scopedProjectId: string | null
+  setProjectScope: (projectId: string | null) => void
   completionLogs: CompletionLog[]
   categories: Category[]
   loading: boolean
@@ -104,8 +109,25 @@ function toActivityLog(row: any): ActivityLog {
   }
 }
 
+/** Keep `allTasks` authoritative and re-derive the scoped `tasks` from it. */
+function applyTasks(scopedProjectId: string | null, all: Task[]) {
+  return {
+    allTasks: all,
+    tasks: scopedProjectId ? all.filter((t) => t.projectId === scopedProjectId) : all,
+  }
+}
+
 export const useTaskStore = create<TaskState>()((set, get) => ({
   tasks: [],
+  allTasks: [],
+  scopedProjectId: null,
+
+  setProjectScope: (projectId) =>
+    set((s) => ({
+      scopedProjectId: projectId,
+      tasks: projectId ? s.allTasks.filter((t) => t.projectId === projectId) : s.allTasks,
+    })),
+
   completionLogs: [],
   categories: [],
   loading: false,
@@ -131,7 +153,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     }
 
     set({
-      tasks: (tasksRes.data ?? []).map(toTask),
+      ...applyTasks(get().scopedProjectId, (tasksRes.data ?? []).map(toTask)),
       categories: categoriesRes.data ?? [],
       completionLogs: (logsRes.data ?? []).map(toCompletionLog),
       taskStatuses,
@@ -167,7 +189,10 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
         .insert(task.assignedTo.map((employeeId) => ({ task_id: data.id, employee_id: employeeId })))
     }
 
-    set((s) => ({ tasks: [...s.tasks, toTask({ ...data, task_assignments: task.assignedTo.map(id => ({ employee_id: id })) })] }))
+    set((s) => applyTasks(s.scopedProjectId, [
+      ...s.allTasks,
+      toTask({ ...data, task_assignments: task.assignedTo.map(id => ({ employee_id: id })) }),
+    ]))
   },
 
   updateTask: async (id, updates) => {
@@ -194,12 +219,12 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       }
     }
 
-    set((s) => ({ tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)) }))
+    set((s) => applyTasks(s.scopedProjectId, s.allTasks.map((t) => (t.id === id ? { ...t, ...updates } : t))))
   },
 
   deleteTask: async (id) => {
     await supabase.from('tasks').delete().eq('id', id)
-    set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) }))
+    set((s) => applyTasks(s.scopedProjectId, s.allTasks.filter((t) => t.id !== id)))
   },
 
   completeTask: async (taskId, employeeId, dueDate) => {
@@ -355,7 +380,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     set((s) => ({ categories: s.categories.filter((c) => c.id !== id) }))
   },
 
-  getProjectTasks: (projectId) => get().tasks.filter((t) => t.projectId === projectId),
+  getProjectTasks: (projectId) => get().allTasks.filter((t) => t.projectId === projectId),
   getTasksDueToday: (employeeId, date) => getTasksDueOnDate(get().tasks, employeeId, date),
   getTasksDueThisWeek: (employeeId, weekStart) => getTasksDueThisWeek(get().tasks, employeeId, weekStart),
   getTasksDueThisMonth: (employeeId, month, year) => getTasksDueThisMonth(get().tasks, employeeId, month, year),

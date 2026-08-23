@@ -35,6 +35,9 @@ const en = {
 
   // Sidebar / Nav
   nav_projects: 'Projects',
+  nav_about: 'About',
+  nav_resources: 'Resources',
+  nav_todos: 'Todos',
   task_errorNoProject: 'The assigned employee is not on a project yet. Assign them to a project first.',
   nav_overview: 'Overview',
   nav_taskManager: 'Task Manager',
@@ -392,6 +395,9 @@ const pt: typeof en = {
 
   // Sidebar / Nav
   nav_projects: 'Projetos',
+  nav_about: 'Sobre',
+  nav_resources: 'Recursos',
+  nav_todos: 'Tarefas',
   task_errorNoProject: 'O funcionário atribuído ainda não está num projeto. Atribua-o a um projeto primeiro.',
   nav_overview: 'Visão Geral',
   nav_taskManager: 'Gestão de Tarefas',

@@ -14,7 +14,13 @@ interface CreateEmployeeInput {
 }
 
 interface EmployeeState {
+  /** Employees of the project currently being viewed, or all when unscoped. */
   employees: Employee[]
+  /** Every employee, regardless of scope. */
+  allEmployees: Employee[]
+  /** Project the list above is narrowed to; null means no narrowing. */
+  scopedProjectId: string | null
+  setProjectScope: (projectId: string | null) => void
   loading: boolean
 
   initialize: () => Promise<void>
@@ -40,9 +46,20 @@ function toEmployee(row: any): Employee {
   }
 }
 
+/** Narrow the visible list to one project, so pages reading `employees` are
+ *  scoped without each needing to know about projects. */
+function scoped(all: Employee[], projectId: string | null) {
+  return projectId ? all.filter((e) => e.projectId === projectId) : all
+}
+
 export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
   employees: [],
+  allEmployees: [],
+  scopedProjectId: null,
   loading: false,
+
+  setProjectScope: (projectId) =>
+    set((s) => ({ scopedProjectId: projectId, employees: scoped(s.allEmployees, projectId) })),
 
   initialize: async () => {
     set({ loading: true })
@@ -53,7 +70,8 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
       .order('name')
 
     if (!error && data) {
-      set({ employees: data.map(toEmployee), loading: false })
+      const all = data.map(toEmployee)
+      set((s) => ({ allEmployees: all, employees: scoped(all, s.scopedProjectId), loading: false }))
     } else {
       set({ loading: false })
     }
@@ -95,9 +113,11 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     if (updates.projectId !== undefined) patch.project_id = updates.projectId
 
     await supabase.from('users').update(patch).eq('id', id)
-    set((s) => ({
-      employees: s.employees.map((e) => (e.id === id ? { ...e, ...updates } : e)),
-    }))
+    set((s) => {
+      // Re-derive the scoped list: a project change can move someone in or out.
+      const all = s.allEmployees.map((e) => (e.id === id ? { ...e, ...updates } : e))
+      return { allEmployees: all, employees: scoped(all, s.scopedProjectId) }
+    })
   },
 
   deleteEmployee: async (id) => {
@@ -109,11 +129,14 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
       return { success: false, error: data?.error ?? error?.message }
     }
 
-    set((s) => ({ employees: s.employees.filter((e) => e.id !== id) }))
+    set((s) => {
+      const all = s.allEmployees.filter((e) => e.id !== id)
+      return { allEmployees: all, employees: scoped(all, s.scopedProjectId) }
+    })
     return { success: true }
   },
 
-  getProjectEmployees: (projectId) => get().employees.filter((e) => e.projectId === projectId),
+  getProjectEmployees: (projectId) => get().allEmployees.filter((e) => e.projectId === projectId),
 
   getEmployeeStats: (employeeId, completionLogs, tasks) => {
     const empLogs = completionLogs.filter((l) => l.employeeId === employeeId)

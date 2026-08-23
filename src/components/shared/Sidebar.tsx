@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useMatch, Link } from 'react-router-dom'
 import {
-  LayoutDashboard, ListTodo, Sparkles, Users, BarChart3,
+  ListTodo, Users, Info, FolderOpen,
   CheckSquare, Wrench, BookOpen, Building2,
-  LogOut, Menu, X
+  LogOut, Menu, X, ChevronLeft
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
+import { useProjectStore } from '../../store/projectStore'
 import { useLanguageStore } from '../../store/languageStore'
 import { useT } from '../../i18n/useT'
 
@@ -16,14 +17,24 @@ export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const { t } = useT()
 
-  const adminNav = [
-    { to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> },
-    { to: '/admin/overview', label: t('nav_overview'), icon: <LayoutDashboard size={18} /> },
-    { to: '/admin/tasks', label: t('nav_taskManager'), icon: <ListTodo size={18} /> },
-    { to: '/admin/ai-organiser', label: t('nav_aiOrganiser'), icon: <Sparkles size={18} /> },
-    { to: '/admin/employees', label: t('nav_employees'), icon: <Users size={18} /> },
-    { to: '/admin/analytics', label: t('nav_analytics'), icon: <BarChart3 size={18} /> },
-  ]
+  // Inside a project the sidebar mirrors its tabs; outside it just offers the
+  // way back to the picker, since everything else now lives within a project.
+  const projectMatch = useMatch('/admin/projects/:projectId/*')
+  const activeProjectId = projectMatch?.params.projectId
+  const activeProject = useProjectStore((s) =>
+    activeProjectId ? s.projects.find((p) => p.id === activeProjectId) : undefined
+  )
+
+  // The project's own tabs live in its header; the sidebar carries the tabs
+  // themselves so they're reachable from anywhere inside the project.
+  const adminNav = activeProjectId
+    ? [
+        { to: `/admin/projects/${activeProjectId}/about`, label: t('nav_about'), icon: <Info size={18} /> },
+        { to: `/admin/projects/${activeProjectId}/resources`, label: t('nav_resources'), icon: <FolderOpen size={18} /> },
+        { to: `/admin/projects/${activeProjectId}/employees`, label: t('nav_employees'), icon: <Users size={18} /> },
+        { to: `/admin/projects/${activeProjectId}/todos`, label: t('nav_todos'), icon: <ListTodo size={18} /> },
+      ]
+    : [{ to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> }]
 
   const employeeNav = [
     { to: '/employee/tasks', label: t('nav_myTasks'), icon: <CheckSquare size={18} /> },
@@ -38,7 +49,9 @@ export function Sidebar() {
     navigate('/login')
   }
 
-  const SidebarContent = () => (
+  // A plain function, not a component: it closes over local state, and
+  // remounting it on every render would drop focus and animation state.
+  const sidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 py-5 border-b border-border">
@@ -47,6 +60,26 @@ export function Sidebar() {
         </div>
         <span className="font-semibold text-text-main text-base">Flow Desk</span>
       </div>
+
+      {/* Which project you're inside, with the way back out */}
+      {activeProject && (
+        <div className="px-3 pt-3 pb-1">
+          <Link
+            to="/admin/projects"
+            onClick={() => setMobileOpen(false)}
+            className="flex items-center gap-1 text-[11px] text-text-subtle hover:text-text-main mb-2 px-2 transition-colors"
+          >
+            <ChevronLeft size={12} /> All projects
+          </Link>
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-surface-2">
+            <span
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+              style={{ backgroundColor: activeProject.color }}
+            />
+            <span className="text-sm font-medium text-text-main truncate">{activeProject.name}</span>
+          </div>
+        </div>
+      )}
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
@@ -124,7 +157,7 @@ export function Sidebar() {
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex flex-col w-60 bg-surface border-r border-border flex-shrink-0 h-screen sticky top-0">
-        <SidebarContent />
+        {sidebarContent()}
       </aside>
 
       {/* Mobile sidebar */}
@@ -133,7 +166,7 @@ export function Sidebar() {
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <SidebarContent />
+        {sidebarContent()}
       </aside>
     </>
   )

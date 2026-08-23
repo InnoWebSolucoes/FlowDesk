@@ -14,7 +14,6 @@ import { ResetPassword } from './pages/ResetPassword'
 import { Overview } from './pages/admin/Overview'
 import { TaskManager } from './pages/admin/TaskManager'
 import { AIOrganiser } from './pages/admin/AIOrganiser'
-import { Employees } from './pages/admin/Employees'
 import { EmployeeProfile } from './pages/admin/EmployeeProfile'
 import { Analytics } from './pages/admin/Analytics'
 import { Projects } from './pages/admin/Projects'
@@ -23,6 +22,7 @@ import { ProjectAbout } from './pages/admin/project/ProjectAbout'
 import { ProjectResources } from './pages/admin/project/ProjectResources'
 import { ProjectEmployees } from './pages/admin/project/ProjectEmployees'
 import { ProjectTodos } from './pages/admin/project/ProjectTodos'
+import { ProjectTeamLayout } from './pages/admin/project/ProjectTeamLayout'
 import { MyTasks } from './pages/employee/MyTasks'
 import { Toolbox } from './pages/employee/Toolbox'
 import { Guidelines } from './pages/employee/Guidelines'
@@ -111,14 +111,22 @@ export default function App() {
               <Route index element={<Navigate to="about" replace />} />
               <Route path="about" element={<ProjectAbout />} />
               <Route path="resources" element={<ProjectResources />} />
-              <Route path="employees" element={<ProjectEmployees />} />
               <Route path="todos" element={<ProjectTodos />} />
+
+              {/* Employees: the team plus everything that used to be global,
+                  scoped to this project by ProjectLayout. */}
+              <Route path="employees" element={<ProjectTeamLayout />}>
+                <Route index element={<Navigate to="team" replace />} />
+                <Route path="team" element={<ProjectEmployees />} />
+                <Route path="overview" element={<Overview />} />
+                <Route path="tasks" element={<TaskManager />} />
+                <Route path="ai-organiser" element={<AIOrganiser />} />
+                <Route path="analytics" element={<Analytics />} />
+              </Route>
             </Route>
-            <Route path="tasks" element={<TaskManager />} />
-            <Route path="ai-organiser" element={<AIOrganiser />} />
-            <Route path="employees" element={<Employees />} />
+
+            {/* Employee profiles are reached from a project but render full-width. */}
             <Route path="employees/:id" element={<EmployeeProfile />} />
-            <Route path="analytics" element={<Analytics />} />
           </Route>
 
           {/* Employee routes */}
