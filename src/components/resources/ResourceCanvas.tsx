@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronRight, Home, Plus, FolderPlus, ZoomIn, ZoomOut, Maximize2, Link2, Pencil, Check, X,
-  CornerLeftUp, Search, FolderOpen, Settings2,
+  CornerLeftUp, Search, FolderOpen, ExternalLink,
 } from 'lucide-react'
 import { ResourceCluster, ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
@@ -474,13 +474,19 @@ export function ResourceCanvas({ projectId }: Props) {
         return
       }
 
-      const tab = window.open('', '_blank', 'noopener,noreferrer')
+      // Open the tab synchronously so the popup blocker allows it, then point it
+      // at the signed URL once that resolves. `noopener` must NOT be used here:
+      // it nulls the returned handle, so the tab would be stranded on about:blank.
+      const tab = window.open('', '_blank')
+      if (tab) tab.opener = null
+
       const url = await getFileUrl(item.storagePath)
       if (!url) {
         tab?.close()
         return
       }
-      if (tab) tab.location.href = url
+
+      if (tab && !tab.closed) tab.location.replace(url)
       else window.open(url, '_blank', 'noopener,noreferrer')
     },
     [getFileUrl]
@@ -834,9 +840,10 @@ export function ResourceCanvas({ projectId }: Props) {
                           onClick={(e) => {
                             e.stopPropagation()
                             if (draggedRef.current === i.id) { draggedRef.current = null; return }
-                            openItem(i)
+                            setSelectedItemId(i.id)
                           }}
-                          title={`${i.title}\nClick to open · drag out to remove from ${cluster.title}`}
+                          onDoubleClick={(e) => { e.stopPropagation(); openItem(i) }}
+                          title={`${i.title}\nClick for details · double-click to open · drag out of ${cluster.title}`}
                           className={`w-9 h-9 rounded-md border border-border overflow-hidden bg-surface pointer-events-auto cursor-pointer hover:ring-2 hover:ring-primary hover:opacity-100 ${
                             dragId === i.id ? 'opacity-0' : 'opacity-60'
                           }`}
@@ -922,9 +929,10 @@ export function ResourceCanvas({ projectId }: Props) {
               onClick={(e) => {
                 e.stopPropagation()
                 if (draggedRef.current === item.id) { draggedRef.current = null; return }
-                if (!dragId) openItem(item)
+                if (!dragId) setSelectedItemId(item.id)
               }}
-              title={`${item.title}\nClick to open · ⚙ for details`}
+              onDoubleClick={(e) => { e.stopPropagation(); openItem(item) }}
+              title={`${item.title}\nClick for details · double-click to open the file`}
               className={`group absolute rounded-xl border bg-surface overflow-hidden cursor-pointer select-none hover:shadow-lg active:cursor-grabbing ${
                 // No transition on the dragged node, or it lags the pointer.
                 dragId === item.id ? '' : 'transition-all'
@@ -945,16 +953,18 @@ export function ResourceCanvas({ projectId }: Props) {
               <div className="relative pointer-events-none" draggable={false}>
                 <ResourceThumbnail item={item} width={ITEM_W} height={THUMB_H} />
 
-                {/* Details button: clicking the card itself opens the file, so
-                    the info/edit panel needs its own affordance. */}
-                <button
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => { e.stopPropagation(); setSelectedItemId(item.id) }}
-                  className="absolute top-1 right-1 pointer-events-auto opacity-0 group-hover:opacity-100 focus:opacity-100 bg-surface/90 border border-border rounded-md p-1 text-text-muted hover:text-primary transition-opacity"
-                  title="Details, links and file"
-                >
-                  <Settings2 size={12} />
-                </button>
+                {/* Shortcut to the file itself, for anyone who'd rather not
+                    double-click. */}
+                {(item.storagePath || item.links.length > 0) && (
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); openItem(item) }}
+                    className="absolute top-1 right-1 pointer-events-auto opacity-0 group-hover:opacity-100 focus:opacity-100 bg-surface/90 border border-border rounded-md p-1 text-text-muted hover:text-primary transition-opacity"
+                    title="Open the file"
+                  >
+                    <ExternalLink size={12} />
+                  </button>
+                )}
               </div>
 
               <div className="px-2 py-1.5 border-t border-border">
