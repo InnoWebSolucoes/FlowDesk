@@ -294,8 +294,39 @@ export function ResourceCanvas({ projectId }: Props) {
     [getFileUrl]
   )
 
+  /**
+   * Where a newly created node should land: at the centre of what the user is
+   * looking at, nudged along a spiral until it isn't sitting on top of an
+   * existing node. `taken` carries positions from the same batch, which aren't
+   * in the store yet.
+   */
+  const spawnNearView = useCallback(
+    (taken: { x: number; y: number }[] = []) => {
+      const centre = centreWorld()
+      const occupied = [
+        ...visibleItems.map((i) => ({ x: i.x, y: i.y })),
+        ...visibleClusters.map((c) => ({ x: c.x, y: c.y })),
+        ...taken,
+      ]
+
+      const clear = (x: number, y: number) =>
+        !occupied.some((o) => Math.abs(o.x - x) < ITEM_W * 1.1 && Math.abs(o.y - y) < ITEM_H * 1.1)
+
+      if (clear(centre.x, centre.y)) return { x: centre.x, y: centre.y }
+
+      for (let i = 1; i < 80; i++) {
+        const offset = spawnPosition(i)
+        const x = centre.x + offset.x
+        const y = centre.y + offset.y
+        if (clear(x, y)) return { x, y }
+      }
+      return { x: centre.x, y: centre.y }
+    },
+    [centreWorld, visibleItems, visibleClusters]
+  )
+
   const handleAddCluster = async () => {
-    const pos = spawnPosition(visibleClusters.length + visibleItems.length)
+    const pos = spawnNearView()
     const color = CLUSTER_COLORS[clusters.length % CLUSTER_COLORS.length]
     const created = await createCluster(projectId, currentClusterId, {
       title: 'New cluster',
@@ -312,16 +343,20 @@ export function ResourceCanvas({ projectId }: Props) {
 
   const handleAddFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
-    const base = visibleClusters.length + visibleItems.length
-    for (let i = 0; i < files.length; i++) {
-      const pos = spawnPosition(base + i)
-      await createItem(projectId, currentClusterId, { title: files[i].name, x: pos.x, y: pos.y }, files[i])
+    // Track this batch's positions so a multi-file upload fans out instead of
+    // stacking — the store hasn't caught up between iterations.
+    const placed: { x: number; y: number }[] = []
+
+    for (const file of files) {
+      const pos = spawnNearView(placed)
+      placed.push(pos)
+      await createItem(projectId, currentClusterId, { title: file.name, x: pos.x, y: pos.y }, file)
     }
     e.target.value = ''
   }
 
   const handleAddLinkItem = async () => {
-    const pos = spawnPosition(visibleClusters.length + visibleItems.length)
+    const pos = spawnNearView()
     const created = await createItem(projectId, currentClusterId, {
       title: 'New link',
       description: '',
