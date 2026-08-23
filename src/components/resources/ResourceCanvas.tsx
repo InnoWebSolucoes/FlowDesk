@@ -62,7 +62,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   const {
     clusters, items, resourcesLoadedFor, loadResources,
     createCluster, updateCluster, deleteCluster,
-    createItem, moveItem, getFileUrl, deleteItem, duplicateItem, setItemClusters,
+    createItem, moveItem, getFileUrl, deleteItem, duplicateItem, setItemClusters, updateItem,
   } = useProjectStore()
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -132,14 +132,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
     () => clusters.filter((c) => c.parentClusterId === currentClusterId),
     [clusters, currentClusterId]
   )
-  // A document appears in every cluster it's tagged into, not just its home.
-  // At the top level, items with no tags at all are shown.
+  // A document appears in every cluster it's tagged into, and in the main space
+  // when explicitly placed there — the two aren't exclusive.
   const visibleItems = useMemo(
     () =>
       items.filter((i) =>
-        currentClusterId
-          ? i.clusterIds.includes(currentClusterId)
-          : i.clusterIds.length === 0
+        currentClusterId ? i.clusterIds.includes(currentClusterId) : i.showAtTopLevel
       ),
     [items, currentClusterId]
   )
@@ -1046,17 +1044,17 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
                   {label as string}
                 </button>
               ))}
-              {currentClusterId && (
-                <button
-                  onClick={act(() =>
-                    setItemClusters(target.id, target.clusterIds.filter((id) => id !== currentClusterId))
-                  )}
-                  className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-                  title="Untag from this cluster; the document stays in its others"
-                >
-                  Remove from this cluster
-                </button>
-              )}
+              <button
+                onClick={act(() =>
+                  currentClusterId
+                    ? setItemClusters(target.id, target.clusterIds.filter((id) => id !== currentClusterId))
+                    : updateItem(target.id, { showAtTopLevel: false })
+                )}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                title="Remove from here only; the document stays everywhere else"
+              >
+                {currentClusterId ? 'Remove from this cluster' : 'Remove from the main space'}
+              </button>
               <div className="h-px bg-border my-1" />
               <button
                 onClick={act(() => {

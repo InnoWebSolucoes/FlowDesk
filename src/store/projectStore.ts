@@ -158,6 +158,7 @@ function toItem(row: any): ResourceItem {
       .map(toItemVersion)
       .sort((a: ResourceItemVersion, b: ResourceItemVersion) => b.createdAt.localeCompare(a.createdAt)),
     clusterIds: (row.resource_item_clusters ?? []).map((c: any) => c.cluster_id),
+    showAtTopLevel: row.show_at_top_level ?? false,
   }
 }
 
@@ -353,6 +354,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         description: input.description ?? '',
         x: input.x ?? 0,
         y: input.y ?? 0,
+        // Created outside any cluster means it lives in the main space.
+        show_at_top_level: clusterId === null,
       })
       .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
       .single()
@@ -399,6 +402,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (updates.x !== undefined) patch.x = updates.x
     if (updates.y !== undefined) patch.y = updates.y
     if (updates.clusterId !== undefined) patch.cluster_id = updates.clusterId
+    if (updates.showAtTopLevel !== undefined) patch.show_at_top_level = updates.showAtTopLevel
     if (Object.keys(patch).length === 0) return
 
     patch.updated_at = new Date().toISOString()
@@ -474,13 +478,22 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       return [...tags]
     })()
 
+    // Moving to or from the main space flips the top-level flag, so a move is
+    // always a move rather than leaving a copy behind at the old level.
+    const topLevel = clusterId === null
+
     // Optimistic: apply locally first so the node stays where it was dropped
     // instead of flashing back to its old position during the round-trip.
     set((s) => ({
-      items: s.items.map((i) => (i.id === id ? { ...i, clusterId, x, y, clusterIds: nextTags } : i)),
+      items: s.items.map((i) =>
+        i.id === id ? { ...i, clusterId, x, y, clusterIds: nextTags, showAtTopLevel: topLevel } : i
+      ),
     }))
 
-    await supabase.from('resource_items').update({ cluster_id: clusterId, x, y }).eq('id', id)
+    await supabase
+      .from('resource_items')
+      .update({ cluster_id: clusterId, x, y, show_at_top_level: topLevel })
+      .eq('id', id)
 
     if (oldHome && oldHome !== clusterId) {
       await supabase.from('resource_item_clusters').delete().eq('item_id', id).eq('cluster_id', oldHome)

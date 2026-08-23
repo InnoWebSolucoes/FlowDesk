@@ -94,6 +94,8 @@ export interface ResourceItem {
    * many places — never a copy.
    */
   clusterIds: string[]
+  /** Whether the document also shows in the project's main space. */
+  showAtTopLevel: boolean
 }
 
 export interface ProjectTodoLink {

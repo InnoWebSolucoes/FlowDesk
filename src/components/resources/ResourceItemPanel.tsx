@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  X, Upload, Trash2, ExternalLink, Plus, Download, History, Check, FolderOpen, Copy,
+  X, Upload, Trash2, ExternalLink, Plus, Download, History, Check, FolderOpen, Copy, Home,
 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ResourceItem } from '../../types'
@@ -255,9 +255,22 @@ export function ResourceItemPanel({ item, onClose }: Props) {
             <FolderOpen size={13} /> Appears in
           </label>
           <p className="text-[11px] text-text-subtle mb-2">
-            One document, shown in every cluster you tick. It isn't copied.
+            One document, shown everywhere you tick. It isn't copied.
           </p>
           <div className="space-y-1 max-h-44 overflow-y-auto">
+            {/* The main space is a destination in its own right, so a document
+                can sit at the top level and inside clusters at the same time. */}
+            <label className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={item.showAtTopLevel}
+                onChange={() => updateItem(item.id, { showAtTopLevel: !item.showAtTopLevel })}
+                className="accent-primary"
+              />
+              <Home size={12} className="text-text-muted flex-shrink-0" />
+              <span className="text-xs text-text-main truncate flex-1">Main space</span>
+            </label>
+
             {projectClusters.length === 0 && (
               <p className="text-xs text-text-subtle italic">No clusters in this project yet.</p>
             )}

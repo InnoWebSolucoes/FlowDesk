@@ -55,7 +55,7 @@ interface Props {
  * bulk actions.
  */
 export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem, onOpenItem }: Props) {
-  const { clusters, items, moveItem, setItemClusters, deleteItem, duplicateItem } = useProjectStore()
+  const { clusters, items, moveItem, setItemClusters, deleteItem, duplicateItem, updateItem } = useProjectStore()
   const [mode, setMode] = useState<ViewMode>('list')
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
@@ -78,7 +78,7 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
   const files = useMemo(() => {
     const here = items.filter((i) =>
       i.projectId === projectId &&
-      (clusterId ? i.clusterIds.includes(clusterId) : i.clusterIds.length === 0)
+      (clusterId ? i.clusterIds.includes(clusterId) : i.showAtTopLevel)
     )
 
     const dir = sortAsc ? 1 : -1
@@ -189,6 +189,15 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
     clearSelection()
   }
 
+  /** Show the selection in the main space as well, without moving it. */
+  const bulkTagTopLevel = async () => {
+    for (const i of selectedItems) {
+      if (!i.showAtTopLevel) await updateItem(i.id, { showAtTopLevel: true })
+    }
+    setMovePicker(null)
+    clearSelection()
+  }
+
   const bulkDuplicate = async () => {
     for (const i of selectedItems) await duplicateItem(i.id)
     clearSelection()
@@ -200,10 +209,11 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
     clearSelection()
   }
 
+  /** Untag from wherever we're looking, leaving every other placement intact. */
   const bulkRemoveFromCluster = async () => {
-    if (!clusterId) return
     for (const i of selectedItems) {
-      await setItemClusters(i.id, i.clusterIds.filter((c) => c !== clusterId))
+      if (clusterId) await setItemClusters(i.id, i.clusterIds.filter((c) => c !== clusterId))
+      else await updateItem(i.id, { showAtTopLevel: false })
     }
     clearSelection()
   }
@@ -309,15 +319,13 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
           >
             <Copy size={13} /> Duplicate
           </button>
-          {clusterId && (
-            <button
-              onClick={bulkRemoveFromCluster}
-              className="px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:text-text-main hover:bg-surface transition-colors"
-              title="Untag from this cluster; the documents stay in their others"
-            >
-              Remove here
-            </button>
-          )}
+          <button
+            onClick={bulkRemoveFromCluster}
+            className="px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:text-text-main hover:bg-surface transition-colors"
+            title="Remove from here only; the documents stay everywhere else"
+          >
+            Remove here
+          </button>
           <button
             onClick={bulkDelete}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-danger hover:bg-surface transition-colors"
@@ -526,12 +534,10 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
               label={menuCount > 1 ? `Duplicate ${menuCount}` : 'Duplicate'}
               onClick={() => { setMenu(null); bulkDuplicate() }}
             />
-            {clusterId && (
-              <MenuItem
-                label="Remove from this cluster"
-                onClick={() => { setMenu(null); bulkRemoveFromCluster() }}
-              />
-            )}
+            <MenuItem
+              label={clusterId ? 'Remove from this cluster' : 'Remove from the main space'}
+              onClick={() => { setMenu(null); bulkRemoveFromCluster() }}
+            />
             <div className="h-px bg-border my-1" />
             <MenuItem
               label={menuCount > 1 ? `Delete ${menuCount} permanently` : 'Delete permanently'}
@@ -564,15 +570,13 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
             </div>
 
             <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-              {movePicker === 'move' && (
-                <button
-                  onClick={() => bulkMove(null)}
-                  className="w-full flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-surface-2 text-left transition-colors"
-                >
-                  <Home size={15} className="text-text-muted" />
-                  <span className="text-sm text-text-main">Top level</span>
-                </button>
-              )}
+              <button
+                onClick={() => (movePicker === 'move' ? bulkMove(null) : bulkTagTopLevel())}
+                className="w-full flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-surface-2 text-left transition-colors"
+              >
+                <Home size={15} className="text-text-muted" />
+                <span className="text-sm text-text-main">Main space</span>
+              </button>
               {clusters
                 .filter((c) => c.projectId === projectId)
                 .sort((a, b) => a.title.localeCompare(b.title))
