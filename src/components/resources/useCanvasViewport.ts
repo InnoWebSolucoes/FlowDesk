@@ -16,6 +16,9 @@ const PINCH_STEP = 1.34
 /** Button zoom step. */
 const BUTTON_STEP = 1.6
 
+/** Idle time after which a new wheel stream is classified afresh. */
+const GESTURE_GAP_MS = 220
+
 /**
  * Zoom thresholds that drive cluster navigation. Both levels land at scale 1
  * after a swap, so these sit either side of it — the gap is the hysteresis that
@@ -40,6 +43,10 @@ export function useCanvasViewport(containerRef: React.RefObject<HTMLElement | nu
   const [animating, setAnimating] = useState(false)
 
   const panState = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
+  // Wheel-stream classification, so a diagonal trackpad swipe isn't mistaken
+  // for a mouse wheel on the frames where its horizontal delta happens to be 0.
+  const lastWheel = useRef(0)
+  const trackpadGesture = useRef(false)
   const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const screenToWorld = useCallback(
@@ -158,9 +165,19 @@ export function useCanvasViewport(containerRef: React.RefObject<HTMLElement | nu
       const px = e.clientX - rect.left
       const py = e.clientY - rect.top
 
+      const now = performance.now()
+      // A trackpad emits a continuous stream of events; a mouse wheel emits
+      // isolated notches. Any horizontal component at all marks the stream as a
+      // trackpad, and that verdict is held for the rest of the gesture — a
+      // diagonal swipe passes through deltaX === 0 on individual frames, and
+      // judging those in isolation made the pan jump into a zoom mid-swipe.
+      if (now - lastWheel.current > GESTURE_GAP_MS) trackpadGesture.current = false
+      lastWheel.current = now
+      if (e.deltaX !== 0 || !Number.isInteger(e.deltaY)) trackpadGesture.current = true
+
       const isPinch = e.ctrlKey
-      // Mouse wheels emit deltaY in ~100px notches with no horizontal component.
-      const isMouseWheel = !e.ctrlKey && e.deltaX === 0 && Math.abs(e.deltaY) >= 40 && e.deltaMode === 0
+      const isMouseWheel =
+        !isPinch && !trackpadGesture.current && Math.abs(e.deltaY) >= 40 && e.deltaMode === 0
 
       if (isPinch || isMouseWheel) {
         setViewport((v) => {
