@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   X, Minus, Maximize2, Minimize2, ExternalLink, Download, Loader2, AlertCircle,
+  PanelRightOpen, PanelRightClose,
 } from 'lucide-react'
 import { ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
@@ -21,6 +22,7 @@ type Source =
   | { type: 'loading' }
   | { type: 'image' | 'pdf' | 'video' | 'audio' | 'text'; url: string }
   | { type: 'google'; url: string; external: string }
+  | { type: 'office'; viewer: string; url: string }
   | { type: 'unsupported'; url: string | null; reason: string }
 
 export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose: () => void }) {
@@ -28,6 +30,9 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
   const [source, setSource] = useState<Source>({ type: 'loading' })
   const [maximised, setMaximised] = useState(false)
   const [minimised, setMinimised] = useState(false)
+  // Docked is the default: a full-height panel on the right, the same shape as
+  // the Claude pane. Undocking gives the draggable floating window.
+  const [docked, setDocked] = useState(true)
 
   // Position and size, in px. Kept in state so the window can be dragged.
   const [box, setBox] = useState(() => ({
@@ -38,6 +43,8 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
   }))
   const dragRef = useRef<{ dx: number; dy: number } | null>(null)
   const resizeRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null)
+  const [dockWidth, setDockWidth] = useState(() => Math.min(560, Math.max(360, window.innerWidth * 0.42)))
+  const dockResizeRef = useRef<number | null>(null)
 
   /** A Google link on the item wins: it is the editable version of the doc. */
   const googleLink = useMemo(() => {
@@ -75,7 +82,17 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
       }
 
       const kind = fileKind(item.mimeType, item.fileName)
-      if (kind === 'image') setSource({ type: 'image', url })
+      if (kind === 'doc' || kind === 'sheet' || kind === 'slide') {
+        // Browsers cannot render Office files. Microsoft's viewer converts them
+        // for display; it fetches the file itself, which works because our
+        // signed URLs are publicly reachable for the hour they live.
+        setSource({
+          type: 'office',
+          viewer: `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`,
+          url,
+        })
+      }
+      else if (kind === 'image') setSource({ type: 'image', url })
       else if (kind === 'pdf') setSource({ type: 'pdf', url })
       else if (kind === 'video') setSource({ type: 'video', url })
       else if (kind === 'audio') setSource({ type: 'audio', url })
@@ -102,6 +119,9 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
           x: Math.max(0, Math.min(window.innerWidth - 120, e.clientX - dragRef.current!.dx)),
           y: Math.max(0, Math.min(window.innerHeight - 40, e.clientY - dragRef.current!.dy)),
         }))
+      } else if (dockResizeRef.current !== null) {
+        // Dragging the panel's left edge widens or narrows it.
+        setDockWidth(Math.max(320, Math.min(window.innerWidth - 120, window.innerWidth - e.clientX)))
       } else if (resizeRef.current) {
         const r = resizeRef.current
         setBox((b) => ({
@@ -114,6 +134,7 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
     const onUp = () => {
       dragRef.current = null
       resizeRef.current = null
+      dockResizeRef.current = null
       document.body.style.userSelect = ''
     }
 
@@ -133,28 +154,36 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
 
   const style: React.CSSProperties = maximised
     ? { left: 8, top: 8, width: 'calc(100vw - 16px)', height: 'calc(100vh - 16px)' }
-    : minimised
-      ? { left: box.x, top: box.y, width: 320, height: 'auto' }
-      : { left: box.x, top: box.y, width: box.w, height: box.h }
+    : docked
+      ? minimised
+        ? { right: 0, bottom: 0, width: 360, height: 'auto' }
+        : { right: 0, top: 0, width: dockWidth, height: '100vh' }
+      : minimised
+        ? { left: box.x, top: box.y, width: 320, height: 'auto' }
+        : { left: box.x, top: box.y, width: box.w, height: box.h }
 
   const externalUrl =
     source.type === 'google' ? source.external : 'url' in source ? source.url ?? undefined : undefined
 
   return (
     <div
-      className="fixed z-[70] bg-surface border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
+      className={`fixed z-[70] bg-surface border-border shadow-2xl flex flex-col overflow-hidden ${
+        docked && !maximised ? 'border-l' : 'border rounded-xl'
+      }`}
       style={style}
       role="dialog"
       aria-label={item.title}
     >
       <header
         onPointerDown={(e) => {
-          if (maximised || (e.target as HTMLElement).closest('button')) return
+          if (docked || maximised || (e.target as HTMLElement).closest('button')) return
           dragRef.current = { dx: e.clientX - box.x, dy: e.clientY - box.y }
           document.body.style.userSelect = 'none'
         }}
         onDoubleClick={() => setMaximised((m) => !m)}
-        className="flex items-center gap-2 px-3 py-2 border-b border-border bg-surface-2 flex-shrink-0 cursor-move select-none"
+        className={`flex items-center gap-2 px-3 py-2 border-b border-border bg-surface-2 flex-shrink-0 select-none ${
+          docked || maximised ? '' : 'cursor-move'
+        }`}
       >
         <span className="text-sm text-text-main truncate flex-1" title={item.title}>
           {item.title}
@@ -181,6 +210,13 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
             <Download size={14} />
           </a>
         )}
+        <button
+          onClick={() => { setDocked((d) => !d); setMaximised(false) }}
+          className="text-text-subtle hover:text-text-main p-1 rounded"
+          title={docked ? 'Pop out into a floating window' : 'Dock to the right'}
+        >
+          {docked ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
+        </button>
         <button
           onClick={() => setMinimised((m) => !m)}
           className="text-text-subtle hover:text-text-main p-1 rounded"
@@ -216,6 +252,14 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
 
           {(source.type === 'pdf' || source.type === 'text') && (
             <iframe src={source.url} title={item.title} className="w-full h-full border-0 bg-white" />
+          )}
+
+          {source.type === 'office' && (
+            <iframe
+              src={source.viewer}
+              title={item.title}
+              className="w-full h-full border-0 bg-white"
+            />
           )}
 
           {source.type === 'google' && (
@@ -256,7 +300,18 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
         </div>
       )}
 
-      {!minimised && !maximised && (
+      {!minimised && !maximised && docked && (
+        <div
+          onPointerDown={() => {
+            dockResizeRef.current = 1
+            document.body.style.userSelect = 'none'
+          }}
+          className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize hover:bg-primary/30"
+          title="Drag to resize the panel"
+        />
+      )}
+
+      {!minimised && !maximised && !docked && (
         <div
           onPointerDown={(e) => {
             resizeRef.current = { x: e.clientX, y: e.clientY, w: box.w, h: box.h }
