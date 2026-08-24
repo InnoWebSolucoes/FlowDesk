@@ -159,7 +159,16 @@ export interface CalendarEntry {
   allDay: boolean
   visibility: Visibility | null
   sharedWith: string[]
+  /** Documents and clusters attached to this entry. */
+  links: CalendarEntryLink[]
   createdAt: string
+}
+
+export interface CalendarEntryLink {
+  id: string
+  entryId: string
+  itemId: string | null
+  clusterId: string | null
 }
 
 export type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'one-off'

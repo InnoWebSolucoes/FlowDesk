@@ -78,6 +78,7 @@ interface ProjectState {
   createCalendarEntry: (input: Partial<CalendarEntry> & { startsAt: string; endsAt: string }) => Promise<CalendarEntry | null>
   updateCalendarEntry: (id: string, updates: Partial<CalendarEntry>) => Promise<void>
   deleteCalendarEntry: (id: string) => Promise<void>
+  setCalendarEntryLinks: (entryId: string, links: { itemId?: string; clusterId?: string }[]) => Promise<void>
 }
 
 function toProject(row: any): Project {
@@ -240,6 +241,12 @@ function toCalendarEntry(row: any): CalendarEntry {
     allDay: row.all_day ?? false,
     visibility: row.visibility ?? null,
     sharedWith: (row.calendar_entry_shares ?? []).map((s: any) => s.user_id),
+    links: (row.calendar_entry_links ?? []).map((l: any) => ({
+      id: l.id,
+      entryId: l.entry_id,
+      itemId: l.item_id,
+      clusterId: l.cluster_id,
+    })),
     createdAt: row.created_at,
   }
 }
@@ -1124,21 +1131,26 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
    * what actually comes back.
    */
   loadCalendar: async (projectId) => {
-    let query = supabase
-      .from('calendar_entries')
-      .select('*, calendar_entry_shares(user_id)')
-      .order('starts_at')
+    const run = (select: string) => {
+      const q = supabase.from('calendar_entries').select(select).order('starts_at')
+      return projectId
+        ? q.or(`project_id.eq.${projectId},project_id.is.null`)
+        : q.is('project_id', null)
+    }
 
-    query = projectId
-      ? query.or(`project_id.eq.${projectId},project_id.is.null`)
-      : query.is('project_id', null)
-
-    const { data, error } = await query
-    // Missing table = the migration hasn't run. The rest of the calendar (the
-    // todos' do dates) still works, so don't turn this into a hard failure.
+    // The links join needs its own migration; fall back rather than losing the
+    // whole calendar when only that part is missing.
+    let { data, error } = await run('*, calendar_entry_shares(user_id), calendar_entry_links(*)')
+    if (error) {
+      console.warn('[loadCalendar] retrying without entry links:', error.message)
+      ;({ data, error } = await run('*, calendar_entry_shares(user_id)'))
+    }
+    // Missing table = the do-dates migration hasn't run either. The rest of the
+    // calendar (the todos' do dates) still works, so don't fail hard.
     if (error) console.warn('[loadCalendar] no calendar entries:', error.message)
+
     set({
-      calendarEntries: error || !data ? [] : data.map(toCalendarEntry),
+      calendarEntries: error || !data ? [] : (data as any[]).map(toCalendarEntry),
       calendarLoadedFor: projectId,
     })
   },
@@ -1148,21 +1160,28 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const ownerId = input.ownerId ?? auth.user?.id
     if (!ownerId) return null
 
-    const { data, error } = await supabase
-      .from('calendar_entries')
-      .insert({
-        project_id: input.projectId ?? null,
-        owner_id: ownerId,
-        title: input.title ?? 'Busy',
-        notes: input.notes ?? '',
-        kind: input.kind ?? 'busy',
-        starts_at: input.startsAt,
-        ends_at: input.endsAt,
-        all_day: input.allDay ?? false,
-        visibility: input.visibility ?? null,
-      })
-      .select('*, calendar_entry_shares(user_id)')
-      .single()
+    const row = {
+      project_id: input.projectId ?? null,
+      owner_id: ownerId,
+      title: input.title ?? 'Busy',
+      notes: input.notes ?? '',
+      kind: input.kind ?? 'busy',
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      all_day: input.allDay ?? false,
+      visibility: input.visibility ?? null,
+    }
+
+    const insert = (select: string) =>
+      supabase.from('calendar_entries').insert(row).select(select).single()
+
+    // The links join needs its own migration; retry without it rather than
+    // failing the insert outright.
+    let { data, error } = await insert('*, calendar_entry_shares(user_id), calendar_entry_links(*)')
+    if (error) {
+      console.warn('[createCalendarEntry] retrying without entry links:', error.message)
+      ;({ data, error } = await insert('*, calendar_entry_shares(user_id)'))
+    }
 
     if (error || !data) {
       console.error('[createCalendarEntry] failed:', error)
@@ -1194,5 +1213,28 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   deleteCalendarEntry: async (id) => {
     await supabase.from('calendar_entries').delete().eq('id', id)
     set((s) => ({ calendarEntries: s.calendarEntries.filter((e) => e.id !== id) }))
+  },
+
+  setCalendarEntryLinks: async (entryId, links) => {
+    await supabase.from('calendar_entry_links').delete().eq('entry_id', entryId)
+
+    const rows = links
+      .filter((l) => l.itemId || l.clusterId)
+      .map((l) => ({ entry_id: entryId, item_id: l.itemId ?? null, cluster_id: l.clusterId ?? null }))
+
+    let saved: CalendarEntry['links'] = []
+    if (rows.length > 0) {
+      const { data } = await supabase.from('calendar_entry_links').insert(rows).select()
+      saved = (data ?? []).map((l: any) => ({
+        id: l.id,
+        entryId: l.entry_id,
+        itemId: l.item_id,
+        clusterId: l.cluster_id,
+      }))
+    }
+
+    set((s) => ({
+      calendarEntries: s.calendarEntries.map((e) => (e.id === entryId ? { ...e, links: saved } : e)),
+    }))
   },
 }))

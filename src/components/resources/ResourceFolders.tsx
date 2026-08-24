@@ -67,6 +67,31 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // Dragging files onto a folder (or a breadcrumb) moves them there. Uses HTML5
+  // drag-and-drop: rows are plain elements, and this gives us the drag image
+  // and drop cursors for free.
+  const [dragIds, setDragIds] = useState<string[] | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null | 'up'>(null)
+
+  const startRowDrag = (e: React.DragEvent, item: ResourceItem) => {
+    // Dragging an unselected row drags just that row.
+    const ids = selected.has(item.id) ? [...selected] : [item.id]
+    setDragIds(ids)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', ids.join(','))
+  }
+
+  const dropOnto = async (targetClusterId: string | null) => {
+    const ids = dragIds ?? []
+    setDragIds(null)
+    setDropTarget(null)
+    for (const id of ids) {
+      const it = items.find((x) => x.id === id)
+      if (it && it.clusterId !== targetClusterId) await moveItem(id, targetClusterId, it.x, it.y)
+    }
+    if (ids.length > 1) clearSelection()
+  }
+
   const folders = useMemo(
     () =>
       clusters
@@ -239,7 +264,16 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
         <nav className="flex items-center gap-1 text-sm min-w-0 overflow-x-auto">
           <button
             onClick={() => onNavigate(null)}
+            onDragOver={(e) => {
+              if (!dragIds) return
+              e.preventDefault()
+              setDropTarget('up')
+            }}
+            onDragLeave={() => setDropTarget((t) => (t === 'up' ? null : t))}
+            onDrop={(e) => { e.preventDefault(); dropOnto(null) }}
             className={`flex items-center gap-1.5 px-2 py-1 rounded-md flex-shrink-0 transition-colors ${
+              dropTarget === 'up' ? 'bg-primary-light ring-2 ring-primary' : ''
+            } ${
               clusterId === null ? 'text-text-main font-medium' : 'text-text-muted hover:text-text-main'
             }`}
           >
@@ -393,7 +427,17 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                   key={f.id}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => onNavigate(f.id)}
-                  className="w-full flex items-center gap-3 px-4 py-2 border-b border-border hover:bg-surface-2 transition-colors text-left"
+                  onDragOver={(e) => {
+                    if (!dragIds) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    setDropTarget(f.id)
+                  }}
+                  onDragLeave={() => setDropTarget((t) => (t === f.id ? null : t))}
+                  onDrop={(e) => { e.preventDefault(); dropOnto(f.id) }}
+                  className={`w-full flex items-center gap-3 px-4 py-2 border-b border-border transition-colors text-left ${
+                    dropTarget === f.id ? 'bg-primary-light ring-2 ring-primary ring-inset' : 'hover:bg-surface-2'
+                  }`}
                 >
                   <Folder size={16} style={{ color: f.color }} className="flex-shrink-0" />
                   <span className="flex-1 text-sm text-text-main truncate">{f.title}</span>
@@ -416,13 +460,16 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                   key={i.id}
                   ref={register(i.id)}
                   data-resource-item
+                  draggable
+                  onDragStart={(e) => startRowDrag(e, i)}
+                  onDragEnd={() => { setDragIds(null); setDropTarget(null) }}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => clickFile(e, i)}
                   onDoubleClick={() => onOpenItem(i)}
                   onContextMenu={(e) => openMenu(e, i)}
                   className={`w-full flex items-center gap-3 px-4 py-2 border-b border-border transition-colors cursor-pointer ${
                     isSelected ? 'bg-primary-light' : 'hover:bg-surface-2'
-                  }`}
+                  } ${dragIds?.includes(i.id) ? 'opacity-40' : ''}`}
                   title={`${i.title}\nClick for details · double-click to open · right-click for actions`}
                 >
                   <span className="flex-shrink-0" style={{ color: kindStyle(fileKind(i.mimeType, i.fileName)).color }}>
@@ -468,7 +515,19 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                   key={f.id}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => onNavigate(f.id)}
-                  className="flex flex-col items-center gap-2 p-3 rounded-xl border border-border hover:border-primary hover:shadow-md transition-all"
+                  onDragOver={(e) => {
+                    if (!dragIds) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    setDropTarget(f.id)
+                  }}
+                  onDragLeave={() => setDropTarget((t) => (t === f.id ? null : t))}
+                  onDrop={(e) => { e.preventDefault(); dropOnto(f.id) }}
+                  className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
+                    dropTarget === f.id
+                      ? 'border-primary ring-2 ring-primary bg-primary-light'
+                      : 'border-border hover:border-primary hover:shadow-md'
+                  }`}
                 >
                   <Folder size={36} style={{ color: f.color }} />
                   <span className="text-[11px] text-text-main text-center leading-tight line-clamp-2">{f.title}</span>
@@ -484,13 +543,16 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                   key={i.id}
                   ref={register(i.id)}
                   data-resource-item
+                  draggable
+                  onDragStart={(e) => startRowDrag(e, i)}
+                  onDragEnd={() => { setDragIds(null); setDropTarget(null) }}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => clickFile(e, i)}
                   onDoubleClick={() => onOpenItem(i)}
                   onContextMenu={(e) => openMenu(e, i)}
                   className={`rounded-xl border overflow-hidden hover:shadow-md transition-all cursor-pointer ${
                     isSelected ? 'border-primary ring-2 ring-primary/30' : 'border-border hover:border-primary'
-                  }`}
+                  } ${dragIds?.includes(i.id) ? 'opacity-40' : ''}`}
                   title={`${i.title}\nClick for details · double-click to open · right-click for actions`}
                 >
                   <ResourceThumbnail item={i} width={132} height={92} />

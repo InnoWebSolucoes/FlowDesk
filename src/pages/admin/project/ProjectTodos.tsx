@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
 import {
-  ListTodo, Plus, Trash2, X, Link2, ChevronUp, ChevronDown, Circle, CheckCircle2,
+  ListTodo, Plus, Trash2, Link2, ChevronUp, ChevronDown, Circle, CheckCircle2,
   FolderOpen, Calendar, CalendarClock, Pencil, Check, Copy,
 } from 'lucide-react'
 import { isBefore, parseISO, startOfToday } from 'date-fns'
@@ -9,6 +9,8 @@ import { Project, ProjectTodo, Priority } from '../../../types'
 import { useProjectStore } from '../../../store/projectStore'
 import { EmptyState } from '../../../components/shared/EmptyState'
 import { FileKindIcon } from '../../../components/resources/ResourceThumbnail'
+import { ResourceLinkPicker } from '../../../components/shared/ResourceLinkPicker'
+import { CalendarItemPanel } from '../../../components/calendar/CalendarItemPanel'
 
 interface Ctx { project: Project }
 
@@ -20,7 +22,7 @@ const PRIORITY_STYLES: Record<Priority, string> = {
   low: 'bg-surface-2 text-text-muted',
 }
 
-type SortMode = 'manual' | 'priority' | 'dueDate'
+type SortMode = 'manual' | 'priority' | 'dueDate' | 'doDate'
 
 export function ProjectTodos() {
   const { project } = useOutletContext<Ctx>()
@@ -37,6 +39,7 @@ export function ProjectTodos() {
   const [sortMode, setSortMode] = useState<SortMode>('manual')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [linkingId, setLinkingId] = useState<string | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
   // Remembered per project so a reload returns to the list you were on.
   const [activeListId, setActiveListId] = useState<string | null>(() => {
     try {
@@ -85,6 +88,15 @@ export function ProjectTodos() {
     if (sortMode === 'priority') {
       return [...list].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || a.sortOrder - b.sortOrder)
     }
+    if (sortMode === 'doDate') {
+      return [...list].sort((a, b) => {
+        if (!a.doDate && !b.doDate) return a.sortOrder - b.sortOrder
+        if (!a.doDate) return 1
+        if (!b.doDate) return -1
+        return a.doDate.localeCompare(b.doDate)
+      })
+    }
+
     if (sortMode === 'dueDate') {
       return [...list].sort((a, b) => {
         if (!a.dueDate && !b.dueDate) return a.sortOrder - b.sortOrder
@@ -211,9 +223,10 @@ export function ProjectTodos() {
               />
             ) : (
               <p
-                onDoubleClick={() => setEditingId(todo.id)}
-                className={`text-sm text-text-main truncate ${todo.isCompleted ? 'line-through' : ''}`}
-                title={todo.title}
+                onClick={() => setDetailId(todo.id)}
+                onDoubleClick={(e) => { e.stopPropagation(); setEditingId(todo.id) }}
+                className={`text-sm text-text-main truncate cursor-pointer hover:text-primary transition-colors ${todo.isCompleted ? 'line-through' : ''}`}
+                title="Click to open · double-click to rename"
               >
                 {todo.title}
               </p>
@@ -324,6 +337,7 @@ export function ProjectTodos() {
   }
 
   const linkingTodo = linkingId ? todos.find((t) => t.id === linkingId) ?? null : null
+  const detailTodo = detailId ? todos.find((t) => t.id === detailId) ?? undefined : undefined
 
   return (
     <div className="max-w-5xl">
@@ -487,7 +501,7 @@ export function ProjectTodos() {
         <div className="flex items-center justify-between gap-3 mb-3 text-xs">
           <div className="flex items-center gap-1.5">
             <span className="text-text-subtle">Sort</span>
-            {(['manual', 'priority', 'dueDate'] as SortMode[]).map((mode) => (
+            {(['manual', 'priority', 'doDate', 'dueDate'] as SortMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setSortMode(mode)}
@@ -495,7 +509,7 @@ export function ProjectTodos() {
                   sortMode === mode ? 'bg-primary text-white' : 'text-text-muted hover:bg-surface-2'
                 }`}
               >
-                {mode === 'manual' ? 'Manual' : mode === 'priority' ? 'Priority' : 'Due date'}
+                {mode === 'manual' ? 'Manual' : mode === 'priority' ? 'Priority' : mode === 'doDate' ? 'Do date' : 'Deadline'}
               </button>
             ))}
           </div>
@@ -534,10 +548,12 @@ export function ProjectTodos() {
         </div>
       )}
 
-      {/* Resource link picker */}
+      {/* Resource link picker — clusters can be selected or opened into. */}
       {linkingTodo && (
         <ResourceLinkPicker
-          todo={linkingTodo}
+          projectId={project.id}
+          subtitle={linkingTodo.title}
+          initial={linkingTodo.links.map((l) => (l.itemId ? { itemId: l.itemId } : { clusterId: l.clusterId! }))}
           onClose={() => setLinkingId(null)}
           onSave={async (links) => {
             await setTodoLinks(linkingTodo.id, links)
@@ -545,146 +561,15 @@ export function ProjectTodos() {
           }}
         />
       )}
-    </div>
-  )
-}
 
-// ─── Link picker ─────────────────────────────────────────────────────────────
-
-function ResourceLinkPicker({
-  todo,
-  onClose,
-  onSave,
-}: {
-  todo: ProjectTodo
-  onClose: () => void
-  onSave: (links: { itemId?: string; clusterId?: string }[]) => Promise<void>
-}) {
-  const { clusters, items } = useProjectStore()
-  const [selected, setSelected] = useState<{ itemId?: string; clusterId?: string }[]>(
-    todo.links.map((l) => (l.itemId ? { itemId: l.itemId } : { clusterId: l.clusterId! }))
-  )
-  const [query, setQuery] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const projectClusters = clusters.filter((c) => c.projectId === todo.projectId)
-  const projectItems = items.filter((i) => i.projectId === todo.projectId)
-
-  const q = query.trim().toLowerCase()
-  const matchedClusters = projectClusters.filter((c) => !q || c.title.toLowerCase().includes(q))
-  const matchedItems = projectItems.filter((i) => !q || i.title.toLowerCase().includes(q))
-
-  const isSelected = (key: { itemId?: string; clusterId?: string }) =>
-    selected.some((s) => (key.itemId ? s.itemId === key.itemId : s.clusterId === key.clusterId))
-
-  const toggle = (key: { itemId?: string; clusterId?: string }) =>
-    setSelected((prev) =>
-      isSelected(key)
-        ? prev.filter((s) => (key.itemId ? s.itemId !== key.itemId : s.clusterId !== key.clusterId))
-        : [...prev, key]
-    )
-
-  /** Breadcrumb path so duplicate titles in different clusters stay distinguishable. */
-  const pathOf = (clusterId: string | null): string => {
-    const parts: string[] = []
-    let id = clusterId
-    while (id) {
-      const c = projectClusters.find((x) => x.id === id)
-      if (!c) break
-      parts.unshift(c.title)
-      id = c.parentClusterId
-    }
-    return parts.length > 0 ? parts.join(' › ') : 'Top level'
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface rounded-xl border border-border w-full max-w-lg flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
-          <div className="min-w-0">
-            <h3 className="text-text-main font-semibold text-base">Link resources</h3>
-            <p className="text-text-subtle text-xs truncate">{todo.title}</p>
-          </div>
-          <button onClick={onClose} className="text-text-subtle hover:text-text-main p-1 flex-shrink-0">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="px-5 py-3 border-b border-border flex-shrink-0">
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search documents and clusters…"
-            className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary"
-          />
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          {matchedClusters.length === 0 && matchedItems.length === 0 && (
-            <p className="text-text-subtle text-sm text-center py-8">
-              Nothing in this project's resources yet.
-            </p>
-          )}
-
-          {matchedClusters.map((c) => {
-            const key = { clusterId: c.id }
-            return (
-              <button
-                key={c.id}
-                onClick={() => toggle(key)}
-                className={`w-full flex items-center gap-2.5 p-2.5 rounded-lg border text-left transition-colors ${
-                  isSelected(key) ? 'border-primary bg-primary-light' : 'border-transparent hover:bg-surface-2'
-                }`}
-              >
-                <FolderOpen size={16} style={{ color: c.color }} className="flex-shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-text-main text-sm truncate">{c.title}</p>
-                  <p className="text-text-subtle text-[11px] truncate">Cluster · {pathOf(c.parentClusterId)}</p>
-                </div>
-                {isSelected(key) && <CheckCircle2 size={15} className="text-primary flex-shrink-0" />}
-              </button>
-            )
-          })}
-
-          {matchedItems.map((i) => {
-            const key = { itemId: i.id }
-            return (
-              <button
-                key={i.id}
-                onClick={() => toggle(key)}
-                className={`w-full flex items-center gap-2.5 p-2.5 rounded-lg border text-left transition-colors ${
-                  isSelected(key) ? 'border-primary bg-primary-light' : 'border-transparent hover:bg-surface-2'
-                }`}
-              >
-                <span className="text-text-muted flex-shrink-0"><FileKindIcon mime={i.mimeType} size={16} /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-text-main text-sm truncate">{i.title}</p>
-                  <p className="text-text-subtle text-[11px] truncate">{pathOf(i.clusterId)}</p>
-                </div>
-                {isSelected(key) && <CheckCircle2 size={15} className="text-primary flex-shrink-0" />}
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="px-5 py-3 border-t border-border flex items-center gap-2 flex-shrink-0">
-          <span className="text-text-subtle text-xs flex-1">{selected.length} selected</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg border border-border text-text-muted text-sm hover:bg-surface-2 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={async () => { setSaving(true); await onSave(selected); setSaving(false) }}
-            disabled={saving}
-            className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-dark disabled:opacity-50 transition-colors"
-          >
-            {saving ? 'Saving…' : 'Save links'}
-          </button>
-        </div>
-      </div>
+      {/* Full detail view: description, both dates, times, links. */}
+      {detailTodo && (
+        <CalendarItemPanel
+          todo={detailTodo}
+          projectId={project.id}
+          onClose={() => setDetailId(null)}
+        />
+      )}
     </div>
   )
 }

@@ -98,6 +98,10 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   const currentClusterId = clusterId
   const setCurrentClusterId = onNavigate
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  // Multi-select for bulk moves. The single selection above still drives the
+  // details panel; this is the set the marquee and shift-click build up.
+  const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
+  const lastClickedItem = useRef<string | null>(null)
   const [renamingClusterId, setRenamingClusterId] = useState<string | null>(null)
   // Draft for the "add link" dialog; null when the dialog is closed.
   const [linkDraft, setLinkDraft] = useState<{ url: string; title: string } | null>(null)
@@ -209,7 +213,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
     return path
   }, [currentClusterId, clusters])
 
-  const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) ?? null : null
+  // While several nodes are selected the panel stays shut: the gesture is
+  // "pick these", not "tell me about this one".
+  const selectedItem =
+    selectedItemId && multiSelected.size === 0
+      ? items.find((i) => i.id === selectedItemId) ?? null
+      : null
 
   /**
    * Position to render a node at. The node being dragged follows the pointer
@@ -298,6 +307,28 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   )
 
   // ─── Drag ──────────────────────────────────────────────────────────────────
+
+  /**
+   * A click anywhere outside the canvas clears the selection — clicking the
+   * toolbar, the sidebar or empty page space should not leave nodes looking
+   * selected. The panel and its dialogs are excluded so interacting with them
+   * doesn't wipe what you just picked.
+   */
+  useEffect(() => {
+    if (multiSelected.size === 0 && !selectedItemId) return
+
+    const onDocPointerDown = (e: PointerEvent) => {
+      const target = e.target as Element | null
+      if (!target) return
+      if (containerRef.current?.contains(target)) return
+      if (target.closest('[data-resource-item], [role="dialog"], aside')) return
+      setMultiSelected(new Set())
+      setSelectedItemId(null)
+    }
+
+    document.addEventListener('pointerdown', onDocPointerDown)
+    return () => document.removeEventListener('pointerdown', onDocPointerDown)
+  }, [multiSelected.size, selectedItemId])
 
   const startDrag = (
     e: React.PointerEvent,
@@ -446,9 +477,14 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
 
         if (target) {
           // Place it near the centre of its new home rather than at the drop point.
-          const siblings = store.items.filter((i) => i.clusterId === target.id).length
-          const pos = spawnPosition(siblings)
-          moveItem(d.id, target.id, pos.x, pos.y, d.pullOutOf ?? undefined)
+          // A multi-selection moves together, each getting its own slot.
+          const group = multiSelected.has(d.id) ? [...multiSelected] : [d.id]
+          let siblings = store.items.filter((i) => i.clusterId === target.id).length
+          for (const id of group) {
+            const pos = spawnPosition(siblings++)
+            moveItem(id, target.id, pos.x, pos.y, d.pullOutOf ?? undefined)
+          }
+          if (group.length > 1) setMultiSelected(new Set())
         } else if (d.pullOutOf) {
           // Pulled out of a bubble on this level: it lands here, where dropped.
           moveItem(d.id, currentClusterId, d.x, d.y, d.pullOutOf)
@@ -508,7 +544,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
       window.removeEventListener('pointercancel', onCancel)
       window.removeEventListener('blur', onCancel)
     }
-  }, [dragId, screenToWorld, currentClusterId, moveItem, updateCluster, selectedItemId, stackItemOnto])
+  }, [dragId, screenToWorld, currentClusterId, moveItem, updateCluster, selectedItemId, stackItemOnto, multiSelected])
 
   // ─── Cluster navigation ────────────────────────────────────────────────────
 
@@ -917,7 +953,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
       <div
         ref={containerRef}
         onPointerDown={onPanStart}
-        onClick={() => setSelectedItemId(null)}
+        onClick={() => { setSelectedItemId(null); setMultiSelected(new Set()) }}
         onDragEnter={(e) => {
           if (!e.dataTransfer.types.includes('Files')) return
           e.preventDefault()
@@ -1155,7 +1191,37 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
               onClick={(e) => {
                 e.stopPropagation()
                 if (draggedRef.current === item.id) { draggedRef.current = null; return }
-                if (!dragId) setSelectedItemId(item.id)
+                if (dragId) return
+
+                // Any selection gesture closes the details panel.
+                if (e.shiftKey || e.metaKey || e.ctrlKey) setSelectedItemId(null)
+
+                if (e.shiftKey && lastClickedItem.current) {
+                  // Range select across the nodes currently on screen.
+                  const ids = visibleItems.map((v) => v.id)
+                  const from = ids.indexOf(lastClickedItem.current)
+                  const to = ids.indexOf(item.id)
+                  if (from !== -1 && to !== -1) {
+                    const range = ids.slice(Math.min(from, to), Math.max(from, to) + 1)
+                    setMultiSelected((prev) => new Set([...prev, ...range]))
+                    return
+                  }
+                }
+
+                if (e.metaKey || e.ctrlKey) {
+                  setMultiSelected((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(item.id)) next.delete(item.id)
+                    else next.add(item.id)
+                    return next
+                  })
+                  lastClickedItem.current = item.id
+                  return
+                }
+
+                setMultiSelected(new Set())
+                lastClickedItem.current = item.id
+                setSelectedItemId(item.id)
               }}
               onDoubleClick={(e) => { e.stopPropagation(); openItem(item) }}
               onContextMenu={(e) => {
@@ -1168,7 +1234,9 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
                 // No transition on the dragged node, or it lags the pointer.
                 dragId === item.id ? '' : 'transition-all'
               } ${
-                selectedItemId === item.id ? 'border-primary ring-2 ring-primary/25' : 'border-border'
+                selectedItemId === item.id || multiSelected.has(item.id)
+                  ? 'border-primary ring-2 ring-primary/25'
+                  : 'border-border'
               } ${
                 // While searching, fade everything that doesn't match.
                 searchResults && !matchedIds.has(item.id) ? 'opacity-25' : ''

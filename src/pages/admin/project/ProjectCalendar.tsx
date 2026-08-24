@@ -1,465 +1,797 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import {
-  ChevronLeft, ChevronRight, Plus, X, Lock, Users as UsersIcon, Globe, Clock, Trash2,
+  ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
 } from 'lucide-react'
 import {
-  addDays, addMonths, endOfMonth, endOfWeek, format, isSameDay, isSameMonth,
-  parseISO, startOfDay, startOfMonth, startOfWeek,
+  addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, isSameMonth,
+  startOfMonth, startOfWeek,
 } from 'date-fns'
-import { Project, ProjectTodo, CalendarEntry, Visibility, CalendarEntryKind } from '../../../types'
+import { Project, ProjectTodo, CalendarEntry } from '../../../types'
 import { useProjectStore } from '../../../store/projectStore'
-import { useEmployeeStore } from '../../../store/employeeStore'
-import { useAuthStore } from '../../../store/authStore'
+import { CalendarItemPanel } from '../../../components/calendar/CalendarItemPanel'
+import {
+  KIND_STYLE, LAYERS, Layer, DAY_START_HOUR, DAY_END_HOUR, HOUR_HEIGHT,
+  dayKey, atTime, minutesToOffset, offsetToMinutes, snap15, minutesToTime,
+  todoMinutes, entryMinutes, layoutColumns,
+} from '../../../components/calendar/calendarShared'
 
-const KIND_STYLE: Record<CalendarEntryKind, { label: string; color: string }> = {
-  busy: { label: 'Busy', color: '#dc2626' },
-  working: { label: 'Working', color: '#16a34a' },
-  meeting: { label: 'Meeting', color: '#2563eb' },
-  timeoff: { label: 'Time off', color: '#a855f7' },
+type View = 'day' | 'week' | 'month'
+
+/** What is being dragged, and what the drop should do. */
+type DragState =
+  | { kind: 'todo'; id: string; grabMinutes: number; durationMinutes: number | null }
+  | { kind: 'entry'; id: string; grabMinutes: number; durationMinutes: number }
+  | { kind: 'unscheduled'; id: string }
+
+interface Block {
+  key: string
+  start: number
+  end: number
+  label: string
+  color: string
+  outlined?: boolean
+  todo?: ProjectTodo
+  entry?: CalendarEntry
+  allDay?: boolean
 }
-
-const VISIBILITY_META: Record<Visibility, { label: string; hint: string; Icon: typeof Lock }> = {
-  private: { label: 'Private', hint: 'Only you, even managers cannot see it', Icon: Lock },
-  team: { label: 'Team', hint: 'Everyone on this project', Icon: UsersIcon },
-  everyone: { label: 'Everyone', hint: 'Everyone in the company', Icon: Globe },
-}
-
-/** Local YYYY-MM-DD. A do date is a calendar day, not an instant. */
-const dayKey = (d: Date) => format(d, 'yyyy-MM-dd')
 
 export function ProjectCalendar() {
   const { project } = useOutletContext<{ project: Project }>()
   const {
     todos, todosLoadedFor, loadTodos, updateTodo,
+    todoLists,
     calendarEntries, calendarLoadedFor, loadCalendar,
-    createCalendarEntry, deleteCalendarEntry,
+    createCalendarEntry, updateCalendarEntry,
   } = useProjectStore()
-  const employees = useEmployeeStore((s) => s.employees)
-  const currentUser = useAuthStore((s) => s.currentUser)
 
-  const [cursor, setCursor] = useState(() => startOfMonth(new Date()))
-  const [draft, setDraft] = useState<{ day: string } | null>(null)
-  const [detail, setDetail] = useState<CalendarEntry | null>(null)
+  const [view, setView] = useState<View>('week')
+  const [cursor, setCursor] = useState(() => new Date())
+  const [hidden, setHidden] = useState<Set<Layer>>(new Set())
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [openTodo, setOpenTodo] = useState<string | null>(null)
+  const [openEntry, setOpenEntry] = useState<string | null>(null)
+  const [drag, setDrag] = useState<DragState | null>(null)
+  const [hoverSlot, setHoverSlot] = useState<{ day: string; minutes: number } | null>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (todosLoadedFor !== project.id) loadTodos(project.id)
     if (calendarLoadedFor !== project.id) loadCalendar(project.id)
   }, [project.id, todosLoadedFor, calendarLoadedFor, loadTodos, loadCalendar])
 
-  // Six weeks covering the month, so the grid never changes height.
+  const visible = (layer: Layer) => !hidden.has(layer)
+  const toggleLayer = (layer: Layer) =>
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (next.has(layer)) next.delete(layer)
+      else next.add(layer)
+      return next
+    })
+
+  // ── The days on screen ───────────────────────────────────────────────────
   const days = useMemo(() => {
+    if (view === 'day') return [cursor]
+    if (view === 'week') {
+      const first = startOfWeek(cursor, { weekStartsOn: 1 })
+      return Array.from({ length: 7 }, (_, i) => addDays(first, i))
+    }
     const first = startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 })
     const last = endOfWeek(endOfMonth(cursor), { weekStartsOn: 1 })
     const out: Date[] = []
     for (let d = first; d <= last; d = addDays(d, 1)) out.push(d)
     return out
-  }, [cursor])
+  }, [view, cursor])
 
-  /** Todos land on their do date — the day you plan to work, not the deadline. */
-  const todosByDay = useMemo(() => {
-    const map = new Map<string, ProjectTodo[]>()
-    for (const t of todos) {
-      if (!t.doDate) continue
-      const list = map.get(t.doDate) ?? []
-      list.push(t)
-      map.set(t.doDate, list)
-    }
-    return map
-  }, [todos])
-
-  /** A due date with no do date still deserves a marker, or deadlines vanish. */
-  const dueByDay = useMemo(() => {
-    const map = new Map<string, ProjectTodo[]>()
-    for (const t of todos) {
-      if (!t.dueDate || t.isCompleted) continue
-      const list = map.get(t.dueDate) ?? []
-      list.push(t)
-      map.set(t.dueDate, list)
-    }
-    return map
-  }, [todos])
-
-  const entriesByDay = useMemo(() => {
-    const map = new Map<string, CalendarEntry[]>()
-    for (const e of calendarEntries) {
-      // Multi-day entries appear on each day they cover.
-      let d = startOfDay(parseISO(e.startsAt))
-      const end = parseISO(e.endsAt)
-      while (d < end) {
-        const key = dayKey(d)
-        const list = map.get(key) ?? []
-        list.push(e)
-        map.set(key, list)
-        d = addDays(d, 1)
-      }
-    }
-    return map
-  }, [calendarEntries])
-
-  const nameFor = (userId: string | null) => {
-    if (!userId) return null
-    if (userId === currentUser?.id) return 'You'
-    return employees.find((e) => e.id === userId)?.name ?? null
+  const step = (dir: 1 | -1) => {
+    if (view === 'day') setCursor((c) => addDays(c, dir))
+    else if (view === 'week') setCursor((c) => addWeeks(c, dir))
+    else setCursor((c) => addMonths(c, dir))
   }
 
+  // ── Blocks per day ───────────────────────────────────────────────────────
+  const blocksFor = useCallback(
+    (day: string): { timed: Block[]; allDay: Block[] } => {
+      const timed: Block[] = []
+      const allDay: Block[] = []
+
+      if (visible('do')) {
+        for (const t of todos) {
+          if (t.doDate !== day) continue
+          const mins = todoMinutes(t)
+          const block: Block = {
+            key: `todo-${t.id}`,
+            start: mins?.start ?? 0,
+            end: mins?.end ?? 0,
+            label: t.title,
+            color: '#1A5C3A',
+            todo: t,
+            allDay: !mins,
+          }
+          if (mins) timed.push(block)
+          else allDay.push(block)
+        }
+      }
+
+      if (visible('due')) {
+        for (const t of todos) {
+          if (t.dueDate !== day || t.isCompleted) continue
+          if (t.doDate === day) continue // already shown as a do-date block
+          allDay.push({
+            key: `due-${t.id}`,
+            start: 0,
+            end: 0,
+            label: `Due: ${t.title}`,
+            color: '#dc2626',
+            outlined: true,
+            todo: t,
+            allDay: true,
+          })
+        }
+      }
+
+      for (const e of calendarEntries) {
+        if (!visible(e.kind)) continue
+        const s = new Date(e.startsAt)
+        const en = new Date(e.endsAt)
+        const dayStart = atTime(day, '00:00')
+        const dayEnd = new Date(dayStart.getTime() + 864e5)
+        if (en <= dayStart || s >= dayEnd) continue
+
+        const block: Block = {
+          key: `entry-${e.id}`,
+          start: 0,
+          end: 0,
+          label: e.title,
+          color: KIND_STYLE[e.kind].color,
+          entry: e,
+          allDay: e.allDay,
+        }
+        if (e.allDay) {
+          allDay.push(block)
+        } else {
+          const m = entryMinutes(e, day)
+          timed.push({ ...block, start: m.start, end: m.end })
+        }
+      }
+
+      return { timed, allDay }
+    },
+    [todos, calendarEntries, hidden],
+  )
+
+  // ── Dragging ─────────────────────────────────────────────────────────────
+  /** Screen point → the day column and minute it falls in. */
+  const slotAt = useCallback(
+    (clientX: number, clientY: number): { day: string; minutes: number } | null => {
+      const el = document.elementFromPoint(clientX, clientY)?.closest('[data-day]') as HTMLElement | null
+      if (!el) return null
+      const day = el.dataset.day!
+      if (view === 'month') return { day, minutes: -1 }
+      const rect = el.getBoundingClientRect()
+      const minutes = snap15(offsetToMinutes(clientY - rect.top))
+      return { day, minutes: Math.max(DAY_START_HOUR * 60, Math.min(DAY_END_HOUR * 60 - 15, minutes)) }
+    },
+    [view],
+  )
+
+  useEffect(() => {
+    if (!drag) return
+
+    const onMove = (e: PointerEvent) => setHoverSlot(slotAt(e.clientX, e.clientY))
+
+    const onUp = async (e: PointerEvent) => {
+      const slot = slotAt(e.clientX, e.clientY)
+      setDrag(null)
+      setHoverSlot(null)
+      if (!slot) return
+
+      const timed = slot.minutes >= 0
+
+      if (drag.kind === 'unscheduled' || drag.kind === 'todo') {
+        const patch: Partial<ProjectTodo> = { doDate: slot.day }
+        if (timed && view !== 'month') {
+          const start = drag.kind === 'todo' ? slot.minutes - drag.grabMinutes : slot.minutes
+          const snapped = snap15(Math.max(DAY_START_HOUR * 60, start))
+          const duration = drag.kind === 'todo' ? drag.durationMinutes ?? 60 : 60
+          patch.doStart = minutesToTime(snapped)
+          patch.doEnd = minutesToTime(snapped + duration)
+        }
+        await updateTodo(drag.id, patch)
+        return
+      }
+
+      if (drag.kind === 'entry') {
+        const entry = calendarEntries.find((x) => x.id === drag.id)
+        if (!entry) return
+        if (!timed || view === 'month') {
+          // Month view moves the day but keeps the time of day.
+          const s = new Date(entry.startsAt)
+          const ns = atTime(slot.day, `${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}`)
+          const ne = new Date(ns.getTime() + drag.durationMinutes * 60000)
+          await updateCalendarEntry(entry.id, { startsAt: ns.toISOString(), endsAt: ne.toISOString() })
+          return
+        }
+        const startMin = snap15(Math.max(DAY_START_HOUR * 60, slot.minutes - drag.grabMinutes))
+        const ns = atTime(slot.day, minutesToTime(startMin))
+        const ne = new Date(ns.getTime() + drag.durationMinutes * 60000)
+        await updateCalendarEntry(entry.id, { startsAt: ns.toISOString(), endsAt: ne.toISOString() })
+      }
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [drag, slotAt, view, updateTodo, updateCalendarEntry, calendarEntries])
+
+  /** Click on empty space in a day column → new entry there. */
+  const createAt = async (day: string, minutes: number) => {
+    const start = minutes >= 0 ? minutesToTime(snap15(minutes)) : '09:00'
+    const startDate = atTime(day, start)
+    const endDate = new Date(startDate.getTime() + 60 * 60000)
+    const created = await createCalendarEntry({
+      projectId: project.id,
+      title: 'Busy',
+      kind: 'busy',
+      startsAt: startDate.toISOString(),
+      endsAt: endDate.toISOString(),
+      allDay: minutes < 0,
+    })
+    if (created) setOpenEntry(created.id)
+  }
+
+  const todo = openTodo ? todos.find((t) => t.id === openTodo) : undefined
+  const entry = openEntry ? calendarEntries.find((e) => e.id === openEntry) : undefined
   const today = dayKey(new Date())
+
+  const title =
+    view === 'day'
+      ? format(cursor, 'EEEE d MMMM yyyy')
+      : view === 'week'
+        ? `${format(startOfWeek(cursor, { weekStartsOn: 1 }), 'd MMM')} – ${format(endOfWeek(cursor, { weekStartsOn: 1 }), 'd MMM yyyy')}`
+        : format(cursor, 'MMMM yyyy')
 
   return (
     <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => setCursor(addMonths(cursor, -1))}
-            className="p-1.5 rounded-md text-text-muted hover:bg-surface-2"
-            title="Previous month"
-          >
+          <button onClick={() => step(-1)} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2">
             <ChevronLeft size={18} />
           </button>
-          <h2 className="text-text-main font-semibold text-base w-44 text-center">
-            {format(cursor, 'MMMM yyyy')}
-          </h2>
-          <button
-            onClick={() => setCursor(addMonths(cursor, 1))}
-            className="p-1.5 rounded-md text-text-muted hover:bg-surface-2"
-            title="Next month"
-          >
+          <button onClick={() => step(1)} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2">
             <ChevronRight size={18} />
           </button>
           <button
-            onClick={() => setCursor(startOfMonth(new Date()))}
-            className="ml-2 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:bg-surface-2"
+            onClick={() => setCursor(new Date())}
+            className="ml-1 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:bg-surface-2 border border-border"
           >
             Today
           </button>
+          <h2 className="ml-3 text-text-main font-semibold text-base">{title}</h2>
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] text-text-subtle">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-primary" /> Do date
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm border-2 border-danger" /> Deadline
-          </span>
-          {Object.entries(KIND_STYLE).map(([k, v]) => (
-            <span key={k} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: v.color }} />
-              {v.label}
-            </span>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            {(['day', 'week', 'month'] as View[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                  view === v ? 'bg-primary text-white' : 'text-text-muted hover:bg-surface-2'
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative">
+            <button
+              onClick={() => setFiltersOpen((o) => !o)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                hidden.size > 0
+                  ? 'border-primary text-primary bg-primary-light'
+                  : 'border-border text-text-muted hover:bg-surface-2'
+              }`}
+              title="Show or hide types"
+            >
+              <SlidersHorizontal size={13} />
+              {hidden.size > 0 ? `${LAYERS.length - hidden.size}/${LAYERS.length}` : 'Filter'}
+            </button>
+
+            {filtersOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setFiltersOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 z-50 w-52 py-1.5 bg-surface border border-border rounded-lg shadow-xl">
+                  {LAYERS.map((l) => (
+                    <button
+                      key={l.key}
+                      onClick={() => toggleLayer(l.key)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-main hover:bg-surface-2"
+                    >
+                      <span
+                        className="w-3 h-3 rounded-sm flex-shrink-0"
+                        style={
+                          l.outlined
+                            ? { border: `2px solid ${l.color}` }
+                            : { backgroundColor: l.color }
+                        }
+                      />
+                      <span className="flex-1 text-left">{l.label}</span>
+                      {visible(l.key) && <Check size={13} className="text-primary" />}
+                    </button>
+                  ))}
+                  {hidden.size > 0 && (
+                    <button
+                      onClick={() => setHidden(new Set())}
+                      className="w-full text-left px-3 py-1.5 text-xs text-primary hover:bg-surface-2 border-t border-border mt-1 pt-1.5"
+                    >
+                      Show everything
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-px bg-border rounded-xl overflow-hidden border border-border">
-        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-          <div key={d} className="bg-surface-2 px-2 py-1.5 text-[11px] font-medium text-text-muted text-center">
-            {d}
-          </div>
-        ))}
+      <div className="flex gap-4 items-start">
+        <div className="flex-1 min-w-0" ref={gridRef}>
+          {view === 'month' ? (
+            <MonthGrid
+              days={days}
+              cursor={cursor}
+              today={today}
+              blocksFor={blocksFor}
+              hoverSlot={hoverSlot}
+              dragging={!!drag}
+              onOpenTodo={setOpenTodo}
+              onOpenEntry={setOpenEntry}
+              onCreate={(day) => createAt(day, -1)}
+              onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, grabMinutes: 0, durationMinutes: null })}
+              onDragEntry={(e) =>
+                setDrag({
+                  kind: 'entry',
+                  id: e.id,
+                  grabMinutes: 0,
+                  durationMinutes: Math.max(15, (new Date(e.endsAt).getTime() - new Date(e.startsAt).getTime()) / 60000),
+                })
+              }
+            />
+          ) : (
+            <TimeGrid
+              days={days}
+              today={today}
+              blocksFor={blocksFor}
+              hoverSlot={hoverSlot}
+              dragging={!!drag}
+              onOpenTodo={setOpenTodo}
+              onOpenEntry={setOpenEntry}
+              onCreate={createAt}
+              onDragTodo={(t, grab) =>
+                setDrag({
+                  kind: 'todo',
+                  id: t.id,
+                  grabMinutes: grab,
+                  durationMinutes: (() => {
+                    const m = todoMinutes(t)
+                    return m ? m.end - m.start : 60
+                  })(),
+                })
+              }
+              onDragEntry={(e, grab) =>
+                setDrag({
+                  kind: 'entry',
+                  id: e.id,
+                  grabMinutes: grab,
+                  durationMinutes: Math.max(15, (new Date(e.endsAt).getTime() - new Date(e.startsAt).getTime()) / 60000),
+                })
+              }
+            />
+          )}
+        </div>
 
-        {days.map((day) => {
-          const key = dayKey(day)
-          const dayTodos = todosByDay.get(key) ?? []
-          const dayDue = (dueByDay.get(key) ?? []).filter((t) => t.doDate !== key)
-          const dayEntries = entriesByDay.get(key) ?? []
-          const outside = !isSameMonth(day, cursor)
+        <Unscheduled
+          todos={todos}
+          lists={todoLists}
+          dragging={drag?.kind === 'unscheduled' ? drag.id : null}
+          onDragStart={(id) => setDrag({ kind: 'unscheduled', id })}
+          onOpen={setOpenTodo}
+        />
+      </div>
 
+      {(todo || entry) && (
+        <CalendarItemPanel
+          todo={todo}
+          entry={entry}
+          projectId={project.id}
+          onClose={() => {
+            setOpenTodo(null)
+            setOpenEntry(null)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Day and week share this: an hour ruler with absolutely positioned blocks. */
+function TimeGrid({
+  days,
+  today,
+  blocksFor,
+  hoverSlot,
+  dragging,
+  onOpenTodo,
+  onOpenEntry,
+  onCreate,
+  onDragTodo,
+  onDragEntry,
+}: {
+  days: Date[]
+  today: string
+  blocksFor: (day: string) => { timed: Block[]; allDay: Block[] }
+  hoverSlot: { day: string; minutes: number } | null
+  dragging: boolean
+  onOpenTodo: (id: string) => void
+  onOpenEntry: (id: string) => void
+  onCreate: (day: string, minutes: number) => void
+  onDragTodo: (todo: ProjectTodo, grabMinutes: number) => void
+  onDragEntry: (entry: CalendarEntry, grabMinutes: number) => void
+}) {
+  const hours = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, i) => DAY_START_HOUR + i)
+  const gridHeight = (DAY_END_HOUR - DAY_START_HOUR) * HOUR_HEIGHT
+
+  return (
+    <div className="rounded-xl border border-border bg-surface overflow-hidden">
+      {/* Day headers */}
+      <div className="flex border-b border-border bg-surface-2">
+        <div className="w-14 flex-shrink-0" />
+        {days.map((d) => {
+          const key = dayKey(d)
           return (
-            <div
-              key={key}
-              className={`group relative bg-surface min-h-[104px] p-1.5 ${outside ? 'opacity-40' : ''}`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span
-                  className={`text-[11px] w-5 h-5 flex items-center justify-center rounded-full ${
-                    key === today ? 'bg-primary text-white font-semibold' : 'text-text-muted'
-                  }`}
-                >
-                  {format(day, 'd')}
-                </span>
-                <button
-                  onClick={() => setDraft({ day: key })}
-                  className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-primary p-0.5 rounded transition-opacity"
-                  title="Add busy or working time"
-                >
-                  <Plus size={13} />
-                </button>
-              </div>
-
-              <div className="space-y-1">
-                {dayTodos.map((t) => (
-                  <div
-                    key={t.id}
-                    title={`${t.title}${t.dueDate ? ` — due ${t.dueDate}` : ''}`}
-                    className={`text-[10px] leading-tight px-1.5 py-1 rounded bg-primary/10 text-primary truncate ${
-                      t.isCompleted ? 'line-through opacity-60' : ''
-                    }`}
-                  >
-                    {t.doStart && <span className="opacity-70">{t.doStart.slice(0, 5)} </span>}
-                    {t.title}
-                  </div>
-                ))}
-
-                {dayEntries.map((e) => (
-                  <button
-                    key={e.id}
-                    onClick={() => setDetail(e)}
-                    className="w-full text-left text-[10px] leading-tight px-1.5 py-1 rounded truncate"
-                    style={{
-                      backgroundColor: `${KIND_STYLE[e.kind].color}1a`,
-                      color: KIND_STYLE[e.kind].color,
-                    }}
-                    title={`${e.title} — ${nameFor(e.ownerId) ?? 'someone'}`}
-                  >
-                    {!e.allDay && (
-                      <span className="opacity-70">{format(parseISO(e.startsAt), 'HH:mm')} </span>
-                    )}
-                    {e.title}
-                  </button>
-                ))}
-
-                {dayDue.map((t) => (
-                  <div
-                    key={`due-${t.id}`}
-                    title={`Deadline: ${t.title}${t.doDate ? '' : ' — no do date set'}`}
-                    className="text-[10px] leading-tight px-1.5 py-1 rounded border border-danger/40 text-danger truncate"
-                  >
-                    Due: {t.title}
-                  </div>
-                ))}
-              </div>
+            <div key={key} className="flex-1 min-w-0 px-2 py-2 text-center border-l border-border">
+              <p className="text-[11px] text-text-muted">{format(d, 'EEE')}</p>
+              <p
+                className={`text-sm font-medium ${
+                  key === today ? 'text-primary' : 'text-text-main'
+                }`}
+              >
+                {format(d, 'd')}
+              </p>
             </div>
           )
         })}
       </div>
 
-      {/* Unscheduled: has a deadline but no plan for when to do it. */}
-      <UnscheduledStrip todos={todos} onSchedule={(id, day) => updateTodo(id, { doDate: day })} />
-
-      {draft && (
-        <EntryDialog
-          day={draft.day}
-          projectId={project.id}
-          onClose={() => setDraft(null)}
-          onCreate={createCalendarEntry}
-        />
-      )}
-
-      {detail && (
-        <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-          onClick={() => setDetail(null)}
-        >
-          <div className="bg-surface rounded-xl border border-border w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="text-text-main font-semibold text-base truncate">{detail.title}</h3>
-                <p className="text-text-subtle text-xs">
-                  {KIND_STYLE[detail.kind].label} · {nameFor(detail.ownerId) ?? 'Someone'}
-                </p>
-              </div>
-              <button onClick={() => setDetail(null)} className="text-text-subtle hover:text-text-main p-1">
-                <X size={16} />
-              </button>
+      {/* All-day strip */}
+      <div className="flex border-b border-border min-h-[2rem]">
+        <div className="w-14 flex-shrink-0 px-2 py-1 text-[10px] text-text-subtle text-right">all day</div>
+        {days.map((d) => {
+          const key = dayKey(d)
+          const { allDay } = blocksFor(key)
+          return (
+            <div
+              key={key}
+              data-day={key}
+              onClick={() => onCreate(key, -1)}
+              className="flex-1 min-w-0 border-l border-border p-1 space-y-1 cursor-pointer hover:bg-surface-2/50"
+            >
+              {allDay.map((b) => (
+                <BlockChip
+                  key={b.key}
+                  block={b}
+                  onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
+                  onDragStart={() =>
+                    b.todo ? onDragTodo(b.todo, 0) : b.entry && onDragEntry(b.entry, 0)
+                  }
+                />
+              ))}
             </div>
-            <div className="p-5 space-y-2 text-sm text-text-muted">
-              <p className="flex items-center gap-2">
-                <Clock size={14} />
-                {detail.allDay
-                  ? format(parseISO(detail.startsAt), 'EEE d MMM')
-                  : `${format(parseISO(detail.startsAt), 'EEE d MMM, HH:mm')} – ${format(parseISO(detail.endsAt), 'HH:mm')}`}
-              </p>
-              {detail.notes && <p className="text-xs">{detail.notes}</p>}
-              {detail.visibility && (
-                <p className="text-xs flex items-center gap-1.5">
-                  {React.createElement(VISIBILITY_META[detail.visibility].Icon, { size: 13 })}
-                  {VISIBILITY_META[detail.visibility].label}
-                </p>
+          )
+        })}
+      </div>
+
+      {/* Hour grid */}
+      <div className="flex relative" style={{ height: gridHeight }}>
+        <div className="w-14 flex-shrink-0">
+          {hours.map((h) => (
+            <div
+              key={h}
+              className="text-[10px] text-text-subtle text-right pr-2 -translate-y-1.5"
+              style={{ height: HOUR_HEIGHT }}
+            >
+              {String(h).padStart(2, '0')}:00
+            </div>
+          ))}
+        </div>
+
+        {days.map((d) => {
+          const key = dayKey(d)
+          const { timed } = blocksFor(key)
+          const cols = layoutColumns(timed)
+
+          return (
+            <div
+              key={key}
+              data-day={key}
+              className={`flex-1 min-w-0 border-l border-border relative ${
+                key === today ? 'bg-primary/[0.03]' : ''
+              }`}
+              onClick={(e) => {
+                // Only empty space creates; blocks stop propagation themselves.
+                const rect = e.currentTarget.getBoundingClientRect()
+                onCreate(key, offsetToMinutes(e.clientY - rect.top))
+              }}
+            >
+              {hours.map((h) => (
+                <div
+                  key={h}
+                  className="border-b border-border/60"
+                  style={{ height: HOUR_HEIGHT }}
+                />
+              ))}
+
+              {timed.map((b) => {
+                const pos = cols.get(b) ?? { col: 0, cols: 1 }
+                const top = minutesToOffset(b.start)
+                const height = Math.max(18, ((b.end - b.start) / 60) * HOUR_HEIGHT - 2)
+                return (
+                  <div
+                    key={b.key}
+                    className="absolute px-0.5"
+                    style={{
+                      top,
+                      height,
+                      left: `${(pos.col / pos.cols) * 100}%`,
+                      width: `${(1 / pos.cols) * 100}%`,
+                    }}
+                  >
+                    <BlockChip
+                      block={b}
+                      filled
+                      onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
+                      onDragStart={(grabMinutes) =>
+                        b.todo ? onDragTodo(b.todo, grabMinutes) : b.entry && onDragEntry(b.entry, grabMinutes)
+                      }
+                      blockStart={b.start}
+                    />
+                  </div>
+                )
+              })}
+
+              {dragging && hoverSlot?.day === key && hoverSlot.minutes >= 0 && (
+                <div
+                  className="absolute left-0 right-0 h-0.5 bg-primary pointer-events-none z-10"
+                  style={{ top: minutesToOffset(hoverSlot.minutes) }}
+                >
+                  <span className="absolute -top-4 left-1 text-[10px] font-medium text-primary bg-surface px-1 rounded">
+                    {minutesToTime(hoverSlot.minutes)}
+                  </span>
+                </div>
               )}
             </div>
-            {(detail.ownerId === currentUser?.id || currentUser?.role === 'admin') && (
-              <div className="px-5 py-3 border-t border-border flex justify-end">
-                <button
-                  onClick={() => {
-                    deleteCalendarEntry(detail.id)
-                    setDetail(null)
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-danger hover:bg-danger-bg"
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-/** Todos with a deadline but no plan — the gap the do date is meant to close. */
-function UnscheduledStrip({
+function MonthGrid({
+  days,
+  cursor,
+  today,
+  blocksFor,
+  hoverSlot,
+  dragging,
+  onOpenTodo,
+  onOpenEntry,
+  onCreate,
+  onDragTodo,
+  onDragEntry,
+}: {
+  days: Date[]
+  cursor: Date
+  today: string
+  blocksFor: (day: string) => { timed: Block[]; allDay: Block[] }
+  hoverSlot: { day: string; minutes: number } | null
+  dragging: boolean
+  onOpenTodo: (id: string) => void
+  onOpenEntry: (id: string) => void
+  onCreate: (day: string) => void
+  onDragTodo: (todo: ProjectTodo) => void
+  onDragEntry: (entry: CalendarEntry) => void
+}) {
+  return (
+    <div className="grid grid-cols-7 gap-px bg-border rounded-xl overflow-hidden border border-border">
+      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+        <div key={d} className="bg-surface-2 px-2 py-1.5 text-[11px] font-medium text-text-muted text-center">
+          {d}
+        </div>
+      ))}
+
+      {days.map((day) => {
+        const key = dayKey(day)
+        const { timed, allDay } = blocksFor(key)
+        const all = [...allDay, ...timed.sort((a, b) => a.start - b.start)]
+        const outside = !isSameMonth(day, cursor)
+
+        return (
+          <div
+            key={key}
+            data-day={key}
+            onClick={() => onCreate(key)}
+            className={`bg-surface min-h-[112px] p-1.5 cursor-pointer transition-colors hover:bg-surface-2/40 ${
+              outside ? 'opacity-40' : ''
+            } ${dragging && hoverSlot?.day === key ? 'ring-2 ring-primary ring-inset' : ''}`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span
+                className={`text-[11px] w-5 h-5 flex items-center justify-center rounded-full ${
+                  key === today ? 'bg-primary text-white font-semibold' : 'text-text-muted'
+                }`}
+              >
+                {format(day, 'd')}
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              {all.slice(0, 4).map((b) => (
+                <BlockChip
+                  key={b.key}
+                  block={b}
+                  compact
+                  onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
+                  onDragStart={() => (b.todo ? onDragTodo(b.todo) : b.entry && onDragEntry(b.entry))}
+                />
+              ))}
+              {all.length > 4 && (
+                <p className="text-[10px] text-text-subtle pl-1">+{all.length - 4} more</p>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * One item on the calendar. Dragging is pointer-based (not HTML5 DnD) so it
+ * works identically in the desktop shell and gives us live snapping.
+ */
+function BlockChip({
+  block,
+  filled,
+  compact,
+  onOpen,
+  onDragStart,
+  blockStart,
+}: {
+  block: Block
+  filled?: boolean
+  compact?: boolean
+  onOpen: () => void
+  onDragStart: (grabMinutes: number) => void
+  blockStart?: number
+}) {
+  const moved = useRef(false)
+
+  return (
+    <div
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.stopPropagation()
+        moved.current = false
+        const startX = e.clientX
+        const startY = e.clientY
+
+        const onMove = (ev: PointerEvent) => {
+          if (moved.current) return
+          if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 4) {
+            moved.current = true
+            // Where inside the block the grab happened, so it doesn't jump.
+            const rect = (e.currentTarget as HTMLElement)?.getBoundingClientRect?.()
+            const grabMinutes =
+              blockStart != null && rect ? offsetToMinutes(startY - rect.top) - DAY_START_HOUR * 60 : 0
+            onDragStart(Math.max(0, grabMinutes))
+            window.removeEventListener('pointermove', onMove)
+          }
+        }
+        window.addEventListener('pointermove', onMove)
+        window.addEventListener(
+          'pointerup',
+          () => window.removeEventListener('pointermove', onMove),
+          { once: true },
+        )
+      }}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (!moved.current) onOpen()
+      }}
+      title={block.label}
+      className={`rounded text-[10px] leading-tight truncate cursor-grab active:cursor-grabbing select-none ${
+        compact ? 'px-1.5 py-1' : 'px-1.5 py-1 h-full overflow-hidden'
+      } ${block.todo?.isCompleted ? 'line-through opacity-60' : ''}`}
+      style={
+        block.outlined
+          ? { border: `1px solid ${block.color}66`, color: block.color }
+          : filled
+            ? { backgroundColor: `${block.color}22`, color: block.color, borderLeft: `2px solid ${block.color}` }
+            : { backgroundColor: `${block.color}1a`, color: block.color }
+      }
+    >
+      {blockStart != null && !compact && (
+        <span className="opacity-70">{minutesToTime(blockStart)} </span>
+      )}
+      {block.label}
+    </div>
+  )
+}
+
+/** Todos with no do date — draggable straight onto the calendar. */
+function Unscheduled({
   todos,
-  onSchedule,
+  lists,
+  dragging,
+  onDragStart,
+  onOpen,
 }: {
   todos: ProjectTodo[]
-  onSchedule: (id: string, day: string) => void
+  lists: { id: string; name: string }[]
+  dragging: string | null
+  onDragStart: (id: string) => void
+  onOpen: (id: string) => void
 }) {
-  const pending = todos.filter((t) => !t.isCompleted && !t.doDate)
-  if (pending.length === 0) return null
-
-  return (
-    <div className="mt-4 rounded-xl border border-border bg-surface p-4">
-      <h3 className="text-text-main font-medium text-sm mb-1">Not scheduled yet</h3>
-      <p className="text-text-subtle text-xs mb-3">
-        These have no do date, so they never appear on the calendar. Pick a day you will actually work on them.
-      </p>
-      <div className="space-y-1.5">
-        {pending.slice(0, 8).map((t) => (
-          <div key={t.id} className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-text-main flex-1 min-w-0 truncate">{t.title}</span>
-            {t.dueDate && <span className="text-[11px] text-danger">due {t.dueDate}</span>}
-            <input
-              type="date"
-              onChange={(e) => e.target.value && onSchedule(t.id, e.target.value)}
-              className="px-2 py-1 rounded-md bg-surface-2 border border-border text-xs text-text-main"
-            />
-          </div>
-        ))}
-      </div>
-    </div>
+  // Only the main list, as asked — otherwise every list's backlog piles in here.
+  const mainListId = lists[0]?.id ?? null
+  const pending = todos.filter(
+    (t) => !t.isCompleted && !t.doDate && (mainListId === null || t.listId === mainListId),
   )
-}
-
-function EntryDialog({
-  day,
-  projectId,
-  onClose,
-  onCreate,
-}: {
-  day: string
-  projectId: string
-  onClose: () => void
-  onCreate: ReturnType<typeof useProjectStore.getState>['createCalendarEntry']
-}) {
-  const [title, setTitle] = useState('')
-  const [kind, setKind] = useState<CalendarEntryKind>('busy')
-  const [allDay, setAllDay] = useState(false)
-  const [start, setStart] = useState('09:00')
-  const [end, setEnd] = useState('17:00')
-  const [visibility, setVisibility] = useState<Visibility | ''>('')
-  const [busy, setBusy] = useState(false)
-
-  const save = async () => {
-    if (busy) return
-    if (!allDay && end <= start) return
-    setBusy(true)
-    await onCreate({
-      projectId,
-      title: title.trim() || KIND_STYLE[kind].label,
-      kind,
-      allDay,
-      // Local time in, ISO out — the row stores an instant.
-      startsAt: new Date(`${day}T${allDay ? '00:00' : start}`).toISOString(),
-      endsAt: allDay
-        ? new Date(`${day}T23:59`).toISOString()
-        : new Date(`${day}T${end}`).toISOString(),
-      visibility: visibility || null,
-    })
-    setBusy(false)
-    onClose()
-  }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface rounded-xl border border-border w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-border">
-          <h3 className="text-text-main font-semibold text-base">Add time</h3>
-          <p className="text-text-subtle text-xs">{format(parseISO(day), 'EEEE d MMMM yyyy')}</p>
-        </div>
+    <aside className="w-60 flex-shrink-0 rounded-xl border border-border bg-surface p-3 hidden lg:block">
+      <h3 className="text-text-main font-medium text-sm flex items-center gap-1.5">
+        <CalendarClock size={14} className="text-text-muted" />
+        Not scheduled
+      </h3>
+      <p className="text-text-subtle text-[11px] mt-0.5 mb-3">
+        {lists[0] ? `From "${lists[0].name}".` : ''} Drag onto a day to set its do date.
+      </p>
 
-        <div className="p-5 space-y-3">
-          <div className="grid grid-cols-4 gap-1.5">
-            {(Object.keys(KIND_STYLE) as CalendarEntryKind[]).map((k) => (
-              <button
-                key={k}
-                onClick={() => setKind(k)}
-                className="px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors"
-                style={
-                  kind === k
-                    ? { backgroundColor: `${KIND_STYLE[k].color}1a`, color: KIND_STYLE[k].color, borderColor: KIND_STYLE[k].color }
-                    : { borderColor: 'var(--tw-border-opacity, #e5e7eb)' }
-                }
-              >
-                {KIND_STYLE[k].label}
-              </button>
-            ))}
-          </div>
-
-          <input
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={`Name (default: ${KIND_STYLE[kind].label})`}
-            className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-text-main outline-none focus:border-primary"
-          />
-
-          <label className="flex items-center gap-2 text-xs text-text-muted">
-            <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} className="w-4 h-4 accent-primary" />
-            All day
-          </label>
-
-          {!allDay && (
-            <div className="flex items-center gap-2">
-              <input
-                type="time"
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-                className="flex-1 px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-text-main"
-              />
-              <span className="text-text-subtle text-xs">to</span>
-              <input
-                type="time"
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-                className="flex-1 px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-text-main"
-              />
-            </div>
-          )}
-          {!allDay && end <= start && (
-            <p className="text-[11px] text-danger">The end time must be after the start time.</p>
-          )}
-
-          <div>
-            <label className="block text-text-muted text-xs mb-1">Who can see it</label>
-            <select
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as Visibility | '')}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-text-main"
+      {pending.length === 0 ? (
+        <p className="text-xs text-text-subtle italic">Everything has a do date.</p>
+      ) : (
+        <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+          {pending.map((t) => (
+            <div
+              key={t.id}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return
+                onDragStart(t.id)
+              }}
+              onClick={() => onOpen(t.id)}
+              className={`group flex items-start gap-1.5 p-2 rounded-lg border text-left cursor-grab active:cursor-grabbing transition-colors ${
+                dragging === t.id
+                  ? 'border-primary bg-primary-light'
+                  : 'border-border bg-surface-2 hover:border-primary/40'
+              }`}
             >
-              <option value="">Default for my role</option>
-              {(Object.keys(VISIBILITY_META) as Visibility[]).map((v) => (
-                <option key={v} value={v}>
-                  {VISIBILITY_META[v].label} — {VISIBILITY_META[v].hint}
-                </option>
-              ))}
-            </select>
-          </div>
+              <GripVertical size={12} className="text-text-subtle mt-0.5 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-text-main leading-snug">{t.title}</p>
+                {t.dueDate && <p className="text-[10px] text-danger mt-0.5">due {t.dueDate}</p>}
+              </div>
+            </div>
+          ))}
         </div>
-
-        <div className="px-5 py-3 border-t border-border flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:bg-surface-2">
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={busy || (!allDay && end <= start)}
-            className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
-          >
-            {busy ? 'Adding…' : 'Add'}
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </aside>
   )
 }
