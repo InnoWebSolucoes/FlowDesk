@@ -859,18 +859,39 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   // ─── Todos ────────────────────────────────────────────────────────────────
 
   loadTodos: async (projectId) => {
-    const [todosRes, listsRes] = await Promise.all([
-      supabase
+    // The shares join only resolves once the do-dates migration has run. Until
+    // then the whole query 400s and the page looks empty even though the todos
+    // are fine, so fall back to the columns that have always existed.
+    const fetchTodos = async () => {
+      const withShares = await supabase
         .from('project_todos')
         .select('*, project_todo_links(*), project_todo_shares(user_id)')
         .eq('project_id', projectId)
-        .order('sort_order'),
+        .order('sort_order')
+
+      if (!withShares.error) return withShares
+
+      console.warn(
+        '[loadTodos] falling back to the pre-migration shape:',
+        withShares.error.message,
+      )
+      return supabase
+        .from('project_todos')
+        .select('*, project_todo_links(*)')
+        .eq('project_id', projectId)
+        .order('sort_order')
+    }
+
+    const [todosRes, listsRes] = await Promise.all([
+      fetchTodos(),
       supabase
         .from('project_todo_lists')
         .select('*')
         .eq('project_id', projectId)
         .order('sort_order'),
     ])
+
+    if (todosRes.error) console.error('[loadTodos] failed:', todosRes.error)
 
     let lists = (listsRes.data ?? []).map(toTodoList)
 
@@ -959,26 +980,43 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       (max, t) => (t.listId === (input.listId ?? null) ? Math.max(max, t.sortOrder) : max),
       -1
     )
-    const { data, error } = await supabase
+    const base = {
+      project_id: projectId,
+      list_id: input.listId ?? null,
+      title: input.title ?? 'New todo',
+      notes: input.notes ?? '',
+      priority: input.priority ?? 'medium',
+      due_date: input.dueDate ?? null,
+      sort_order: maxOrder + 1,
+    }
+    // Columns the do-dates migration adds. Dropped on retry if it hasn't run.
+    const scheduling = {
+      do_date: input.doDate ?? null,
+      do_start: input.doStart ?? null,
+      do_end: input.doEnd ?? null,
+      assignee_id: input.assigneeId ?? null,
+      visibility: input.visibility ?? null,
+    }
+
+    let { data, error } = await supabase
       .from('project_todos')
-      .insert({
-        project_id: projectId,
-        list_id: input.listId ?? null,
-        title: input.title ?? 'New todo',
-        notes: input.notes ?? '',
-        priority: input.priority ?? 'medium',
-        due_date: input.dueDate ?? null,
-        do_date: input.doDate ?? null,
-        do_start: input.doStart ?? null,
-        do_end: input.doEnd ?? null,
-        assignee_id: input.assigneeId ?? null,
-        visibility: input.visibility ?? null,
-        sort_order: maxOrder + 1,
-      })
+      .insert({ ...base, ...scheduling })
       .select('*, project_todo_links(*), project_todo_shares(user_id)')
       .single()
 
-    if (error || !data) return null
+    if (error) {
+      console.warn('[createTodo] retrying without the scheduling columns:', error.message)
+      ;({ data, error } = await supabase
+        .from('project_todos')
+        .insert(base)
+        .select('*, project_todo_links(*)')
+        .single())
+    }
+
+    if (error || !data) {
+      console.error('[createTodo] failed:', error)
+      return null
+    }
     const todo = toTodo(data)
     set((s) => ({ todos: [...s.todos, todo] }))
     return todo
@@ -1001,7 +1039,19 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
     if (Object.keys(patch).length === 0) return
 
-    await supabase.from('project_todos').update(patch).eq('id', id)
+    const { error } = await supabase.from('project_todos').update(patch).eq('id', id)
+    if (error) {
+      // Before the do-dates migration these columns don't exist; keep the rest
+      // of the edit rather than losing the whole change.
+      const SCHEDULING = ['do_date', 'do_start', 'do_end', 'assignee_id', 'visibility']
+      const legacy = Object.fromEntries(
+        Object.entries(patch).filter(([k]) => !SCHEDULING.includes(k)),
+      )
+      console.warn('[updateTodo] retrying without the scheduling columns:', error.message)
+      if (Object.keys(legacy).length === 0) return
+      await supabase.from('project_todos').update(legacy).eq('id', id)
+    }
+
     set((s) => ({
       todos: s.todos.map((t) =>
         t.id === id
@@ -1084,6 +1134,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       : query.is('project_id', null)
 
     const { data, error } = await query
+    // Missing table = the migration hasn't run. The rest of the calendar (the
+    // todos' do dates) still works, so don't turn this into a hard failure.
+    if (error) console.warn('[loadCalendar] no calendar entries:', error.message)
     set({
       calendarEntries: error || !data ? [] : data.map(toCalendarEntry),
       calendarLoadedFor: projectId,
