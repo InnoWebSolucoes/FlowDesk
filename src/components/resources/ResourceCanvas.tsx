@@ -85,6 +85,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
     clusters, items, resourcesLoadedFor, loadResources,
     createCluster, updateCluster, deleteCluster,
     createItem, moveItem, getFileUrl, deleteItem, duplicateItem, setItemClusters, updateItem,
+    setItemLinks,
   } = useProjectStore()
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -98,6 +99,9 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   const setCurrentClusterId = onNavigate
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [renamingClusterId, setRenamingClusterId] = useState<string | null>(null)
+  // Draft for the "add link" dialog; null when the dialog is closed.
+  const [linkDraft, setLinkDraft] = useState<{ url: string; title: string } | null>(null)
+  const [linkBusy, setLinkBusy] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<'item' | 'cluster' | null>(null)
@@ -704,15 +708,40 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
     setFileDropTargetId(hit?.id ?? null)
   }
 
-  const handleAddLinkItem = async () => {
+  /**
+   * Create a link item from the dialog. A link node behaves like a file node:
+   * one click selects and shows its info, double click opens the page.
+   */
+  const handleCreateLink = async () => {
+    if (!linkDraft) return
+    const raw = linkDraft.url.trim()
+    if (!raw) return
+    // People paste "example.com" as often as a full URL.
+    const url = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : `https://${raw}`
+
+    let title = linkDraft.title.trim()
+    if (!title) {
+      try {
+        title = new URL(url).hostname.replace(/^www\./, '')
+      } catch {
+        title = 'Link'
+      }
+    }
+
+    setLinkBusy(true)
     const pos = spawnNearView()
     const created = await createItem(projectId, currentClusterId, {
-      title: 'New link',
+      title,
       description: '',
       x: pos.x,
       y: pos.y,
     })
-    if (created) setSelectedItemId(created.id)
+    if (created) {
+      await setItemLinks(created.id, [{ label: '', url }])
+      setSelectedItemId(created.id)
+    }
+    setLinkBusy(false)
+    setLinkDraft(null)
   }
 
   const commitRename = async () => {
@@ -843,7 +872,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
             <FolderPlus size={14} /> Cluster
           </button>
           <button
-            onClick={handleAddLinkItem}
+            onClick={() => setLinkDraft({ url: '', title: '' })}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:bg-surface-2"
             title="New link-only item"
           >
@@ -1237,6 +1266,68 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
           </>
         )
       })()}
+
+      {/* Add-a-link dialog. The resulting node behaves like any other item. */}
+      {linkDraft && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => !linkBusy && setLinkDraft(null)}
+        >
+          <div
+            className="bg-surface rounded-xl border border-border w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-border">
+              <h3 className="text-text-main font-semibold text-base">Add a link</h3>
+              <p className="text-text-subtle text-xs">
+                It appears on the canvas like a file. Double-click it to open the page.
+              </p>
+            </div>
+
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="block text-text-muted text-xs mb-1">Address</label>
+                <input
+                  autoFocus
+                  value={linkDraft.url}
+                  onChange={(e) => setLinkDraft({ ...linkDraft, url: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreateLink() }}
+                  placeholder="https://example.com"
+                  spellCheck={false}
+                  className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-text-main outline-none focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-text-muted text-xs mb-1">Name <span className="text-text-subtle">(optional)</span></label>
+                <input
+                  value={linkDraft.title}
+                  onChange={(e) => setLinkDraft({ ...linkDraft, title: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreateLink() }}
+                  placeholder="Taken from the address if left empty"
+                  className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-text-main outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-3 border-t border-border flex justify-end gap-2">
+              <button
+                onClick={() => setLinkDraft(null)}
+                disabled={linkBusy}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:bg-surface-2 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateLink}
+                disabled={linkBusy || !linkDraft.url.trim()}
+                className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
+              >
+                {linkBusy ? 'Adding…' : 'Add link'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Keyed on id so the edit form re-seeds when a different item is selected. */}
       {selectedItem && (
