@@ -4,6 +4,7 @@ import { Building2 } from 'lucide-react'
 import { useProjectStore } from '../../../store/projectStore'
 import { useEmployeeStore } from '../../../store/employeeStore'
 import { useTaskStore } from '../../../store/taskStore'
+import { AssistantLauncher } from '../../../components/shared/Assistant'
 
 export function ProjectLayout() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -54,6 +55,9 @@ export function ProjectLayout() {
       </div>
 
       <Outlet context={{ project }} />
+
+      {/* Available from every tab inside the project. */}
+      <AssistantLauncher projectId={project.id} />
     </div>
   )
 }

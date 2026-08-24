@@ -1,0 +1,411 @@
+// The FlowDesk assistant.
+//
+// Runs the Claude tool-use loop server-side so the API key never reaches the
+// browser. The caller's own Supabase session is forwarded to every database
+// call, so the assistant can only ever read or write what that person could
+// do by hand — RLS stays in force.
+
+import { createClient } from 'jsr:@supabase/supabase-js@2'
+import Anthropic from 'npm:@anthropic-ai/sdk@0.79.0'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+const MODEL = 'claude-opus-5'
+const MAX_STEPS = 8
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+
+const tools: Anthropic.Tool[] = [
+  {
+    name: 'create_todo',
+    description:
+      'Add a todo to one of the project\'s lists. Use ask_user first if it is not obvious which list it belongs to, or who should do it.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short imperative title.' },
+        notes: { type: 'string', description: 'Optional detail.' },
+        list_id: { type: 'string', description: 'Which todo list. Omit for the first list.' },
+        priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+        due_date: { type: 'string', description: 'Hard deadline, YYYY-MM-DD.' },
+        do_date: {
+          type: 'string',
+          description: 'The day the work will actually be done, YYYY-MM-DD. This is what appears on the calendar.',
+        },
+        do_start: { type: 'string', description: 'Optional start time on the do date, HH:MM.' },
+        do_end: { type: 'string', description: 'Optional end time on the do date, HH:MM.' },
+        assignee_id: { type: 'string', description: 'User id of the person who will do it.' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'update_todo',
+    description: 'Change an existing todo: reschedule it, reassign it, complete it, or edit its text.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        todo_id: { type: 'string' },
+        title: { type: 'string' },
+        notes: { type: 'string' },
+        priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+        due_date: { type: 'string' },
+        do_date: { type: 'string' },
+        do_start: { type: 'string' },
+        do_end: { type: 'string' },
+        assignee_id: { type: 'string' },
+        is_completed: { type: 'boolean' },
+      },
+      required: ['todo_id'],
+    },
+  },
+  {
+    name: 'create_calendar_entry',
+    description:
+      'Block time on the calendar: busy, working hours, a meeting, or time off. Times are ISO 8601 with a timezone offset.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        notes: { type: 'string' },
+        kind: { type: 'string', enum: ['busy', 'working', 'meeting', 'timeoff'] },
+        starts_at: { type: 'string', description: 'ISO 8601 instant.' },
+        ends_at: { type: 'string', description: 'ISO 8601 instant, after starts_at.' },
+        all_day: { type: 'boolean' },
+        visibility: { type: 'string', enum: ['private', 'team', 'everyone'] },
+      },
+      required: ['starts_at', 'ends_at'],
+    },
+  },
+  {
+    name: 'update_project_description',
+    description:
+      'Rewrite the project description to reflect what is actually happening now. Use when the user reports news that makes the stored description stale.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        description: { type: 'string', description: 'The complete new description, not a diff.' },
+      },
+      required: ['description'],
+    },
+  },
+  {
+    name: 'ask_user',
+    description:
+      'Ask the user a question with a few concrete options, exactly when you genuinely need their decision (which list, which person, which day). Do not use it for things you can infer. Stop after calling this — the answer arrives as the next user message.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        question: { type: 'string' },
+        options: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string' },
+              description: { type: 'string' },
+            },
+            required: ['label'],
+          },
+          minItems: 2,
+          maxItems: 4,
+        },
+        allow_multiple: { type: 'boolean' },
+      },
+      required: ['question', 'options'],
+    },
+  },
+]
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
+  if (!apiKey) {
+    return json(
+      { error: 'The assistant is not configured yet: ANTHROPIC_API_KEY is not set on this project.' },
+      503,
+    )
+  }
+
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader) return json({ error: 'Missing Authorization header' }, 401)
+
+  // Every DB call below runs as the caller, so RLS applies unchanged.
+  const db = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: authHeader } } },
+  )
+
+  const { data: { user }, error: userErr } = await db.auth.getUser()
+  if (userErr || !user) return json({ error: 'Invalid session' }, 401)
+
+  let body: {
+    projectId?: string
+    messages?: Anthropic.MessageParam[]
+    timezone?: string
+  }
+  try {
+    body = await req.json()
+  } catch {
+    return json({ error: 'Body must be JSON' }, 400)
+  }
+
+  const { projectId, messages = [], timezone = 'UTC' } = body
+  if (!projectId) return json({ error: 'projectId is required' }, 400)
+  if (messages.length === 0) return json({ error: 'messages must not be empty' }, 400)
+
+  // ── Context: what the assistant knows before it answers ──────────────────
+  const [projectRes, listsRes, todosRes, peopleRes, itemsRes, entriesRes] = await Promise.all([
+    db.from('projects').select('id,name,company_name,description,industry').eq('id', projectId).single(),
+    db.from('project_todo_lists').select('id,name').eq('project_id', projectId).order('sort_order'),
+    db
+      .from('project_todos')
+      .select('id,title,list_id,priority,is_completed,due_date,do_date,assignee_id')
+      .eq('project_id', projectId)
+      .order('sort_order')
+      .limit(150),
+    db.from('users').select('id,name,email,role').eq('project_id', projectId),
+    db
+      .from('resource_items')
+      .select('id,title,file_name,updated_at')
+      .eq('project_id', projectId)
+      .order('updated_at', { ascending: false })
+      .limit(25),
+    db
+      .from('calendar_entries')
+      .select('id,title,kind,starts_at,ends_at,owner_id')
+      .eq('project_id', projectId)
+      .gte('ends_at', new Date(Date.now() - 7 * 864e5).toISOString())
+      .order('starts_at')
+      .limit(80),
+  ])
+
+  if (projectRes.error || !projectRes.data) {
+    return json({ error: 'Project not found, or you do not have access to it.' }, 404)
+  }
+
+  const project = projectRes.data
+  const lists = listsRes.data ?? []
+  const todos = todosRes.data ?? []
+  const people = peopleRes.data ?? []
+  const now = new Date()
+
+  const system = `You are the FlowDesk assistant for the project "${project.name}"${
+    project.company_name ? ` (${project.company_name})` : ''
+  }. You help the user manage their work inside the app.
+
+Today is ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('en-GB', { weekday: 'long' })}). The user's timezone is ${timezone}.
+
+DO DATE vs DUE DATE — this distinction matters and users rely on it:
+- due_date is the hard deadline, the last acceptable moment.
+- do_date is the day the person actually plans to do the work. The calendar shows do dates. When someone asks when to fit something in, you are choosing a do_date, and it must land on or before the due_date.
+
+Current project description:
+${project.description || '(empty)'}
+
+Todo lists: ${lists.length ? lists.map((l) => `${l.name} [${l.id}]`).join(', ') : '(none yet)'}
+People: ${people.length ? people.map((p) => `${p.name} [${p.id}]${p.role === 'admin' ? ' (manager)' : ''}`).join(', ') : '(none)'}
+
+Open todos:
+${
+  todos.filter((t) => !t.is_completed).slice(0, 40).map((t) =>
+    `- ${t.title} [${t.id}]${t.due_date ? ` due ${t.due_date}` : ''}${t.do_date ? ` doing ${t.do_date}` : ' — NOT SCHEDULED'}`
+  ).join('\n') || '(none)'
+}
+
+Calendar around now:
+${
+  (entriesRes.data ?? []).map((e) =>
+    `- ${e.title} (${e.kind}) ${e.starts_at.slice(0, 16).replace('T', ' ')} → ${e.ends_at.slice(11, 16)}`
+  ).join('\n') || '(nothing blocked)'
+}
+
+Recent documents:
+${(itemsRes.data ?? []).slice(0, 12).map((i) => `- ${i.title}`).join('\n') || '(none)'}
+
+How to behave:
+- Act, don't just advise. If asked to add a todo, call create_todo.
+- Use ask_user only for a decision genuinely yours to get wrong — which list, which person, which of two days. Never for something the context already answers.
+- When suggesting when to do something, respect what is already on the calendar and say briefly why you picked that slot.
+- If the user tells you something that makes the project description out of date (a new client, a change of scope, a finished phase), call update_project_description with a full rewritten description. Keep it factual and concise; never invent detail.
+- Keep replies short and plain. No preamble, no restating the question.`
+
+  const client = new Anthropic({ apiKey })
+  const convo: Anthropic.MessageParam[] = [...messages]
+  const performed: { tool: string; summary: string }[] = []
+  let pendingQuestion: unknown = null
+
+  for (let step = 0; step < MAX_STEPS; step++) {
+    let response: Anthropic.Message
+    try {
+      response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 4096,
+        system,
+        tools,
+        messages: convo,
+      })
+    } catch (e) {
+      console.error('[assistant] Anthropic call failed:', e)
+      return json({ error: `The assistant could not be reached: ${(e as Error).message}` }, 502)
+    }
+
+    if (response.stop_reason === 'refusal') {
+      return json({ reply: 'I was not able to help with that request.', actions: performed })
+    }
+
+    convo.push({ role: 'assistant', content: response.content })
+
+    const toolUses = response.content.filter(
+      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+    )
+    if (toolUses.length === 0) {
+      const reply = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .trim()
+      return json({ reply, actions: performed, messages: convo })
+    }
+
+    const results: Anthropic.ToolResultBlockParam[] = []
+
+    for (const use of toolUses) {
+      const args = use.input as Record<string, any>
+      let result: string
+
+      try {
+        switch (use.name) {
+          case 'ask_user': {
+            pendingQuestion = {
+              question: args.question,
+              options: args.options,
+              allowMultiple: !!args.allow_multiple,
+            }
+            result = 'Question shown to the user; their answer will arrive as the next message.'
+            break
+          }
+
+          case 'create_todo': {
+            const listId = args.list_id ?? lists[0]?.id ?? null
+            const { data, error } = await db
+              .from('project_todos')
+              .insert({
+                project_id: projectId,
+                list_id: listId,
+                title: args.title,
+                notes: args.notes ?? '',
+                priority: args.priority ?? 'medium',
+                due_date: args.due_date ?? null,
+                do_date: args.do_date ?? null,
+                do_start: args.do_start ?? null,
+                do_end: args.do_end ?? null,
+                assignee_id: args.assignee_id ?? null,
+              })
+              .select('id,title')
+              .single()
+            if (error) throw error
+            performed.push({ tool: 'create_todo', summary: `Added "${data.title}"` })
+            result = `Created todo ${data.id}.`
+            break
+          }
+
+          case 'update_todo': {
+            const patch: Record<string, unknown> = {}
+            for (const [k, col] of [
+              ['title', 'title'], ['notes', 'notes'], ['priority', 'priority'],
+              ['due_date', 'due_date'], ['do_date', 'do_date'],
+              ['do_start', 'do_start'], ['do_end', 'do_end'],
+              ['assignee_id', 'assignee_id'],
+            ] as const) {
+              if (args[k] !== undefined) patch[col] = args[k]
+            }
+            if (args.is_completed !== undefined) {
+              patch.is_completed = args.is_completed
+              patch.completed_at = args.is_completed ? new Date().toISOString() : null
+            }
+            const { data, error } = await db
+              .from('project_todos')
+              .update(patch)
+              .eq('id', args.todo_id)
+              .select('id,title')
+              .single()
+            if (error) throw error
+            performed.push({ tool: 'update_todo', summary: `Updated "${data.title}"` })
+            result = `Updated todo ${data.id}.`
+            break
+          }
+
+          case 'create_calendar_entry': {
+            const { data, error } = await db
+              .from('calendar_entries')
+              .insert({
+                project_id: projectId,
+                owner_id: user.id,
+                title: args.title ?? 'Busy',
+                notes: args.notes ?? '',
+                kind: args.kind ?? 'busy',
+                starts_at: args.starts_at,
+                ends_at: args.ends_at,
+                all_day: args.all_day ?? false,
+                visibility: args.visibility ?? null,
+              })
+              .select('id,title')
+              .single()
+            if (error) throw error
+            performed.push({ tool: 'create_calendar_entry', summary: `Blocked time: "${data.title}"` })
+            result = `Created calendar entry ${data.id}.`
+            break
+          }
+
+          case 'update_project_description': {
+            const { error } = await db
+              .from('projects')
+              .update({ description: args.description })
+              .eq('id', projectId)
+            if (error) throw error
+            performed.push({ tool: 'update_project_description', summary: 'Updated the project description' })
+            result = 'Project description updated.'
+            break
+          }
+
+          default:
+            result = `Unknown tool ${use.name}.`
+        }
+      } catch (e) {
+        // Hand the failure back to the model so it can explain or retry,
+        // rather than collapsing the whole turn.
+        result = `Failed: ${(e as Error).message ?? String(e)}`
+      }
+
+      results.push({ type: 'tool_result', tool_use_id: use.id, content: result })
+    }
+
+    convo.push({ role: 'user', content: results })
+
+    // A question needs a human answer; stop the loop and hand it to the UI.
+    if (pendingQuestion) {
+      const reply = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .trim()
+      return json({ reply, question: pendingQuestion, actions: performed, messages: convo })
+    }
+  }
+
+  return json({
+    reply: 'That turned into more steps than I can take at once. Could you break it into smaller pieces?',
+    actions: performed,
+    messages: convo,
+  })
+})

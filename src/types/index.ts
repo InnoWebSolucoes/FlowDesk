@@ -116,6 +116,9 @@ export interface ProjectTodoList {
 }
 
 /** Manager-only todo. Never visible to employees. */
+/** Who may see a calendar item, overriding the role default. */
+export type Visibility = 'private' | 'team' | 'everyone'
+
 export interface ProjectTodo {
   id: string
   projectId: string
@@ -125,10 +128,38 @@ export interface ProjectTodo {
   priority: Priority
   isCompleted: boolean
   completedAt: string | null
+  /** The hard deadline. */
   dueDate: string | null
+  /** When you plan to actually do it — this is what the calendar shows. */
+  doDate: string | null
+  /** Optional time window on the do date; null start means all-day. */
+  doStart: string | null
+  doEnd: string | null
+  assigneeId: string | null
+  visibility: Visibility | null
+  /** Individual people this todo is shared with, beyond the visibility rule. */
+  sharedWith: string[]
   sortOrder: number
   createdAt: string
   links: ProjectTodoLink[]
+}
+
+export type CalendarEntryKind = 'busy' | 'working' | 'meeting' | 'timeoff'
+
+/** Anything on the calendar that isn't a todo: busy blocks, hours, time off. */
+export interface CalendarEntry {
+  id: string
+  projectId: string | null
+  ownerId: string
+  title: string
+  notes: string
+  kind: CalendarEntryKind
+  startsAt: string
+  endsAt: string
+  allDay: boolean
+  visibility: Visibility | null
+  sharedWith: string[]
+  createdAt: string
 }
 
 export type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'one-off'

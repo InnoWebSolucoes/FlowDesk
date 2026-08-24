@@ -22,6 +22,7 @@ import { ProjectAbout } from './pages/admin/project/ProjectAbout'
 import { ProjectResources } from './pages/admin/project/ProjectResources'
 import { ProjectEmployees } from './pages/admin/project/ProjectEmployees'
 import { ProjectTodos } from './pages/admin/project/ProjectTodos'
+import { ProjectCalendar } from './pages/admin/project/ProjectCalendar'
 import { ProjectTeamLayout } from './pages/admin/project/ProjectTeamLayout'
 import { MyTasks } from './pages/employee/MyTasks'
 import { Toolbox } from './pages/employee/Toolbox'
@@ -141,6 +142,7 @@ export default function App() {
               <Route path="about" element={<ProjectAbout />} />
               <Route path="resources" element={<ProjectResources />} />
               <Route path="todos" element={<ProjectTodos />} />
+              <Route path="calendar" element={<ProjectCalendar />} />
 
               {/* Employees: the team plus everything that used to be global,
                   scoped to this project by ProjectLayout. */}

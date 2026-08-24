@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
 import {
   ListTodo, Plus, Trash2, X, Link2, ChevronUp, ChevronDown, Circle, CheckCircle2,
-  FolderOpen, Calendar, Pencil, Check, Copy,
+  FolderOpen, Calendar, CalendarClock, Pencil, Check, Copy,
 } from 'lucide-react'
 import { isBefore, parseISO, startOfToday } from 'date-fns'
 import { Project, ProjectTodo, Priority } from '../../../types'
@@ -251,11 +251,30 @@ export function ProjectTodos() {
               {todo.links.length === 0 && <span className="hidden sm:inline">Link</span>}
             </button>
 
+            {/* Do date: the day you plan to work on it. This is what the
+                calendar shows — the deadline below is just the limit. */}
+            <label
+              className={`flex items-center gap-1 text-[11px] px-1.5 py-1 rounded-md cursor-pointer ${
+                todo.doDate ? 'bg-primary-light text-primary' : 'bg-surface-2 text-text-muted'
+              }`}
+              title={todo.doDate ? `Doing it on ${todo.doDate}` : 'Set a do date — when you will actually do it'}
+            >
+              <CalendarClock size={11} />
+              <input
+                type="date"
+                value={todo.doDate ?? ''}
+                onChange={(e) => updateTodo(todo.id, { doDate: e.target.value || null })}
+                className={`bg-transparent border-0 text-[11px] focus:outline-none cursor-pointer ${
+                  todo.doDate ? 'w-[92px]' : 'w-[16px]'
+                }`}
+              />
+            </label>
+
             <label
               className={`flex items-center gap-1 text-[11px] px-1.5 py-1 rounded-md cursor-pointer ${
                 overdue ? 'bg-danger-bg text-danger' : 'bg-surface-2 text-text-muted'
               }`}
-              title={todo.dueDate ? `Due ${todo.dueDate}` : 'Set a due date'}
+              title={todo.dueDate ? `Deadline ${todo.dueDate}` : 'Set a deadline'}
             >
               <Calendar size={11} />
               <input

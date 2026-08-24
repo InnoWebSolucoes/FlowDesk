@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import {
   Project, ResourceCluster, ResourceItem, ResourceItemLink, ResourceItemVersion,
-  ProjectTodo, ProjectTodoLink, ProjectTodoList,
+  ProjectTodo, ProjectTodoLink, ProjectTodoList, CalendarEntry,
 } from '../types'
 
 const BUCKET = 'attachments'
@@ -68,6 +68,16 @@ interface ProjectState {
   deleteTodo: (id: string) => Promise<void>
   reorderTodos: (orderedIds: string[]) => Promise<void>
   setTodoLinks: (todoId: string, links: { itemId?: string; clusterId?: string }[]) => Promise<void>
+  /** People a todo is shared with individually, beyond its visibility rule. */
+  setTodoShares: (todoId: string, userIds: string[]) => Promise<void>
+
+  // Calendar: busy/working blocks alongside the todos' do dates.
+  calendarEntries: CalendarEntry[]
+  calendarLoadedFor: string | null
+  loadCalendar: (projectId: string | null) => Promise<void>
+  createCalendarEntry: (input: Partial<CalendarEntry> & { startsAt: string; endsAt: string }) => Promise<CalendarEntry | null>
+  updateCalendarEntry: (id: string, updates: Partial<CalendarEntry>) => Promise<void>
+  deleteCalendarEntry: (id: string) => Promise<void>
 }
 
 function toProject(row: any): Project {
@@ -205,9 +215,32 @@ function toTodo(row: any): ProjectTodo {
     isCompleted: row.is_completed,
     completedAt: row.completed_at,
     dueDate: row.due_date,
+    doDate: row.do_date ?? null,
+    doStart: row.do_start ?? null,
+    doEnd: row.do_end ?? null,
+    assigneeId: row.assignee_id ?? null,
+    visibility: row.visibility ?? null,
+    sharedWith: (row.project_todo_shares ?? []).map((s: any) => s.user_id),
     sortOrder: row.sort_order ?? 0,
     createdAt: row.created_at,
     links: (row.project_todo_links ?? []).map(toTodoLink),
+  }
+}
+
+function toCalendarEntry(row: any): CalendarEntry {
+  return {
+    id: row.id,
+    projectId: row.project_id ?? null,
+    ownerId: row.owner_id,
+    title: row.title,
+    notes: row.notes ?? '',
+    kind: row.kind,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    allDay: row.all_day ?? false,
+    visibility: row.visibility ?? null,
+    sharedWith: (row.calendar_entry_shares ?? []).map((s: any) => s.user_id),
+    createdAt: row.created_at,
   }
 }
 
@@ -829,7 +862,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const [todosRes, listsRes] = await Promise.all([
       supabase
         .from('project_todos')
-        .select('*, project_todo_links(*)')
+        .select('*, project_todo_links(*), project_todo_shares(user_id)')
         .eq('project_id', projectId)
         .order('sort_order'),
       supabase
@@ -935,9 +968,14 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         notes: input.notes ?? '',
         priority: input.priority ?? 'medium',
         due_date: input.dueDate ?? null,
+        do_date: input.doDate ?? null,
+        do_start: input.doStart ?? null,
+        do_end: input.doEnd ?? null,
+        assignee_id: input.assigneeId ?? null,
+        visibility: input.visibility ?? null,
         sort_order: maxOrder + 1,
       })
-      .select('*, project_todo_links(*)')
+      .select('*, project_todo_links(*), project_todo_shares(user_id)')
       .single()
 
     if (error || !data) return null
@@ -952,6 +990,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (updates.notes !== undefined) patch.notes = updates.notes
     if (updates.priority !== undefined) patch.priority = updates.priority
     if (updates.dueDate !== undefined) patch.due_date = updates.dueDate || null
+    if (updates.doDate !== undefined) patch.do_date = updates.doDate || null
+    if (updates.doStart !== undefined) patch.do_start = updates.doStart || null
+    if (updates.doEnd !== undefined) patch.do_end = updates.doEnd || null
+    if (updates.assigneeId !== undefined) patch.assignee_id = updates.assigneeId || null
+    if (updates.visibility !== undefined) patch.visibility = updates.visibility || null
     if (updates.isCompleted !== undefined) {
       patch.is_completed = updates.isCompleted
       patch.completed_at = updates.isCompleted ? new Date().toISOString() : null
@@ -1006,5 +1049,97 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
 
     set((s) => ({ todos: s.todos.map((t) => (t.id === todoId ? { ...t, links: saved } : t)) }))
+  },
+
+  setTodoShares: async (todoId, userIds) => {
+    await supabase.from('project_todo_shares').delete().eq('todo_id', todoId)
+    if (userIds.length > 0) {
+      await supabase
+        .from('project_todo_shares')
+        .insert(userIds.map((user_id) => ({ todo_id: todoId, user_id })))
+    }
+    set((s) => ({
+      todos: s.todos.map((t) => (t.id === todoId ? { ...t, sharedWith: userIds } : t)),
+    }))
+  },
+
+  // ─── Calendar ─────────────────────────────────────────────────────────────
+
+  calendarEntries: [],
+  calendarLoadedFor: null,
+
+  /**
+   * Entries for one project, plus the viewer's own project-less ones (personal
+   * busy blocks and working hours, which apply wherever they are). RLS decides
+   * what actually comes back.
+   */
+  loadCalendar: async (projectId) => {
+    let query = supabase
+      .from('calendar_entries')
+      .select('*, calendar_entry_shares(user_id)')
+      .order('starts_at')
+
+    query = projectId
+      ? query.or(`project_id.eq.${projectId},project_id.is.null`)
+      : query.is('project_id', null)
+
+    const { data, error } = await query
+    set({
+      calendarEntries: error || !data ? [] : data.map(toCalendarEntry),
+      calendarLoadedFor: projectId,
+    })
+  },
+
+  createCalendarEntry: async (input) => {
+    const { data: auth } = await supabase.auth.getUser()
+    const ownerId = input.ownerId ?? auth.user?.id
+    if (!ownerId) return null
+
+    const { data, error } = await supabase
+      .from('calendar_entries')
+      .insert({
+        project_id: input.projectId ?? null,
+        owner_id: ownerId,
+        title: input.title ?? 'Busy',
+        notes: input.notes ?? '',
+        kind: input.kind ?? 'busy',
+        starts_at: input.startsAt,
+        ends_at: input.endsAt,
+        all_day: input.allDay ?? false,
+        visibility: input.visibility ?? null,
+      })
+      .select('*, calendar_entry_shares(user_id)')
+      .single()
+
+    if (error || !data) {
+      console.error('[createCalendarEntry] failed:', error)
+      return null
+    }
+    const entry = toCalendarEntry(data)
+    set((s) => ({ calendarEntries: [...s.calendarEntries, entry] }))
+    return entry
+  },
+
+  updateCalendarEntry: async (id, updates) => {
+    const patch: Record<string, unknown> = {}
+    if (updates.title !== undefined) patch.title = updates.title
+    if (updates.notes !== undefined) patch.notes = updates.notes
+    if (updates.kind !== undefined) patch.kind = updates.kind
+    if (updates.startsAt !== undefined) patch.starts_at = updates.startsAt
+    if (updates.endsAt !== undefined) patch.ends_at = updates.endsAt
+    if (updates.allDay !== undefined) patch.all_day = updates.allDay
+    if (updates.visibility !== undefined) patch.visibility = updates.visibility || null
+    if (Object.keys(patch).length === 0) return
+
+    // Optimistic: dragging an entry around the calendar must not snap back.
+    set((s) => ({
+      calendarEntries: s.calendarEntries.map((e) => (e.id === id ? { ...e, ...updates } : e)),
+    }))
+    await supabase.from('calendar_entries').update(patch).eq('id', id)
+  },
+
+  deleteCalendarEntry: async (id) => {
+    await supabase.from('calendar_entries').delete().eq('id', id)
+    set((s) => ({ calendarEntries: s.calendarEntries.filter((e) => e.id !== id) }))
   },
 }))
