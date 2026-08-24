@@ -36,7 +36,7 @@ interface ProjectState {
   replaceItemFile: (id: string, file: File) => Promise<void>
   removeItemFile: (id: string) => Promise<void>
   deleteItem: (id: string) => Promise<void>
-  moveItem: (id: string, clusterId: string | null, x: number, y: number) => Promise<void>
+  moveItem: (id: string, clusterId: string | null, x: number, y: number, fromClusterId?: string | null) => Promise<void>
 
   setItemLinks: (itemId: string, links: { id?: string; label: string; url: string }[]) => Promise<void>
   getFileUrl: (storagePath: string) => Promise<string | null>
@@ -139,10 +139,19 @@ function toItemVersion(row: any): ResourceItemVersion {
 }
 
 function toItem(row: any): ResourceItem {
+  const clusterId: string | null = row.cluster_id
+  const taggedIds: string[] = (row.resource_item_clusters ?? []).map((c: any) => c.cluster_id)
+  // The home cluster must always be a tag — every render path (the cluster's
+  // contents, its pull-out previews) reads clusterIds, not clusterId. If the
+  // join row is ever missing (a partial write, a data repair gone wrong) the
+  // item would otherwise be invisible inside its own home, with no way to
+  // reach it from the canvas at all.
+  const clusterIds = clusterId && !taggedIds.includes(clusterId) ? [clusterId, ...taggedIds] : taggedIds
+
   return {
     id: row.id,
     projectId: row.project_id,
-    clusterId: row.cluster_id,
+    clusterId,
     title: row.title,
     description: row.description ?? '',
     storagePath: row.storage_path,
@@ -157,7 +166,7 @@ function toItem(row: any): ResourceItem {
     versions: (row.resource_item_versions ?? [])
       .map(toItemVersion)
       .sort((a: ResourceItemVersion, b: ResourceItemVersion) => b.createdAt.localeCompare(a.createdAt)),
-    clusterIds: (row.resource_item_clusters ?? []).map((c: any) => c.cluster_id),
+    clusterIds,
     showAtTopLevel: row.show_at_top_level ?? false,
   }
 }
@@ -465,40 +474,56 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set((s) => ({ items: s.items.filter((i) => i.id !== id) }))
   },
 
-  moveItem: async (id, clusterId, x, y) => {
+  moveItem: async (id, clusterId, x, y, fromClusterId) => {
     const prev = get().items.find((i) => i.id === id)
     const oldHome = prev?.clusterId ?? null
+    // The tag being dragged out of, when it isn't the item's home (e.g. its
+    // preview shown inside a cluster it's only tagged into, not living in).
+    const oldTag = fromClusterId !== undefined ? fromClusterId : oldHome
+    // The home only follows the drag when we're actually dragging the item's
+    // home card. Pulling a secondary-tag preview out of a bubble just swaps
+    // that tag for wherever it landed — the home, and its x/y, don't move.
+    const movingHome = oldTag === oldHome
 
-    // Moving swaps the home tag for the new one, leaving any other tags alone:
-    // a document tagged into several clusters keeps appearing in all of them.
+    // Swaps the tag being dragged out of for the new one, leaving any other
+    // tags alone: a document tagged into several clusters keeps appearing in
+    // the rest of them — a move must not leave a copy behind at the spot it
+    // was just dragged out of.
     const nextTags = (() => {
       const tags = new Set(prev?.clusterIds ?? [])
-      if (oldHome) tags.delete(oldHome)
+      if (oldTag) tags.delete(oldTag)
       if (clusterId) tags.add(clusterId)
       return [...tags]
     })()
 
     // Moving to or from the main space flips the top-level flag, so a move is
     // always a move rather than leaving a copy behind at the old level.
-    const topLevel = clusterId === null
+    // Only meaningful when the home itself is what's moving.
+    const topLevel = movingHome ? clusterId === null : (prev?.showAtTopLevel ?? false)
 
     // Optimistic: apply locally first so the node stays where it was dropped
     // instead of flashing back to its old position during the round-trip.
     set((s) => ({
       items: s.items.map((i) =>
-        i.id === id ? { ...i, clusterId, x, y, clusterIds: nextTags, showAtTopLevel: topLevel } : i
+        i.id === id
+          ? movingHome
+            ? { ...i, clusterId, x, y, clusterIds: nextTags, showAtTopLevel: topLevel }
+            : { ...i, clusterIds: nextTags }
+          : i
       ),
     }))
 
-    await supabase
-      .from('resource_items')
-      .update({ cluster_id: clusterId, x, y, show_at_top_level: topLevel })
-      .eq('id', id)
-
-    if (oldHome && oldHome !== clusterId) {
-      await supabase.from('resource_item_clusters').delete().eq('item_id', id).eq('cluster_id', oldHome)
+    if (movingHome) {
+      await supabase
+        .from('resource_items')
+        .update({ cluster_id: clusterId, x, y, show_at_top_level: topLevel })
+        .eq('id', id)
     }
-    if (clusterId && clusterId !== oldHome) {
+
+    if (oldTag && oldTag !== clusterId) {
+      await supabase.from('resource_item_clusters').delete().eq('item_id', id).eq('cluster_id', oldTag)
+    }
+    if (clusterId && clusterId !== oldTag) {
       await supabase
         .from('resource_item_clusters')
         .upsert({ item_id: id, cluster_id: clusterId }, { onConflict: 'item_id,cluster_id' })

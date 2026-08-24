@@ -16,8 +16,14 @@ const ITEM_H = THUMB_H + 38
 /** How far outside a bubble a dragged card still counts as a drop on it. */
 const DROP_SLOP = ITEM_W / 2
 
-/** World-space distance before a press counts as a drag rather than a click. */
-const DRAG_THRESHOLD = 3
+/**
+ * Screen-space distance (device px) before a press counts as a drag rather
+ * than a click. Measured on screen, not world coordinates, so it stays a
+ * consistent hand-jitter tolerance at any zoom level — a fixed world-space
+ * threshold shrinks to sub-pixel at high zoom, misreading an ordinary click
+ * on a small target (like a cluster's pull-out preview thumbnails) as a drag.
+ */
+const DRAG_THRESHOLD = 6
 
 /**
  * How far from the centre of the cluster you're inside an item must be dragged
@@ -41,6 +47,22 @@ function dropTargetAt(
     .map((c) => ({ c, dist: Math.hypot(c.x - x, c.y - y) }))
     .filter(({ c, dist }) => dist < c.radius + DROP_SLOP)
     .sort((a, b) => a.dist - b.dist)[0]?.c
+}
+
+/** A cluster's id plus every cluster nested inside it, so a drag can't drop it into its own subtree. */
+function subtreeIds(clusters: ResourceCluster[], rootId: string): Set<string> {
+  const ids = new Set([rootId])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const c of clusters) {
+      if (c.parentClusterId && ids.has(c.parentClusterId) && !ids.has(c.id)) {
+        ids.add(c.id)
+        grew = true
+      }
+    }
+  }
+  return ids
 }
 const CLUSTER_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444']
 
@@ -78,6 +100,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   const [renamingClusterId, setRenamingClusterId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [dragId, setDragId] = useState<string | null>(null)
+  const [dragKind, setDragKind] = useState<'item' | 'cluster' | null>(null)
   // Live position of the node being dragged. Kept out of the store so a drag
   // re-renders only this component, not every node on the canvas.
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
@@ -110,6 +133,9 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
     /** Where the drag began, to tell a click from a drag. */
     startX: number
     startY: number
+    /** Screen-space start, so drag/click classification is zoom-independent. */
+    startScreenX: number
+    startScreenY: number
     /** Latest position, written every pointermove, read on release. */
     x: number
     y: number
@@ -267,10 +293,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
       pointerId: e.pointerId,
       moved: false,
       startX: x, startY: y,
+      startScreenX: e.clientX, startScreenY: e.clientY,
       x, y,
       pullOutOf: opts?.pullOutOf,
     }
     setDragId(id)
+    setDragKind(kind)
     setDragPos({ x, y })
     setPullingOut(!!opts?.pullOutOf)
   }
@@ -288,8 +316,15 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
       const x = world.x - d.offsetX
       const y = world.y - d.offsetY
 
-      // Ignore sub-pixel jitter so a plain click never counts as a drag.
-      if (!d.moved && Math.hypot(x - d.startX, y - d.startY) > DRAG_THRESHOLD) d.moved = true
+      // Ignore ordinary hand jitter so a plain click never counts as a drag.
+      // Measured in screen px (not world px) so it's the same real-world
+      // tolerance at any zoom level.
+      if (
+        !d.moved &&
+        Math.hypot(e.clientX - d.startScreenX, e.clientY - d.startScreenY) > DRAG_THRESHOLD
+      ) {
+        d.moved = true
+      }
 
       d.x = x
       d.y = y
@@ -303,9 +338,20 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
         if (!cur) return
 
         setDragPos({ x: cur.x, y: cur.y })
+        const allClusters = useProjectStore.getState().clusters
         if (cur.kind === 'item') {
           const hit = dropTargetAt(
-            useProjectStore.getState().clusters.filter((c) => c.id !== cur.pullOutOf),
+            allClusters.filter((c) => c.id !== cur.pullOutOf),
+            currentClusterId,
+            cur.x,
+            cur.y
+          )
+          setDropTargetId(hit?.id ?? null)
+        } else {
+          // A cluster can't be dropped into itself or its own descendant.
+          const excluded = subtreeIds(allClusters, cur.id)
+          const hit = dropTargetAt(
+            allClusters.filter((c) => !excluded.has(c.id)),
             currentClusterId,
             cur.x,
             cur.y
@@ -323,6 +369,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
 
       dragState.current = null
       setDragId(null)
+      setDragKind(null)
       setPullingOut(false)
       setDropTargetId(null)
 
@@ -351,10 +398,10 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
           // Place it near the centre of its new home rather than at the drop point.
           const siblings = store.items.filter((i) => i.clusterId === target.id).length
           const pos = spawnPosition(siblings)
-          moveItem(d.id, target.id, pos.x, pos.y)
+          moveItem(d.id, target.id, pos.x, pos.y, d.pullOutOf ?? undefined)
         } else if (d.pullOutOf) {
           // Pulled out of a bubble on this level: it lands here, where dropped.
-          moveItem(d.id, currentClusterId, d.x, d.y)
+          moveItem(d.id, currentClusterId, d.x, d.y, d.pullOutOf)
         } else if (currentClusterId && Math.hypot(d.x, d.y) > EJECT_RADIUS) {
           // Dragged clear of the cluster we're inside: move it up to the parent
           // and drop it just outside that cluster's bubble.
@@ -372,7 +419,23 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
           moveItem(d.id, currentClusterId, d.x, d.y)
         }
       } else {
-        updateCluster(d.id, { x: d.x, y: d.y })
+        // Dropping a cluster on another one at this level nests it inside;
+        // its own subtree is excluded so it can't be dropped into itself.
+        const excluded = subtreeIds(store.clusters, d.id)
+        const target = dropTargetAt(
+          store.clusters.filter((c) => !excluded.has(c.id)),
+          currentClusterId,
+          d.x,
+          d.y
+        )
+
+        if (target) {
+          const siblings = store.clusters.filter((c) => c.parentClusterId === target.id).length
+          const pos = spawnPosition(siblings)
+          updateCluster(d.id, { parentClusterId: target.id, x: pos.x, y: pos.y })
+        } else {
+          updateCluster(d.id, { x: d.x, y: d.y })
+        }
       }
 
       // Cleared last: the store writes above are optimistic and synchronous, so
@@ -887,7 +950,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
 
           {/* Eject boundary: drag an item past this to move it out of the
               cluster you're inside. Only while actually dragging one. */}
-          {currentClusterId && dragId && dragPos && (
+          {currentClusterId && dragId && dragPos && dragKind === 'item' && (
             <div
               className="absolute rounded-full border-2 border-dashed pointer-events-none transition-colors"
               style={{
