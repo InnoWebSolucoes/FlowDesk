@@ -1,16 +1,9 @@
 import React, { useEffect } from 'react'
-import { NavLink, Outlet, useParams, Navigate, Link } from 'react-router-dom'
-import { Building2, Info, FolderOpen, Users, ListTodo, ChevronLeft } from 'lucide-react'
+import { Outlet, useParams, Navigate, Link } from 'react-router-dom'
+import { Building2, ChevronLeft } from 'lucide-react'
 import { useProjectStore } from '../../../store/projectStore'
 import { useEmployeeStore } from '../../../store/employeeStore'
 import { useTaskStore } from '../../../store/taskStore'
-
-const TABS = [
-  { to: 'about', label: 'About', icon: Info },
-  { to: 'resources', label: 'Resources', icon: FolderOpen },
-  { to: 'employees', label: 'Employees', icon: Users },
-  { to: 'todos', label: 'Todos', icon: ListTodo },
-]
 
 export function ProjectLayout() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -66,26 +59,6 @@ export function ProjectLayout() {
           </div>
         </div>
       </div>
-
-      {/* Tabs */}
-      <nav className="flex items-center gap-1 border-b border-border mb-5 overflow-x-auto">
-        {TABS.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              `flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
-                isActive
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-text-muted hover:text-text-main'
-              }`
-            }
-          >
-            <Icon size={15} />
-            {label}
-          </NavLink>
-        ))}
-      </nav>
 
       <Outlet context={{ project }} />
     </div>

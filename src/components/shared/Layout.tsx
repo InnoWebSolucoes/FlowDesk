@@ -4,12 +4,10 @@ import { Sidebar } from './Sidebar'
 import { NotificationBell } from './NotificationBell'
 
 const pageTitles: Record<string, string> = {
+  // Pages inside a project render their own header, so only the top-level
+  // routes need a title here.
   '/admin/projects': 'Projects',
-  '/admin/overview': 'Overview',
-  '/admin/tasks': 'Task Manager',
-  '/admin/ai-organiser': 'AI Organiser',
-  '/admin/employees': 'Employees',
-  '/admin/analytics': 'Analytics',
+  '/admin/employees': 'Employee profile',
   '/employee/tasks': 'My Tasks',
   '/employee/toolbox': 'Toolbox',
   '/employee/guidelines': 'Guidelines',
@@ -18,9 +16,13 @@ const pageTitles: Record<string, string> = {
 export function Layout() {
   const location = useLocation()
 
-  const title = Object.entries(pageTitles).find(([path]) =>
-    location.pathname.startsWith(path)
-  )?.[1] ?? 'Flowdesk'
+  // Inside a project the page renders its own header, so the top bar stays
+  // generic rather than repeating "Projects" above it.
+  const insideProject = /^\/admin\/projects\/[^/]+/.test(location.pathname)
+
+  const title = insideProject
+    ? 'Flowdesk'
+    : Object.entries(pageTitles).find(([path]) => location.pathname.startsWith(path))?.[1] ?? 'Flowdesk'
 
   return (
     <div className="flex h-screen bg-bg overflow-hidden">

@@ -33,7 +33,7 @@ export function Login() {
     setLoading(false)
     if (success) {
       const user = useAuthStore.getState().currentUser
-      if (user?.role === 'admin') navigate('/admin/overview')
+      if (user?.role === 'admin') navigate('/admin/projects')
       else navigate('/employee/tasks')
     } else {
       setError(t('login_errorInvalid'))

@@ -2,7 +2,6 @@ import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Globe } from 'lucide-react'
 import { useEmployeeStore } from '../../store/employeeStore'
-import { useTaskStore } from '../../store/taskStore'
 import { useToolStore } from '../../store/toolStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskManager } from './TaskManager'
@@ -20,8 +19,9 @@ type Tab = typeof TABS[number]
 export function EmployeeProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { employees } = useEmployeeStore()
-  const { tasks, categories, completionLogs } = useTaskStore()
+  // Unscoped: the profile renders outside the project shell, where the scoped
+  // list has been cleared.
+  const { allEmployees } = useEmployeeStore()
   const { websites, getGuidelines, saveGuidelines } = useToolStore()
   const { currentUser } = useAuthStore()
   const { t, dateLocale } = useT()
@@ -29,7 +29,11 @@ export function EmployeeProfile() {
   const [tab, setTab] = useState<Tab>('tasks')
   const [guideSaved, setGuideSaved] = useState(false)
 
-  const emp = employees.find(e => e.id === id)
+  const emp = allEmployees.find(e => e.id === id)
+  // Back goes to the team list of whichever project they belong to.
+  const backTo = emp?.projectId
+    ? `/admin/projects/${emp.projectId}/employees/team`
+    : '/admin/projects'
   const guidelines = id ? getGuidelines(id) : undefined
 
   const editor = useEditor({
@@ -41,7 +45,7 @@ export function EmployeeProfile() {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <p className="text-text-muted mb-4">{t('profile_notFound')}</p>
-        <button onClick={() => navigate('/admin/employees')} className="text-primary text-sm">{t('profile_back')}</button>
+        <button onClick={() => navigate(backTo)} className="text-primary text-sm">{t('profile_back')}</button>
       </div>
     )
   }
@@ -72,7 +76,7 @@ export function EmployeeProfile() {
   return (
     <div className="animate-fade-in">
       <button
-        onClick={() => navigate('/admin/employees')}
+        onClick={() => navigate(backTo)}
         className="flex items-center gap-1.5 text-text-muted text-sm hover:text-text-main mb-5 transition-colors"
       >
         <ArrowLeft size={15} /> {t('profile_backToEmployees')}
