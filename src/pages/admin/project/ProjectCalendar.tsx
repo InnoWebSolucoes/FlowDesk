@@ -23,6 +23,14 @@ type DragState =
   | { kind: 'todo'; id: string; grabMinutes: number; durationMinutes: number | null }
   | { kind: 'entry'; id: string; grabMinutes: number; durationMinutes: number }
   | { kind: 'unscheduled'; id: string }
+  // Dragging an edge changes the duration instead of moving the block.
+  | {
+      kind: 'resize'
+      target: 'todo' | 'entry'
+      id: string
+      edge: 'start' | 'end'
+      otherEdgeMinutes: number
+    }
 
 interface Block {
   key: string
@@ -53,6 +61,9 @@ export function ProjectCalendar() {
   const [openEntry, setOpenEntry] = useState<string | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const [hoverSlot, setHoverSlot] = useState<{ day: string; minutes: number } | null>(null)
+  // Set when a drag ends, so the click event that follows the pointerup does
+  // not also fire "create an entry here".
+  const justDragged = useRef(false)
   const gridRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -184,9 +195,38 @@ export function ProjectCalendar() {
       const slot = slotAt(e.clientX, e.clientY)
       setDrag(null)
       setHoverSlot(null)
+      justDragged.current = true
+      // Cleared after the click that this pointerup generates has passed.
+      setTimeout(() => { justDragged.current = false }, 0)
       if (!slot) return
 
       const timed = slot.minutes >= 0
+
+      if (drag.kind === 'resize') {
+        if (!timed) return
+        // Keep at least 15 minutes, and let the dragged edge cross the other.
+        const dragged = snap15(slot.minutes)
+        const from = Math.min(dragged, drag.otherEdgeMinutes)
+        const to = Math.max(dragged, drag.otherEdgeMinutes)
+        const start = drag.edge === 'start' ? Math.min(from, drag.otherEdgeMinutes - 15) : from
+        const end = drag.edge === 'end' ? Math.max(to, drag.otherEdgeMinutes + 15) : to
+
+        if (drag.target === 'todo') {
+          await updateTodo(drag.id, {
+            doStart: minutesToTime(Math.max(0, start)),
+            doEnd: minutesToTime(end),
+          })
+        } else {
+          const e2 = calendarEntries.find((x) => x.id === drag.id)
+          if (!e2) return
+          const day = slot.day
+          await updateCalendarEntry(drag.id, {
+            startsAt: atTime(day, minutesToTime(Math.max(0, start))).toISOString(),
+            endsAt: atTime(day, minutesToTime(end)).toISOString(),
+          })
+        }
+        return
+      }
 
       if (drag.kind === 'unscheduled' || drag.kind === 'todo') {
         const patch: Partial<ProjectTodo> = { doDate: slot.day }
@@ -219,9 +259,15 @@ export function ProjectCalendar() {
       }
     }
 
+    // Without this the browser starts a text selection mid-drag, which both
+    // looks broken and swallows the pointer events.
+    const previousSelect = document.body.style.userSelect
+    document.body.style.userSelect = 'none'
+
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     return () => {
+      document.body.style.userSelect = previousSelect
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
@@ -353,6 +399,7 @@ export function ProjectCalendar() {
               onOpenTodo={setOpenTodo}
               onOpenEntry={setOpenEntry}
               onCreate={(day) => createAt(day, -1)}
+              justDragged={justDragged}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, grabMinutes: 0, durationMinutes: null })}
               onDragEntry={(e) =>
                 setDrag({
@@ -373,6 +420,10 @@ export function ProjectCalendar() {
               onOpenTodo={setOpenTodo}
               onOpenEntry={setOpenEntry}
               onCreate={createAt}
+              justDragged={justDragged}
+              onResize={(target, id, edge, otherEdgeMinutes) =>
+                setDrag({ kind: 'resize', target, id, edge, otherEdgeMinutes })
+              }
               onDragTodo={(t, grab) =>
                 setDrag({
                   kind: 'todo',
@@ -430,6 +481,8 @@ function TimeGrid({
   onOpenTodo,
   onOpenEntry,
   onCreate,
+  justDragged,
+  onResize,
   onDragTodo,
   onDragEntry,
 }: {
@@ -441,6 +494,8 @@ function TimeGrid({
   onOpenTodo: (id: string) => void
   onOpenEntry: (id: string) => void
   onCreate: (day: string, minutes: number) => void
+  justDragged: React.MutableRefObject<boolean>
+  onResize: (target: 'todo' | 'entry', id: string, edge: 'start' | 'end', otherEdgeMinutes: number) => void
   onDragTodo: (todo: ProjectTodo, grabMinutes: number) => void
   onDragEntry: (entry: CalendarEntry, grabMinutes: number) => void
 }) {
@@ -479,7 +534,7 @@ function TimeGrid({
             <div
               key={key}
               data-day={key}
-              onClick={() => onCreate(key, -1)}
+              onClick={() => { if (!justDragged.current) onCreate(key, -1) }}
               className="flex-1 min-w-0 border-l border-border p-1 space-y-1 cursor-pointer hover:bg-surface-2/50"
             >
               {allDay.map((b) => (
@@ -524,7 +579,9 @@ function TimeGrid({
                 key === today ? 'bg-primary/[0.03]' : ''
               }`}
               onClick={(e) => {
-                // Only empty space creates; blocks stop propagation themselves.
+                // Only empty space creates; blocks stop propagation themselves,
+                // and a click that merely ends a drag is ignored.
+                if (justDragged.current) return
                 const rect = e.currentTarget.getBoundingClientRect()
                 onCreate(key, offsetToMinutes(e.clientY - rect.top))
               }}
@@ -559,7 +616,16 @@ function TimeGrid({
                       onDragStart={(grabMinutes) =>
                         b.todo ? onDragTodo(b.todo, grabMinutes) : b.entry && onDragEntry(b.entry, grabMinutes)
                       }
+                      onResizeStart={(edge, otherEdgeMinutes) =>
+                        onResize(
+                          b.todo ? 'todo' : 'entry',
+                          b.todo?.id ?? b.entry!.id,
+                          edge,
+                          otherEdgeMinutes,
+                        )
+                      }
                       blockStart={b.start}
+                      blockEnd={b.end}
                     />
                   </div>
                 )
@@ -593,6 +659,7 @@ function MonthGrid({
   onOpenTodo,
   onOpenEntry,
   onCreate,
+  justDragged,
   onDragTodo,
   onDragEntry,
 }: {
@@ -605,6 +672,7 @@ function MonthGrid({
   onOpenTodo: (id: string) => void
   onOpenEntry: (id: string) => void
   onCreate: (day: string) => void
+  justDragged: React.MutableRefObject<boolean>
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
 }) {
@@ -626,7 +694,7 @@ function MonthGrid({
           <div
             key={key}
             data-day={key}
-            onClick={() => onCreate(key)}
+            onClick={() => { if (!justDragged.current) onCreate(key) }}
             className={`bg-surface min-h-[112px] p-1.5 cursor-pointer transition-colors hover:bg-surface-2/40 ${
               outside ? 'opacity-40' : ''
             } ${dragging && hoverSlot?.day === key ? 'ring-2 ring-primary ring-inset' : ''}`}
@@ -672,14 +740,18 @@ function BlockChip({
   compact,
   onOpen,
   onDragStart,
+  onResizeStart,
   blockStart,
+  blockEnd,
 }: {
   block: Block
   filled?: boolean
   compact?: boolean
   onOpen: () => void
   onDragStart: (grabMinutes: number) => void
+  onResizeStart?: (edge: 'start' | 'end', otherEdgeMinutes: number) => void
   blockStart?: number
+  blockEnd?: number
 }) {
   const moved = useRef(false)
 
@@ -688,6 +760,8 @@ function BlockChip({
       onPointerDown={(e) => {
         if (e.button !== 0) return
         e.stopPropagation()
+        // Stops the browser starting a text selection on the block's label.
+        e.preventDefault()
         moved.current = false
         const startX = e.clientX
         const startY = e.clientY
@@ -716,7 +790,7 @@ function BlockChip({
         if (!moved.current) onOpen()
       }}
       title={block.label}
-      className={`rounded text-[10px] leading-tight truncate cursor-grab active:cursor-grabbing select-none ${
+      className={`relative rounded text-[10px] leading-tight truncate cursor-grab active:cursor-grabbing select-none ${
         compact ? 'px-1.5 py-1' : 'px-1.5 py-1 h-full overflow-hidden'
       } ${block.todo?.isCompleted ? 'line-through opacity-60' : ''}`}
       style={
@@ -731,6 +805,34 @@ function BlockChip({
         <span className="opacity-70">{minutesToTime(blockStart)} </span>
       )}
       {block.label}
+
+      {/* Drag either edge to change the duration, as in Google Calendar. */}
+      {onResizeStart && blockStart != null && blockEnd != null && !compact && (
+        <>
+          <div
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              e.stopPropagation()
+              e.preventDefault()
+              moved.current = true
+              onResizeStart('start', blockEnd)
+            }}
+            className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize"
+            title="Drag to change the start time"
+          />
+          <div
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              e.stopPropagation()
+              e.preventDefault()
+              moved.current = true
+              onResizeStart('end', blockStart)
+            }}
+            className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize"
+            title="Drag to change the end time"
+          />
+        </>
+      )}
     </div>
   )
 }

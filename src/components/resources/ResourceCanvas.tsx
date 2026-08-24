@@ -7,6 +7,7 @@ import { ResourceCluster, ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { useCanvasViewport, ZOOM_ENTER_THRESHOLD, ZOOM_EXIT_THRESHOLD } from './useCanvasViewport'
 import { ResourceItemPanel } from './ResourceItemPanel'
+import { googleEmbedUrl } from './googleDocs'
 import { ResourceThumbnail } from './ResourceThumbnail'
 
 const ITEM_W = 132
@@ -71,6 +72,8 @@ interface Props {
   /** Current cluster, owned by the page so the folder view shares it. */
   clusterId: string | null
   onNavigate: (clusterId: string | null) => void
+  /** Opens a document in the page's viewer window. */
+  onOpenItem: (item: ResourceItem) => void
 }
 
 /** Lay new nodes out on a spiral so they never spawn on top of each other. */
@@ -80,7 +83,7 @@ function spawnPosition(index: number) {
   return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }
 }
 
-export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
+export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }: Props) {
   const {
     clusters, items, resourcesLoadedFor, loadResources,
     createCluster, updateCluster, deleteCluster,
@@ -628,34 +631,21 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   ])
 
   /**
-   * Open an item's file in a new tab. Link-only items fall back to their first
-   * link. The window is opened synchronously and its URL set once the signed URL
-   * resolves, so the popup blocker doesn't eat it.
+   * Open an item. The page owns the viewer window, so this hands the item up;
+   * a plain external link still goes to the browser, since an arbitrary site
+   * cannot be relied on to render in a frame.
    */
   const openItem = useCallback(
-    async (item: ResourceItem) => {
-      if (!item.storagePath) {
-        const first = item.links[0]
-        if (first) window.open(first.url, '_blank', 'noopener,noreferrer')
+    (item: ResourceItem) => {
+      const isPlainLink =
+        !item.storagePath && item.links.length > 0 && !item.links.some((l) => googleEmbedUrl(l.url))
+      if (isPlainLink) {
+        window.open(item.links[0].url, '_blank', 'noopener,noreferrer')
         return
       }
-
-      // Open the tab synchronously so the popup blocker allows it, then point it
-      // at the signed URL once that resolves. `noopener` must NOT be used here:
-      // it nulls the returned handle, so the tab would be stranded on about:blank.
-      const tab = window.open('', '_blank')
-      if (tab) tab.opener = null
-
-      const url = await getFileUrl(item.storagePath)
-      if (!url) {
-        tab?.close()
-        return
-      }
-
-      if (tab && !tab.closed) tab.location.replace(url)
-      else window.open(url, '_blank', 'noopener,noreferrer')
+      onOpenItem(item)
     },
-    [getFileUrl]
+    [onOpenItem]
   )
 
   /**

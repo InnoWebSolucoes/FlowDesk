@@ -6,6 +6,8 @@ import { useProjectStore } from '../../../store/projectStore'
 import { ResourceCanvas } from '../../../components/resources/ResourceCanvas'
 import { ResourceFolders } from '../../../components/resources/ResourceFolders'
 import { ResourceItemPanel } from '../../../components/resources/ResourceItemPanel'
+import { DocumentWindow } from '../../../components/resources/DocumentWindow'
+import { googleEmbedUrl } from '../../../components/resources/googleDocs'
 
 interface Ctx { project: Project }
 
@@ -13,7 +15,7 @@ type View = 'canvas' | 'folders'
 
 export function ProjectResources() {
   const { project } = useOutletContext<Ctx>()
-  const { resourcesLoadedFor, loadResources, items, getFileUrl } = useProjectStore()
+  const { resourcesLoadedFor, loadResources, items } = useProjectStore()
 
   const [view, setView] = useState<View>(() => {
     try {
@@ -25,6 +27,7 @@ export function ProjectResources() {
   // Shared so switching views keeps you in the same cluster.
   const [clusterId, setClusterId] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [openDocId, setOpenDocId] = useState<string | null>(null)
 
   useEffect(() => {
     if (resourcesLoadedFor !== project.id) loadResources(project.id)
@@ -39,22 +42,24 @@ export function ProjectResources() {
     }
   }
 
-  /** Open a document's file in a new tab; link-only items use their first link. */
-  const openItem = async (item: ResourceItem) => {
-    if (!item.storagePath) {
-      const first = item.links[0]
-      if (first) window.open(first.url, '_blank', 'noopener,noreferrer')
+  /**
+   * Open a document in a floating window inside the app. PDFs, images and
+   * media render in place, and a Google Docs link opens its real editor, so
+   * the document can be edited without leaving FlowDesk. Plain external links
+   * still go to the browser — embedding an arbitrary site is not reliable.
+   */
+  const openItem = (item: ResourceItem) => {
+    const isPlainLink =
+      !item.storagePath && item.links.length > 0 && !item.links.some((l) => googleEmbedUrl(l.url))
+    if (isPlainLink) {
+      window.open(item.links[0].url, '_blank', 'noopener,noreferrer')
       return
     }
-    const tab = window.open('', '_blank')
-    if (tab) tab.opener = null
-    const url = await getFileUrl(item.storagePath)
-    if (!url) { tab?.close(); return }
-    if (tab && !tab.closed) tab.location.replace(url)
-    else window.open(url, '_blank', 'noopener,noreferrer')
+    setOpenDocId(item.id)
   }
 
   const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) ?? null : null
+  const openDoc = openDocId ? items.find((i) => i.id === openDocId) ?? null : null
 
   return (
     <div>
@@ -88,6 +93,7 @@ export function ProjectResources() {
           projectId={project.id}
           clusterId={clusterId}
           onNavigate={setClusterId}
+          onOpenItem={openItem}
         />
       ) : (
         <div className="relative">
@@ -109,6 +115,9 @@ export function ProjectResources() {
           )}
         </div>
       )}
+
+      {/* Documents open here rather than in a browser tab. */}
+      {openDoc && <DocumentWindow item={openDoc} onClose={() => setOpenDocId(null)} />}
     </div>
   )
 }
