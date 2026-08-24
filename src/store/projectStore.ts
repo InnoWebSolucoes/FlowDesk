@@ -48,6 +48,8 @@ interface ProjectState {
 
   // Tags: the clusters a document appears in, beyond its home.
   setItemClusters: (itemId: string, clusterIds: string[]) => Promise<void>
+  /** Fold one document into another as its newest version. */
+  stackItemOnto: (sourceId: string, targetId: string, fromClusterId: string | null) => Promise<void>
   duplicateItem: (itemId: string) => Promise<ResourceItem | null>
 
   // Todo lists
@@ -672,6 +674,101 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         .insert(clusterIds.map((cluster_id) => ({ item_id: itemId, cluster_id })))
     }
     set((s) => ({ items: s.items.map((i) => (i.id === itemId ? { ...i, clusterIds } : i)) }))
+  },
+
+  /**
+   * Stack one document onto another: the source's file becomes the target's
+   * current file, and the target's previous file drops into its history. The
+   * source's own history comes along, so nothing is lost.
+   *
+   * `fromClusterId` is where the drag started: the source stops appearing
+   * there, but stays in every other cluster it was tagged into. It is only
+   * deleted outright once it has nowhere left to appear.
+   */
+  stackItemOnto: async (sourceId, targetId, fromClusterId) => {
+    const { items } = get()
+    const source = items.find((i) => i.id === sourceId)
+    const target = items.find((i) => i.id === targetId)
+    if (!source || !target || sourceId === targetId || !source.storagePath) return
+
+    // The target's current file becomes history, then the source's file
+    // becomes current — so the newest lands on top, as with a normal upload.
+    const archive: Record<string, unknown>[] = []
+    if (target.storagePath) {
+      archive.push({
+        item_id: targetId,
+        storage_path: target.storagePath,
+        file_name: target.fileName ?? 'file',
+        mime_type: target.mimeType,
+        size: target.size,
+      })
+    }
+    // Carry the source's own archived versions over as well.
+    for (const v of source.versions) {
+      archive.push({
+        item_id: targetId,
+        storage_path: v.storagePath,
+        file_name: v.fileName,
+        mime_type: v.mimeType,
+        size: v.size,
+        label: v.label,
+      })
+    }
+    if (archive.length > 0) {
+      await supabase.from('resource_item_versions').insert(archive)
+    }
+
+    await supabase
+      .from('resource_items')
+      .update({
+        storage_path: source.storagePath,
+        file_name: source.fileName,
+        mime_type: source.mimeType,
+        size: source.size,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', targetId)
+
+    // The source keeps its other homes; it only goes away when this was the
+    // last place it appeared. Its version rows are detached first so the
+    // cascade doesn't delete the files we just handed to the target.
+    await supabase.from('resource_item_versions').delete().eq('item_id', sourceId)
+
+    const remainingClusters = source.clusterIds.filter((id) => id !== fromClusterId)
+    const stillTopLevel = source.showAtTopLevel && fromClusterId !== null
+
+    if (remainingClusters.length === 0 && !stillTopLevel) {
+      // Nowhere left to live: drop the row, but keep the file — the target
+      // now points at it.
+      await supabase.from('resource_items').delete().eq('id', sourceId)
+    } else {
+      if (fromClusterId !== null) {
+        await supabase
+          .from('resource_item_clusters')
+          .delete()
+          .eq('item_id', sourceId)
+          .eq('cluster_id', fromClusterId)
+      }
+      const patch: Record<string, unknown> = {}
+      if (fromClusterId === null) patch.show_at_top_level = false
+      if (source.clusterId === fromClusterId) patch.cluster_id = remainingClusters[0] ?? null
+      if (Object.keys(patch).length > 0) {
+        await supabase.from('resource_items').update(patch).eq('id', sourceId)
+      }
+    }
+
+    // Re-read both rows so versions and tags reflect everything above.
+    const { data } = await supabase
+      .from('resource_items')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+      .in('id', [sourceId, targetId])
+
+    const fresh = (data ?? []).map(toItem)
+    set((s) => ({
+      items: s.items
+        .map((i) => fresh.find((f) => f.id === i.id) ?? i)
+        .filter((i) => i.id !== sourceId || fresh.some((f) => f.id === sourceId)),
+    }))
   },
 
   /** A genuine copy: separate row, separate file, same metadata and links. */

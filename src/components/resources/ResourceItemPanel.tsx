@@ -10,9 +10,13 @@ import { fileKind, FileKindIcon, formatFileSize } from './ResourceThumbnail'
 interface Props {
   item: ResourceItem
   onClose: () => void
+  /** Lets the canvas treat this panel as a drop target for dragged documents. */
+  dropRef?: React.MutableRefObject<HTMLElement | null>
+  /** True while a dragged document is held over the panel. */
+  dropActive?: boolean
 }
 
-export function ResourceItemPanel({ item, onClose }: Props) {
+export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }: Props) {
   const {
     updateItem, removeItemFile, deleteItem, setItemLinks, getFileUrl,
     addItemVersion, makeVersionCurrent, deleteItemVersion,
@@ -121,16 +125,19 @@ export function ResourceItemPanel({ item, onClose }: Props) {
   }
 
   /**
-   * An item created as a link has no file, and for it the links are the point —
-   * so they lead the panel and the file box moves to the end. Attaching a file
-   * turns it into a normal document and the usual order returns.
+   * Is this primarily a link? Having an address makes it one — attaching a PDF
+   * to a link is adding a supporting document, not turning it into that PDF.
+   * Only an item with no links at all is a plain document.
+   *
+   * Uses the saved links rather than the draft, so typing in the links editor
+   * doesn't reorder the panel under the cursor.
    */
-  const isLinkOnly = !item.storagePath
+  const isLinkFirst = item.links.length > 0
 
   const linksSection = (
     <section>
       <div className="flex items-center justify-between mb-2">
-        <label className="text-xs font-medium text-text-muted">{isLinkOnly ? 'Address' : 'Links'}</label>
+        <label className="text-xs font-medium text-text-muted">{isLinkFirst ? 'Address' : 'Links'}</label>
         <button
           onClick={() => setLinks([...links, { label: '', url: '' }])}
           className="text-xs text-primary hover:underline flex items-center gap-1"
@@ -273,12 +280,25 @@ export function ResourceItemPanel({ item, onClose }: Props) {
 
   return (
     <aside
-      ref={panelRef}
-      className="absolute top-0 right-0 h-full w-full sm:w-[380px] bg-surface border-l border-border shadow-xl flex flex-col z-30"
+      ref={(el) => {
+        panelRef.current = el
+        if (dropRef) dropRef.current = el
+      }}
+      className={`absolute top-0 right-0 h-full w-full sm:w-[380px] bg-surface border-l shadow-xl flex flex-col z-30 transition-colors ${
+        dropActive ? 'border-primary ring-2 ring-primary/40' : 'border-border'
+      }`}
     >
+      {dropActive && (
+        <div className="absolute inset-0 z-10 bg-primary/5 flex items-center justify-center pointer-events-none">
+          <span className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium shadow">
+            Drop to add as the newest version
+          </span>
+        </div>
+      )}
       <header className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <FileKindIcon mime={item.mimeType} />
+          {/* null mime resolves to the link icon, matching the canvas node. */}
+          <FileKindIcon mime={isLinkFirst ? null : item.mimeType} />
           <span className="text-text-main font-medium text-sm truncate">{item.title}</span>
         </div>
         <button onClick={onClose} className="text-text-subtle hover:text-text-main p-1 rounded flex-shrink-0">
@@ -289,10 +309,10 @@ export function ResourceItemPanel({ item, onClose }: Props) {
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {/* A link-only item leads with its links; for a file item the links
             stay below, where they read as extra references. */}
-        {isLinkOnly && linksSection}
+        {isLinkFirst && linksSection}
 
         {/* File box: last for a link item, first for a document. */}
-        {!isLinkOnly && fileSection}
+        {!isLinkFirst && fileSection}
 
         {/* Version history */}
         {item.versions.length > 0 && (
@@ -416,7 +436,7 @@ export function ResourceItemPanel({ item, onClose }: Props) {
 
         {/* For a file item the links sit at the bottom, as extra references;
             for a link item that is where the optional file box goes instead. */}
-        {isLinkOnly ? fileSection : linksSection}
+        {isLinkFirst ? fileSection : linksSection}
       </div>
 
       <footer className="border-t border-border p-3 flex items-center gap-2 flex-shrink-0">

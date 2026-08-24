@@ -112,8 +112,10 @@ export function ResourceThumbnail({
   width: number
   height: number
 }) {
-  const kind = fileKind(item.mimeType, item.fileName)
-  const url = useSignedUrl(item.storagePath)
+  // An item with an address is a link first, even once a document is attached
+  // to it — otherwise attaching a PDF makes the node read as that PDF.
+  const kind = item.links.length > 0 ? 'link' : fileKind(item.mimeType, item.fileName)
+  const url = useSignedUrl(kind === 'link' ? null : item.storagePath)
   const { color, Icon, label } = KIND_STYLE[kind]
   const [failed, setFailed] = useState(false)
 
@@ -185,7 +187,7 @@ export function ResourceThumbnail({
         className="text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded"
         style={{ color, backgroundColor: `${color}22` }}
       >
-        {item.storagePath ? ext : 'LINK'}
+        {kind === 'link' ? 'LINK' : ext}
       </span>
     </div>
   )

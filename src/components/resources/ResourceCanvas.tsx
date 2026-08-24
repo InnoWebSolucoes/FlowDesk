@@ -85,7 +85,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
     clusters, items, resourcesLoadedFor, loadResources,
     createCluster, updateCluster, deleteCluster,
     createItem, moveItem, getFileUrl, deleteItem, duplicateItem, setItemClusters, updateItem,
-    setItemLinks,
+    setItemLinks, stackItemOnto,
   } = useProjectStore()
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -102,6 +102,10 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   // Draft for the "add link" dialog; null when the dialog is closed.
   const [linkDraft, setLinkDraft] = useState<{ url: string; title: string } | null>(null)
   const [linkBusy, setLinkBusy] = useState(false)
+  // The open panel, as a drop target for documents dragged off the canvas.
+  const panelDropRef = useRef<HTMLElement | null>(null)
+  const lastPointer = useRef({ x: 0, y: 0 })
+  const [panelDropActive, setPanelDropActive] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<'item' | 'cluster' | null>(null)
@@ -336,6 +340,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
       const d = dragState.current
       if (!d || e.pointerId !== d.pointerId) return
 
+      lastPointer.current = { x: e.clientX, y: e.clientY }
       const world = screenToWorld(e.clientX, e.clientY)
       const x = world.x - d.offsetX
       const y = world.y - d.offsetY
@@ -362,6 +367,13 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
         if (!cur) return
 
         setDragPos({ x: cur.x, y: cur.y })
+
+        // Light the panel up while a document is held over it.
+        if (cur.kind === 'item' && selectedItemId && cur.id !== selectedItemId && panelDropRef.current) {
+          const el = document.elementFromPoint(lastPointer.current.x, lastPointer.current.y)
+          setPanelDropActive(panelDropRef.current.contains(el as Node | null))
+        }
+
         const allClusters = useProjectStore.getState().clusters
         if (cur.kind === 'item') {
           const hit = dropTargetAt(
@@ -391,15 +403,29 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
 
       if (frame) { cancelAnimationFrame(frame); frame = 0 }
 
+      const overPanel = panelDropRef.current && e
+        ? panelDropRef.current.contains(document.elementFromPoint(e.clientX, e.clientY) as Node | null)
+        : false
+
       dragState.current = null
       setDragId(null)
       setDragKind(null)
       setPullingOut(false)
       setDropTargetId(null)
+      setPanelDropActive(false)
 
       if (!d || !d.moved) {
         // A click that never moved shouldn't write a position back.
         setDragPos(null)
+        return
+      }
+
+      // Dropped onto the open item's panel: fold this document into that one as
+      // its newest version, instead of moving it around the canvas.
+      if (overPanel && d.kind === 'item' && selectedItemId && d.id !== selectedItemId) {
+        draggedRef.current = d.id
+        setDragPos(null)
+        stackItemOnto(d.id, selectedItemId, currentClusterId)
         return
       }
 
@@ -482,7 +508,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
       window.removeEventListener('pointercancel', onCancel)
       window.removeEventListener('blur', onCancel)
     }
-  }, [dragId, screenToWorld, currentClusterId, moveItem, updateCluster])
+  }, [dragId, screenToWorld, currentClusterId, moveItem, updateCluster, selectedItemId, stackItemOnto])
 
   // ─── Cluster navigation ────────────────────────────────────────────────────
 
@@ -1331,7 +1357,13 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
 
       {/* Keyed on id so the edit form re-seeds when a different item is selected. */}
       {selectedItem && (
-        <ResourceItemPanel key={selectedItem.id} item={selectedItem} onClose={() => setSelectedItemId(null)} />
+        <ResourceItemPanel
+          key={selectedItem.id}
+          item={selectedItem}
+          onClose={() => setSelectedItemId(null)}
+          dropRef={panelDropRef}
+          dropActive={panelDropActive}
+        />
       )}
     </div>
   )
