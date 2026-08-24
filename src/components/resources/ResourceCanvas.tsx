@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronRight, Home, Plus, FolderPlus, ZoomIn, ZoomOut, Maximize2, Link2, Pencil, Check, X,
-  CornerLeftUp, Search, FolderOpen, ExternalLink,
+  CornerLeftUp, Search, FolderOpen, ExternalLink, Upload,
 } from 'lucide-react'
 import { ResourceCluster, ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
@@ -111,6 +111,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   const [query, setQuery] = useState('')
   // Right-click menu on an item card, positioned in screen coordinates.
   const [menu, setMenu] = useState<{ itemId: string; x: number; y: number } | null>(null)
+  // Files dragged in from the desktop. Counted rather than a boolean: dragenter
+  // and dragleave both fire when the pointer crosses a child element, so a flag
+  // would flicker off as soon as the cursor moved over a card.
+  const [dropDepth, setDropDepth] = useState(0)
+  // Cluster a file drop would land in, for the same highlight a card drag gets.
+  const [fileDropTargetId, setFileDropTargetId] = useState<string | null>(null)
 
   // Suppresses the zoom watcher while a level change settles, so the landing
   // scale can't immediately re-trigger it.
@@ -146,6 +152,20 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
   useEffect(() => {
     if (resourcesLoadedFor !== projectId) loadResources(projectId)
   }, [projectId, resourcesLoadedFor, loadResources])
+
+  // A file dropped just outside the canvas would otherwise make the browser
+  // navigate to it, throwing away the whole app. Swallow those instead.
+  useEffect(() => {
+    const swallow = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
+    }
+    window.addEventListener('dragover', swallow)
+    window.addEventListener('drop', swallow)
+    return () => {
+      window.removeEventListener('dragover', swallow)
+      window.removeEventListener('drop', swallow)
+    }
+  }, [])
 
   // Re-centre when switching project. Level changes set their own scale below,
   // so they must not reset the view (that would re-trigger the zoom thresholds).
@@ -633,6 +653,57 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
     e.target.value = ''
   }
 
+  /**
+   * Files dropped from the desktop land where they were dropped, so a drop is
+   * also a placement. Dropping onto a bubble files them into that cluster
+   * instead, matching what dragging an existing card onto it does.
+   */
+  const handleFileDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setDropDepth(0)
+    setFileDropTargetId(null)
+
+    const files = Array.from(e.dataTransfer.files ?? [])
+    if (files.length === 0) return
+
+    const world = screenToWorld(e.clientX, e.clientY)
+    const target = dropTargetAt(useProjectStore.getState().clusters, currentClusterId, world.x, world.y)
+
+    // Fan a multi-file drop out around the drop point rather than stacking it.
+    const placed: { x: number; y: number }[] = []
+    for (const file of files) {
+      const offset = spawnPosition(placed.length)
+      const pos = target
+        ? spawnPosition(
+            useProjectStore.getState().items.filter((i) => i.clusterId === target.id).length + placed.length
+          )
+        : placed.length === 0
+          ? { x: world.x, y: world.y }
+          : { x: world.x + offset.x, y: world.y + offset.y }
+      placed.push(pos)
+      await createItem(
+        projectId,
+        target ? target.id : currentClusterId,
+        { title: file.name, x: pos.x, y: pos.y },
+        file
+      )
+    }
+  }
+
+  /**
+   * Highlight the bubble a file drop would land in, so it reads the same as
+   * dragging a card across the canvas.
+   */
+  const handleFileDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+
+    const world = screenToWorld(e.clientX, e.clientY)
+    const hit = dropTargetAt(useProjectStore.getState().clusters, currentClusterId, world.x, world.y)
+    setFileDropTargetId(hit?.id ?? null)
+  }
+
   const handleAddLinkItem = async () => {
     const pos = spawnNearView()
     const created = await createItem(projectId, currentClusterId, {
@@ -792,6 +863,21 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
         ref={containerRef}
         onPointerDown={onPanStart}
         onClick={() => setSelectedItemId(null)}
+        onDragEnter={(e) => {
+          if (!e.dataTransfer.types.includes('Files')) return
+          e.preventDefault()
+          setDropDepth((d) => d + 1)
+        }}
+        onDragOver={handleFileDragOver}
+        onDragLeave={(e) => {
+          if (!e.dataTransfer.types.includes('Files')) return
+          setDropDepth((d) => {
+            const next = Math.max(0, d - 1)
+            if (next === 0) setFileDropTargetId(null)
+            return next
+          })
+        }}
+        onDrop={handleFileDrop}
         className={`absolute inset-0 pt-12 select-none touch-none ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
         style={{
           backgroundImage: 'radial-gradient(circle, rgb(148 163 184 / 0.18) 1px, transparent 1px)',
@@ -810,6 +896,9 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
           {visibleClusters.map((cluster) => {
             const { childClusters, childItems } = countsFor(cluster.id)
             const isRenaming = renamingClusterId === cluster.id
+            // A card dragged across the canvas and a file dragged in from the
+            // desktop both land here, so both light the bubble up the same way.
+            const isDropTarget = dropTargetId === cluster.id || fileDropTargetId === cluster.id
             return (
               <div
                 key={cluster.id}
@@ -887,13 +976,13 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
                   }}
                   className={`rounded-full border-2 hover:brightness-105 active:cursor-grabbing ${
                     dragId === cluster.id ? '' : 'transition-all'
-                  } ${dropTargetId === cluster.id ? 'border-solid scale-105' : 'border-dashed'}`}
+                  } ${isDropTarget ? 'border-solid scale-105' : 'border-dashed'}`}
                   style={{
                     width: cluster.radius * 2,
                     height: cluster.radius * 2,
                     // Solid ring and a stronger fill while a drop would land here.
-                    borderColor: dropTargetId === cluster.id ? cluster.color : `${cluster.color}66`,
-                    backgroundColor: dropTargetId === cluster.id ? `${cluster.color}33` : `${cluster.color}14`,
+                    borderColor: isDropTarget ? cluster.color : `${cluster.color}66`,
+                    backgroundColor: isDropTarget ? `${cluster.color}33` : `${cluster.color}14`,
                   }}
                   title={`Open "${cluster.title}"`}
                 >
@@ -1075,8 +1164,25 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate }: Props) {
                 {currentClusterId ? 'This cluster is empty.' : 'No resources yet.'}
               </p>
               <p className="text-text-subtle text-xs mt-1">
-                Upload files, add links, or create a cluster to group them.
+                Drop files here, add links, or create a cluster to group them.
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Drop hint. Pointer-events-none so it never swallows the drop itself. */}
+        {dropDepth > 0 && (
+          <div className="absolute inset-0 pt-12 flex items-center justify-center pointer-events-none z-10">
+            <div className="absolute inset-3 mt-12 rounded-xl border-2 border-dashed border-primary bg-primary/5" />
+            <div className="relative flex items-center gap-2 px-3.5 py-2 rounded-lg bg-surface border border-border shadow-lg">
+              <Upload size={15} className="text-primary" />
+              <span className="text-sm text-text-main">
+                {fileDropTargetId
+                  ? `Drop into "${clusters.find((c) => c.id === fileDropTargetId)?.title ?? 'cluster'}"`
+                  : currentClusterId
+                    ? 'Drop to add to this cluster'
+                    : 'Drop to add to the main space'}
+              </span>
             </div>
           </div>
         )}
