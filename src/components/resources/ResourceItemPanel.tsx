@@ -120,6 +120,157 @@ export function ResourceItemPanel({ item, onClose }: Props) {
     onClose()
   }
 
+  /**
+   * An item created as a link has no file, and for it the links are the point —
+   * so they lead the panel and the file box moves to the end. Attaching a file
+   * turns it into a normal document and the usual order returns.
+   */
+  const isLinkOnly = !item.storagePath
+
+  const linksSection = (
+    <section>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs font-medium text-text-muted">{isLinkOnly ? 'Address' : 'Links'}</label>
+        <button
+          onClick={() => setLinks([...links, { label: '', url: '' }])}
+          className="text-xs text-primary hover:underline flex items-center gap-1"
+        >
+          <Plus size={12} /> Add link
+        </button>
+      </div>
+
+      {links.length === 0 && (
+        <p className="text-xs text-text-subtle italic">
+          e.g. the Google Docs URL for an uploaded contract.
+        </p>
+      )}
+
+      <div className="space-y-2">
+        {links.map((link, idx) => (
+          <div key={link.id ?? idx} className="flex gap-1.5 items-start">
+            <div className="flex-1 space-y-1.5">
+              <input
+                value={link.label}
+                onChange={(e) => {
+                  const next = [...links]
+                  next[idx] = { ...next[idx], label: e.target.value }
+                  setLinks(next)
+                }}
+                placeholder="Label (e.g. Google Docs)"
+                className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-text-main focus:outline-none focus:border-primary"
+              />
+              <input
+                value={link.url}
+                onChange={(e) => {
+                  const next = [...links]
+                  next[idx] = { ...next[idx], url: e.target.value }
+                  setLinks(next)
+                }}
+                placeholder="https://..."
+                className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-text-main focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div className="flex flex-col gap-1 pt-0.5">
+              {link.url && (
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-text-subtle hover:text-primary p-1 rounded"
+                  title="Open"
+                >
+                  <ExternalLink size={13} />
+                </a>
+              )}
+              <button
+                onClick={() => setLinks(links.filter((_, i) => i !== idx))}
+                className="text-text-subtle hover:text-danger p-1 rounded"
+                title="Remove"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+
+  const fileSection = (
+    <section>
+      <label className="block text-xs font-medium text-text-muted mb-2">File</label>
+      {item.storagePath ? (
+        <div className="rounded-lg border border-border overflow-hidden">
+          {kind === 'image' && fileUrl && (
+            <img src={fileUrl} alt={item.title} className="w-full max-h-52 object-contain bg-surface-2" />
+          )}
+          {kind === 'audio' && fileUrl && <audio controls src={fileUrl} className="w-full" />}
+          {kind === 'video' && fileUrl && (
+            <video controls src={fileUrl} className="w-full max-h-52 bg-black" />
+          )}
+          {kind === 'pdf' && fileUrl && (
+            <iframe src={fileUrl} title={item.title} className="w-full h-52 bg-surface-2" />
+          )}
+          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-surface-2">
+            <div className="min-w-0">
+              <p className="text-xs text-text-main truncate">{item.fileName}</p>
+              <p className="text-[11px] text-text-subtle">{formatFileSize(item.size)}</p>
+            </div>
+            {fileUrl && (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <a
+                  href={fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-text-subtle hover:text-primary p-1.5 rounded"
+                  title="Open"
+                >
+                  <ExternalLink size={14} />
+                </a>
+                <a
+                  href={fileUrl}
+                  download={item.fileName ?? undefined}
+                  className="text-text-subtle hover:text-primary p-1.5 rounded"
+                  title="Download"
+                >
+                  <Download size={14} />
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-text-subtle italic">
+          No file attached — this is a link. You can attach one if you want the document here too.
+        </p>
+      )}
+
+      <div className="flex gap-2 mt-2">
+        <label className="flex-1 cursor-pointer">
+          <span className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-medium text-text-muted hover:bg-surface-2 transition-colors">
+            <Upload size={14} />
+            {item.storagePath ? 'Upload new version' : 'Attach file'}
+          </span>
+          <input type="file" className="hidden" onChange={handleNewVersion} disabled={busy} />
+        </label>
+        {item.storagePath && (
+          <button
+            onClick={() => removeItemFile(item.id)}
+            className="px-3 py-2 rounded-lg border border-border text-xs text-text-muted hover:text-danger hover:border-danger transition-colors"
+            title="Remove file, keep the info"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+      {item.storagePath && (
+        <p className="text-[11px] text-text-subtle mt-1.5">
+          The current file is archived below, and the title, description and links are kept.
+        </p>
+      )}
+    </section>
+  )
+
   return (
     <aside
       ref={panelRef}
@@ -136,79 +287,12 @@ export function ResourceItemPanel({ item, onClose }: Props) {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
-        {/* File preview */}
-        <section>
-          <label className="block text-xs font-medium text-text-muted mb-2">File</label>
-          {item.storagePath ? (
-            <div className="rounded-lg border border-border overflow-hidden">
-              {kind === 'image' && fileUrl && (
-                <img src={fileUrl} alt={item.title} className="w-full max-h-52 object-contain bg-surface-2" />
-              )}
-              {kind === 'audio' && fileUrl && (
-                <audio controls src={fileUrl} className="w-full" />
-              )}
-              {kind === 'video' && fileUrl && (
-                <video controls src={fileUrl} className="w-full max-h-52 bg-black" />
-              )}
-              {kind === 'pdf' && fileUrl && (
-                <iframe src={fileUrl} title={item.title} className="w-full h-52 bg-surface-2" />
-              )}
-              <div className="flex items-center justify-between gap-2 px-3 py-2 bg-surface-2">
-                <div className="min-w-0">
-                  <p className="text-xs text-text-main truncate">{item.fileName}</p>
-                  <p className="text-[11px] text-text-subtle">{formatFileSize(item.size)}</p>
-                </div>
-                {fileUrl && (
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <a
-                      href={fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 text-xs font-medium text-primary hover:underline px-2 py-1.5 rounded"
-                      title="Open in a new tab"
-                    >
-                      <ExternalLink size={14} /> Open
-                    </a>
-                    <a
-                      href={fileUrl}
-                      download={item.fileName ?? undefined}
-                      className="text-text-subtle hover:text-primary p-1.5 rounded"
-                      title="Download"
-                    >
-                      <Download size={15} />
-                    </a>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-text-subtle italic">No file attached — this item is links only.</p>
-          )}
+        {/* A link-only item leads with its links; for a file item the links
+            stay below, where they read as extra references. */}
+        {isLinkOnly && linksSection}
 
-          <div className="flex gap-2 mt-2">
-            <label className="flex-1 cursor-pointer">
-              <span className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-medium text-text-muted hover:bg-surface-2 transition-colors">
-                <Upload size={14} />
-                {item.storagePath ? 'Upload new version' : 'Attach file'}
-              </span>
-              <input type="file" className="hidden" onChange={handleNewVersion} disabled={busy} />
-            </label>
-            {item.storagePath && (
-              <button
-                onClick={() => removeItemFile(item.id)}
-                className="px-3 py-2 rounded-lg border border-border text-xs text-text-muted hover:text-danger hover:border-danger transition-colors"
-                title="Remove file, keep the info"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
-          </div>
-          {item.storagePath && (
-            <p className="text-[11px] text-text-subtle mt-1.5">
-              The current file is archived below, and the title, description and links are kept.
-            </p>
-          )}
-        </section>
+        {/* File box: last for a link item, first for a document. */}
+        {!isLinkOnly && fileSection}
 
         {/* Version history */}
         {item.versions.length > 0 && (
@@ -330,73 +414,9 @@ export function ResourceItemPanel({ item, onClose }: Props) {
           </div>
         </section>
 
-        {/* Links */}
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-medium text-text-muted">Links</label>
-            <button
-              onClick={() => setLinks([...links, { label: '', url: '' }])}
-              className="text-xs text-primary hover:underline flex items-center gap-1"
-            >
-              <Plus size={12} /> Add link
-            </button>
-          </div>
-
-          {links.length === 0 && (
-            <p className="text-xs text-text-subtle italic">
-              e.g. the Google Docs URL for an uploaded contract.
-            </p>
-          )}
-
-          <div className="space-y-2">
-            {links.map((link, idx) => (
-              <div key={link.id ?? idx} className="flex gap-1.5 items-start">
-                <div className="flex-1 space-y-1.5">
-                  <input
-                    value={link.label}
-                    onChange={(e) => {
-                      const next = [...links]
-                      next[idx] = { ...next[idx], label: e.target.value }
-                      setLinks(next)
-                    }}
-                    placeholder="Label (e.g. Google Docs)"
-                    className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-text-main focus:outline-none focus:border-primary"
-                  />
-                  <input
-                    value={link.url}
-                    onChange={(e) => {
-                      const next = [...links]
-                      next[idx] = { ...next[idx], url: e.target.value }
-                      setLinks(next)
-                    }}
-                    placeholder="https://..."
-                    className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-text-main focus:outline-none focus:border-primary"
-                  />
-                </div>
-                <div className="flex flex-col gap-1 pt-0.5">
-                  {link.url && (
-                    <a
-                      href={link.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-text-subtle hover:text-primary p-1 rounded"
-                      title="Open"
-                    >
-                      <ExternalLink size={13} />
-                    </a>
-                  )}
-                  <button
-                    onClick={() => setLinks(links.filter((_, i) => i !== idx))}
-                    className="text-text-subtle hover:text-danger p-1 rounded"
-                    title="Remove"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* For a file item the links sit at the bottom, as extra references;
+            for a link item that is where the optional file box goes instead. */}
+        {isLinkOnly ? fileSection : linksSection}
       </div>
 
       <footer className="border-t border-border p-3 flex items-center gap-2 flex-shrink-0">
