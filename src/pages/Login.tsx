@@ -13,9 +13,23 @@ export function Login() {
   const { t } = useT()
 
   const [mode, setMode] = useState<'login' | 'forgot'>('login')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => {
+    try {
+      return localStorage.getItem('flowdesk:rememberedEmail') ?? ''
+    } catch {
+      return ''
+    }
+  })
   const [password, setPassword] = useState('')
-  const [remember, setRemember] = useState(false)
+  // Prefills the email next time. The session itself always persists, so this
+  // is a convenience, not what keeps you signed in.
+  const [remember, setRemember] = useState(() => {
+    try {
+      return !!localStorage.getItem('flowdesk:rememberedEmail')
+    } catch {
+      return false
+    }
+  })
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -29,9 +43,16 @@ export function Login() {
       return
     }
     setLoading(true)
-    const { success } = await login(email.toLowerCase().trim(), password)
+    const normalizedEmail = email.toLowerCase().trim()
+    const { success } = await login(normalizedEmail, password)
     setLoading(false)
     if (success) {
+      try {
+        if (remember) localStorage.setItem('flowdesk:rememberedEmail', normalizedEmail)
+        else localStorage.removeItem('flowdesk:rememberedEmail')
+      } catch {
+        // Blocked storage just means the email isn't prefilled next time.
+      }
       const user = useAuthStore.getState().currentUser
       if (user?.role === 'admin') navigate('/admin/projects')
       else navigate('/employee/tasks')

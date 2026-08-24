@@ -38,6 +38,35 @@ function LoadingScreen() {
   )
 }
 
+/**
+ * Where "/" should land. Sending it straight to /login would sign out anyone
+ * who opens the app at its root with a valid stored session — which is what
+ * the desktop app does on every launch.
+ */
+function RootRedirect() {
+  const { status, currentUser } = useAuthStore()
+
+  if (status === 'loading') return <LoadingScreen />
+  if (status === 'unauthenticated') return <Navigate to="/login" replace />
+  if (currentUser?.role === 'admin') return <Navigate to="/admin/projects" replace />
+  return <Navigate to="/employee/tasks" replace />
+}
+
+/**
+ * The login page, but skipped for anyone already signed in — otherwise a
+ * restored session still shows a login form until the user reloads.
+ */
+function LoginRoute() {
+  const { status, currentUser } = useAuthStore()
+
+  if (status === 'loading') return <LoadingScreen />
+  if (status === 'authenticated') {
+    if (currentUser?.role === 'admin') return <Navigate to="/admin/projects" replace />
+    return <Navigate to="/employee/tasks" replace />
+  }
+  return <Login />
+}
+
 function ProtectedRoute({
   children,
   requiredRole,
@@ -91,8 +120,8 @@ export default function App() {
     <BrowserRouter>
       <AppInitializer>
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/login" element={<LoginRoute />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Admin routes */}
