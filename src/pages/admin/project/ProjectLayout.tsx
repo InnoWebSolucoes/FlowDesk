@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
-import { Outlet, useParams, Navigate, Link } from 'react-router-dom'
-import { Building2, ChevronLeft } from 'lucide-react'
+import { Outlet, useParams, Navigate } from 'react-router-dom'
+import { Building2 } from 'lucide-react'
 import { useProjectStore } from '../../../store/projectStore'
 import { useEmployeeStore } from '../../../store/employeeStore'
 import { useTaskStore } from '../../../store/taskStore'
@@ -35,15 +35,8 @@ export function ProjectLayout() {
 
   return (
     <div className="animate-fade-in">
-      {/* Project header */}
+      {/* Project header. The way back to the picker lives in the sidebar. */}
       <div className="mb-5">
-        <Link
-          to="/admin/projects"
-          className="inline-flex items-center gap-1 text-xs text-text-subtle hover:text-text-main mb-3 transition-colors"
-        >
-          <ChevronLeft size={13} /> All projects
-        </Link>
-
         <div className="flex items-center gap-3">
           <div
             className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"

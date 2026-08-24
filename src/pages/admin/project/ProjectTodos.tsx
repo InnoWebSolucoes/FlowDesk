@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
 import {
   ListTodo, Plus, Trash2, X, Link2, ChevronUp, ChevronDown, Circle, CheckCircle2,
-  FolderOpen, Calendar, Pencil, Check,
+  FolderOpen, Calendar, Pencil, Check, Copy,
 } from 'lucide-react'
 import { isBefore, parseISO, startOfToday } from 'date-fns'
 import { Project, ProjectTodo, Priority } from '../../../types'
@@ -28,7 +28,7 @@ export function ProjectTodos() {
   const {
     todos, todoLists, todosLoadedFor, loadTodos,
     createTodo, updateTodo, toggleTodo, deleteTodo, reorderTodos, setTodoLinks,
-    createTodoList, updateTodoList, deleteTodoList,
+    createTodoList, updateTodoList, deleteTodoList, duplicateTodoList,
     clusters, items, resourcesLoadedFor, loadResources,
   } = useProjectStore()
 
@@ -47,6 +47,8 @@ export function ProjectTodos() {
   })
   const [renamingListId, setRenamingListId] = useState<string | null>(null)
   const [listNameDraft, setListNameDraft] = useState('')
+  // Right-click menu on a list tab, positioned in screen coordinates.
+  const [listMenu, setListMenu] = useState<{ listId: string; x: number; y: number } | null>(null)
 
   useEffect(() => {
     if (todosLoadedFor !== project.id) loadTodos(project.id)
@@ -147,6 +149,11 @@ export function ProjectTodos() {
     const detail = count > 0 ? ` and its ${count} todo(s)` : ''
     if (!confirm(`Delete the list "${name}"${detail}? This cannot be undone.`)) return
     await deleteTodoList(listId)
+  }
+
+  const handleDuplicateList = async (listId: string) => {
+    const created = await duplicateTodoList(listId)
+    if (created) selectList(created.id)
   }
 
   const move = (todo: ProjectTodo, direction: -1 | 1) => {
@@ -329,47 +336,26 @@ export function ProjectTodos() {
           return (
             <div
               key={list.id}
-              className={`group flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px flex-shrink-0 transition-colors ${
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setListMenu({ listId: list.id, x: e.clientX, y: e.clientY })
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px flex-shrink-0 transition-colors ${
                 isActive ? 'border-primary' : 'border-transparent'
               }`}
             >
               <button
-                onClick={() => {
-                  // First click selects the list; clicking the one already open
-                  // starts renaming it.
-                  if (isActive) {
-                    setRenamingListId(list.id)
-                    setListNameDraft(list.name)
-                  } else {
-                    selectList(list.id)
-                  }
-                }}
+                onClick={() => selectList(list.id)}
                 className={`text-sm font-medium whitespace-nowrap transition-colors ${
                   isActive ? 'text-primary' : 'text-text-muted hover:text-text-main'
                 }`}
-                title={isActive ? 'Click to rename' : list.name}
+                title={`${list.name} — right-click for more`}
               >
                 {list.name}
               </button>
               <span className="text-[10px] text-text-subtle bg-surface-2 px-1.5 py-0.5 rounded">
                 {openCountFor(list.id)}
               </span>
-              <button
-                onClick={() => { setRenamingListId(list.id); setListNameDraft(list.name) }}
-                className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-text-main transition-opacity p-0.5"
-                title="Rename list"
-              >
-                <Pencil size={11} />
-              </button>
-              {lists.length > 1 && (
-                <button
-                  onClick={() => handleDeleteList(list.id, list.name)}
-                  className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-danger transition-opacity p-0.5"
-                  title="Delete list"
-                >
-                  <X size={12} />
-                </button>
-              )}
             </div>
           )
         })}
@@ -382,6 +368,53 @@ export function ProjectTodos() {
           <Plus size={14} /> List
         </button>
       </div>
+
+      {/* Right-click menu on a list tab */}
+      {listMenu && (() => {
+        const target = lists.find((l) => l.id === listMenu.listId)
+        if (!target) return null
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setListMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setListMenu(null) }}
+            />
+            <div
+              className="fixed z-50 w-44 py-1 bg-surface border border-border rounded-lg shadow-xl"
+              style={{ left: listMenu.x, top: listMenu.y }}
+            >
+              <button
+                onClick={() => {
+                  setRenamingListId(target.id)
+                  setListNameDraft(target.name)
+                  setListMenu(null)
+                }}
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                <Pencil size={12} /> Edit
+              </button>
+              <button
+                onClick={() => { handleDuplicateList(target.id); setListMenu(null) }}
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                <Copy size={12} /> Duplicate
+              </button>
+              {lists.length > 1 && (
+                <>
+                  <div className="h-px bg-border my-1" />
+                  <button
+                    onClick={() => { setListMenu(null); handleDeleteList(target.id, target.name) }}
+                    className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )
+      })()}
 
       {/* Add box: accepts several todos at once, separated by commas or lines */}
       <div className="mb-4">

@@ -55,6 +55,7 @@ interface ProjectState {
   createTodoList: (projectId: string, name: string) => Promise<ProjectTodoList | null>
   updateTodoList: (id: string, updates: Partial<ProjectTodoList>) => Promise<void>
   deleteTodoList: (id: string) => Promise<void>
+  duplicateTodoList: (id: string) => Promise<ProjectTodoList | null>
   moveTodoToList: (todoId: string, listId: string) => Promise<void>
 
   // Todos
@@ -784,6 +785,37 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       todoLists: s.todoLists.filter((l) => l.id !== id),
       todos: s.todos.filter((t) => t.listId !== id),
     }))
+  },
+
+  /** A copy of the list plus every todo in it, links included. */
+  duplicateTodoList: async (id) => {
+    const source = get().todoLists.find((l) => l.id === id)
+    if (!source) return null
+
+    const list = await get().createTodoList(source.projectId, `${source.name} (copy)`)
+    if (!list) return null
+
+    const sourceTodos = get().todos
+      .filter((t) => t.listId === id)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+
+    for (const todo of sourceTodos) {
+      const copy = await get().createTodo(source.projectId, {
+        listId: list.id,
+        title: todo.title,
+        notes: todo.notes,
+        priority: todo.priority,
+        dueDate: todo.dueDate,
+      })
+      if (copy && todo.links.length > 0) {
+        await get().setTodoLinks(
+          copy.id,
+          todo.links.map((l) => ({ itemId: l.itemId ?? undefined, clusterId: l.clusterId ?? undefined }))
+        )
+      }
+    }
+
+    return list
   },
 
   moveTodoToList: async (todoId, listId) => {
