@@ -1,7 +1,7 @@
 {
   "name": "flowdesk-desktop",
   "productName": "FlowDesk",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
   "description": "FlowDesk with Claude side by side",
   "author": "Innoweb Solucoes",

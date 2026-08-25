@@ -529,6 +529,15 @@ async function materialise(url, fileName) {
   return target
 }
 
+ipcMain.handle('native:prepare-file', async (_event, { url, fileName }) => {
+  try {
+    await materialise(url, fileName)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+})
+
 ipcMain.handle('native:drag-file', async (event, { url, fileName }) => {
   try {
     const filePath = await materialise(url, fileName)
@@ -550,20 +559,27 @@ ipcMain.handle('native:copy-file', async (_event, { url, fileName }) => {
     const filePath = await materialise(url, fileName)
 
     if (process.platform === 'win32') {
-      // Windows has no file-list clipboard API in Electron, so this writes the
-      // CF_HDROP shape by hand: a DROPFILES header followed by a
-      // double-null-terminated UTF-16 path list.
-      // The list ends with two NULs: one closing the path, one the list.
-      const terminator = Buffer.alloc(4)
-      const pathBuf = Buffer.concat([Buffer.from(filePath, 'ucs2'), terminator])
-      const header = Buffer.alloc(20)
-      header.writeUInt32LE(20, 0)   // pFiles: offset to the path list
-      header.writeUInt32LE(0, 4)    // pt.x
-      header.writeUInt32LE(0, 8)    // pt.y
-      header.writeUInt32LE(0, 12)   // fNC
-      header.writeUInt32LE(1, 16)   // fWide: paths are UTF-16
-      clipboard.writeBuffer('CF_HDROP', Buffer.concat([header, pathBuf]))
+      // Electron's writeBuffer('CF_HDROP') does not register the real Windows
+      // clipboard format — Windows reports no file on the clipboard — so the
+      // copy goes through PowerShell's Clipboard.SetFileDropList, which uses
+      // the genuine API that Explorer, WhatsApp and Office all read.
+      await new Promise((resolve, reject) => {
+        const ps = [
+          'Add-Type -AssemblyName System.Windows.Forms',
+          '$c = New-Object System.Collections.Specialized.StringCollection',
+          '$c.Add($env:FLOWDESK_CLIP_FILE) | Out-Null',
+          '[System.Windows.Forms.Clipboard]::SetFileDropList($c)',
+        ].join('; ')
+
+        execFile(
+          'powershell.exe',
+          ['-NoProfile', '-STA', '-Command', ps],
+          { env: { ...process.env, FLOWDESK_CLIP_FILE: filePath } },
+          (err) => (err ? reject(err) : resolve()),
+        )
+      })
     } else {
+      // macOS reads a file URL from the pasteboard.
       clipboard.writeBuffer('public.file-url', Buffer.from(`file://${filePath}`, 'utf8'))
     }
 

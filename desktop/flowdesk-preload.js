@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('flowdeskNative', {
   /** True when running inside the desktop app, so the web app can adapt. */
   available: true,
 
+  /** Downloads ahead of a drag, so the file is ready when the gesture starts. */
+  prepareFile: (url, fileName) => ipcRenderer.invoke('native:prepare-file', { url, fileName }),
+
   /**
    * Starts an OS-level drag of a file. Resolves once the drag has been handed
    * over; the drop itself is the operating system's business from then on.

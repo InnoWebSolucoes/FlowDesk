@@ -8,7 +8,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useCanvasViewport, ZOOM_ENTER_THRESHOLD, ZOOM_EXIT_THRESHOLD } from './useCanvasViewport'
 import { ResourceItemPanel } from './ResourceItemPanel'
 import { googleEmbedUrl } from './googleDocs'
-import { isNative, dragDocumentOut, copyDocumentFile } from '../../lib/nativeShare'
+import { isNative, dragDocumentOut, copyDocumentFile, prepareDocument } from '../../lib/nativeShare'
 import { ResourceThumbnail } from './ResourceThumbnail'
 
 const ITEM_W = 132
@@ -1509,7 +1509,16 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             <div
               key={item.id}
               data-resource-item
-              onPointerDown={(e) => startDrag(e, item.id, 'item', item.x, item.y)}
+              onPointerEnter={() => {
+                if (nativeShare && item.storagePath) prepareDocument(item.storagePath, item.fileName)
+              }}
+              onPointerDown={(e) => {
+                // Alt hands the press to the browser so a native file drag can
+                // begin: startDrag calls preventDefault, which would otherwise
+                // stop dragstart ever firing.
+                if (e.altKey && nativeShare && item.storagePath) return
+                startDrag(e, item.id, 'item', item.x, item.y)
+              }}
               onClick={(e) => {
                 e.stopPropagation()
                 if (draggedRef.current === item.id) { draggedRef.current = null; return }
@@ -1549,10 +1558,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               // In the desktop app a node can be dragged straight out to
               // WhatsApp, Claude, an email — anything that takes a file. The
               // browser cannot hand over file data, so this is off there.
+              // Alt-drag sends the file to another application; a plain drag
+              // moves the node around the canvas.
               draggable={nativeShare && !!item.storagePath}
               onDragStart={(e) => {
                 if (!item.storagePath) return
-                // The OS drag replaces the HTML5 one entirely.
+                // startDrag hands the OS the file; the HTML5 drag is not used.
                 e.preventDefault()
                 dragDocumentOut(item.storagePath, item.fileName)
               }}

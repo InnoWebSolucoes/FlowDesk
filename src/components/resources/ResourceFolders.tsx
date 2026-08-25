@@ -9,7 +9,7 @@ import { ResourceCluster, ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { ResourceThumbnail, FileKindIcon, kindStyle, fileKind, formatFileSize } from './ResourceThumbnail'
 import { useMarqueeSelect } from './useMarqueeSelect'
-import { isNative, dragDocumentOut, copyDocumentFile } from '../../lib/nativeShare'
+import { isNative, dragDocumentOut, copyDocumentFile, prepareDocument } from '../../lib/nativeShare'
 
 type SortKey = 'name' | 'type' | 'size' | 'modified'
 type ViewMode = 'list' | 'grid'
@@ -480,6 +480,9 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                   ref={register(i.id)}
                   data-resource-item
                   draggable
+                  onPointerEnter={() => {
+                    if (nativeShare && i.storagePath) prepareDocument(i.storagePath, i.fileName)
+                  }}
                   onDragStart={(e) => startRowDrag(e, i)}
                   onDragEnd={() => { setDragIds(null); setDropTarget(null) }}
                   onPointerDown={(e) => e.stopPropagation()}
@@ -563,6 +566,9 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                   ref={register(i.id)}
                   data-resource-item
                   draggable
+                  onPointerEnter={() => {
+                    if (nativeShare && i.storagePath) prepareDocument(i.storagePath, i.fileName)
+                  }}
                   onDragStart={(e) => startRowDrag(e, i)}
                   onDragEnd={() => { setDragIds(null); setDropTarget(null) }}
                   onPointerDown={(e) => e.stopPropagation()}

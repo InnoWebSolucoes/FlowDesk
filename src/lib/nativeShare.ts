@@ -12,6 +12,7 @@ import { supabase } from './supabaseClient'
 
 interface NativeBridge {
   available: true
+  prepareFile: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string }>
   dragFile: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string }>
   copyFile: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string }>
 }
@@ -23,6 +24,17 @@ declare global {
 }
 
 export const isNative = () => !!window.flowdeskNative?.available
+
+/**
+ * Downloads a document ahead of a drag so the gesture does not have to wait.
+ * Safe to call repeatedly; the copy is reused.
+ */
+export async function prepareDocument(storagePath: string | null, fileName: string | null) {
+  const native = window.flowdeskNative
+  if (!native?.prepareFile || !storagePath) return
+  const url = await signedUrlFor(storagePath)
+  if (url) native.prepareFile(url, fileName ?? 'document').catch(() => {})
+}
 
 /** A signed URL the desktop app can download. Null when there is no file. */
 async function signedUrlFor(storagePath: string | null): Promise<string | null> {
