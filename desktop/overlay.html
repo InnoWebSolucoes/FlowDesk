@@ -18,7 +18,7 @@
     // missed; treat that as the end of the drag rather than staying stuck to
     // the cursor.
     if (e.buttons === 0) { end(); return }
-    window.shellAPI.dragMove(e.clientX)
+    window.shellAPI.dragMove(e.clientX, e.buttons)
   })
 
   // pointerup and mouseup both, because a trackpad release does not always

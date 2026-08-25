@@ -9,6 +9,7 @@ import { ResourceCluster, ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { ResourceThumbnail, FileKindIcon, kindStyle, fileKind, formatFileSize } from './ResourceThumbnail'
 import { useMarqueeSelect } from './useMarqueeSelect'
+import { isNative, dragDocumentOut, copyDocumentFile } from '../../lib/nativeShare'
 
 type SortKey = 'name' | 'type' | 'size' | 'modified'
 type ViewMode = 'list' | 'grid'
@@ -65,6 +66,8 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
   const [movePicker, setMovePicker] = useState<'move' | 'tag' | null>(null)
   const lastClicked = useRef<string | null>(null)
 
+  const nativeShare = isNative()
+
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Dragging files onto a folder (or a breadcrumb) moves them there. Uses HTML5
@@ -74,6 +77,14 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
   const [dropTarget, setDropTarget] = useState<string | null | 'up'>(null)
 
   const startRowDrag = (e: React.DragEvent, item: ResourceItem) => {
+    // Alt drags the file out to another application; a plain drag moves it
+    // between folders, which is what this view is mostly used for.
+    if (e.altKey && nativeShare && item.storagePath) {
+      e.preventDefault()
+      dragDocumentOut(item.storagePath, item.fileName)
+      return
+    }
+
     // Dragging an unselected row drags just that row.
     const ids = selected.has(item.id) ? [...selected] : [item.id]
     setDragIds(ids)
@@ -582,6 +593,16 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
               <>
                 <MenuItem label="Open" onClick={() => { onOpenItem(menuTarget); setMenu(null) }} />
                 <MenuItem label="Details" onClick={() => { onSelectItem(menuTarget); setMenu(null) }} />
+                {nativeShare && menuTarget.storagePath && (
+                  <MenuItem
+                    label="Copy file"
+                    onClick={async () => {
+                      setMenu(null)
+                      const res = await copyDocumentFile(menuTarget.storagePath, menuTarget.fileName)
+                      if (!res.ok) alert(res.error ?? 'The file could not be copied.')
+                    }}
+                  />
+                )}
               </>
             )}
             <MenuItem

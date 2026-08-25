@@ -3,7 +3,7 @@
 // claude.ai loads as a top-level page in its own persistent session, so login
 // cookies survive restarts. See README.md for the gotchas this depends on.
 
-const { app, BrowserWindow, WebContentsView, ipcMain, session, shell, Menu } = require('electron')
+const { app, BrowserWindow, WebContentsView, ipcMain, session, shell, Menu, clipboard, nativeImage } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const { execFile } = require('node:child_process')
@@ -373,7 +373,13 @@ function createWindow() {
   })
 
   flowView = new WebContentsView({
-    webPreferences: { partition: 'persist:flowdesk', sandbox: true },
+    webPreferences: {
+      partition: 'persist:flowdesk',
+      sandbox: true,
+      // Lets the web app hand a real file to the OS, which a page cannot do
+      // by itself. See flowdesk-preload.js for the whole surface.
+      preload: path.join(__dirname, 'flowdesk-preload.js'),
+    },
   })
   claudeView = new WebContentsView({
     webPreferences: { partition: 'persist:claude', sandbox: true },
@@ -439,7 +445,13 @@ ipcMain.on('divider:dragstart', () => {
   overlayView.webContents.focus()
 })
 
-ipcMain.on('divider:drag', (_e, x) => {
+ipcMain.on('divider:drag', (_e, x, buttons) => {
+  // A trackpad can deliver a move after the release was missed. If nothing is
+  // held any more, the drag is over regardless of what the renderer reported.
+  if (typeof buttons === 'number' && buttons === 0) {
+    endDrag()
+    return
+  }
   if (!dragging || !win || typeof x !== 'number') return
   const [w] = win.getContentSize()
   settings.ratio = clampRatio((x - DIVIDER_W / 2) / (w - DIVIDER_W))
@@ -488,6 +500,85 @@ ipcMain.on('setup:save', (_e, url) => {
     createWindow()
     startSync()
   }
+})
+
+// ─── Dragging a document out to another app ─────────────────────────────────
+
+/** Where downloaded copies live for the session, cleared on quit. */
+const dragCacheDir = () => path.join(app.getPath('temp'), 'flowdesk-drag')
+
+/**
+ * Downloads the document to a temp file so the OS has something real to hand
+ * over. Reuses a file already fetched this session rather than downloading the
+ * same document repeatedly.
+ */
+async function materialise(url, fileName) {
+  const dir = dragCacheDir()
+  fs.mkdirSync(dir, { recursive: true })
+
+  const safe = String(fileName || 'document').replace(/[^\w.\- ]+/g, '_').slice(0, 120)
+  const target = path.join(dir, safe)
+
+  // A signed URL changes every hour, so an existing file is still the right
+  // bytes for the same document — only re-fetch when it is missing.
+  if (!fs.existsSync(target)) {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`Could not fetch the file (${res.status})`)
+    fs.writeFileSync(target, Buffer.from(await res.arrayBuffer()))
+  }
+  return target
+}
+
+ipcMain.handle('native:drag-file', async (event, { url, fileName }) => {
+  try {
+    const filePath = await materialise(url, fileName)
+    // A drag needs an icon; the file's own icon keeps it recognisable.
+    let icon = await app.getFileIcon(filePath, { size: 'normal' }).catch(() => null)
+    if (!icon || icon.isEmpty()) {
+      icon = nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png')).resize({ width: 64 })
+    }
+    event.sender.startDrag({ file: filePath, icon })
+    return { ok: true }
+  } catch (e) {
+    console.error('[native:drag-file]', e)
+    return { ok: false, error: e.message }
+  }
+})
+
+ipcMain.handle('native:copy-file', async (_event, { url, fileName }) => {
+  try {
+    const filePath = await materialise(url, fileName)
+
+    if (process.platform === 'win32') {
+      // Windows has no file-list clipboard API in Electron, so this writes the
+      // CF_HDROP shape by hand: a DROPFILES header followed by a
+      // double-null-terminated UTF-16 path list.
+      // The list ends with two NULs: one closing the path, one the list.
+      const terminator = Buffer.alloc(4)
+      const pathBuf = Buffer.concat([Buffer.from(filePath, 'ucs2'), terminator])
+      const header = Buffer.alloc(20)
+      header.writeUInt32LE(20, 0)   // pFiles: offset to the path list
+      header.writeUInt32LE(0, 4)    // pt.x
+      header.writeUInt32LE(0, 8)    // pt.y
+      header.writeUInt32LE(0, 12)   // fNC
+      header.writeUInt32LE(1, 16)   // fWide: paths are UTF-16
+      clipboard.writeBuffer('CF_HDROP', Buffer.concat([header, pathBuf]))
+    } else {
+      clipboard.writeBuffer('public.file-url', Buffer.from(`file://${filePath}`, 'utf8'))
+    }
+
+    return { ok: true, path: filePath }
+  } catch (e) {
+    console.error('[native:copy-file]', e)
+    return { ok: false, error: e.message }
+  }
+})
+
+// Temp copies are per-session; clear them so they do not accumulate.
+app.on('will-quit', () => {
+  try {
+    fs.rmSync(dragCacheDir(), { recursive: true, force: true })
+  } catch {}
 })
 
 const gotLock = app.requestSingleInstanceLock()

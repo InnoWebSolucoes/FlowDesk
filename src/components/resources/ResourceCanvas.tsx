@@ -8,6 +8,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useCanvasViewport, ZOOM_ENTER_THRESHOLD, ZOOM_EXIT_THRESHOLD } from './useCanvasViewport'
 import { ResourceItemPanel } from './ResourceItemPanel'
 import { googleEmbedUrl } from './googleDocs'
+import { isNative, dragDocumentOut, copyDocumentFile } from '../../lib/nativeShare'
 import { ResourceThumbnail } from './ResourceThumbnail'
 
 const ITEM_W = 132
@@ -112,6 +113,9 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     createItem, moveItem, deleteItem, duplicateItem, setItemClusters, updateItem,
     setItemLinks, stackItemOnto,
   } = useProjectStore()
+
+  // Whether the OS-level file actions are available (desktop app only).
+  const nativeShare = isNative()
 
   const containerRef = useRef<HTMLDivElement>(null)
   const {
@@ -1507,6 +1511,16 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 }, 220)
               }}
               data-item-id={item.id}
+              // In the desktop app a node can be dragged straight out to
+              // WhatsApp, Claude, an email — anything that takes a file. The
+              // browser cannot hand over file data, so this is off there.
+              draggable={nativeShare && !!item.storagePath}
+              onDragStart={(e) => {
+                if (!item.storagePath) return
+                // The OS drag replaces the HTML5 one entirely.
+                e.preventDefault()
+                dragDocumentOut(item.storagePath, item.fileName)
+              }}
               onDoubleClick={(e) => {
                 e.stopPropagation()
                 if (clickTimer.current) {
@@ -1819,6 +1833,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 ['Open', () => openItem(target)],
                 ['Details', () => setSelectedItemId(target.id)],
                 ['Duplicate', () => duplicateItem(target.id)],
+                ...(nativeShare && target.storagePath
+                  ? [['Copy file', async () => {
+                      const res = await copyDocumentFile(target.storagePath, target.fileName)
+                      if (!res.ok) alert(res.error ?? 'The file could not be copied.')
+                    }] as [string, () => void]]
+                  : []),
               ].map(([label, fn]) => (
                 <button
                   key={label as string}
