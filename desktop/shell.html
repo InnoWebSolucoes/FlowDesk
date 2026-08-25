@@ -44,17 +44,31 @@
   })
 
   // The button toggles; the rest of the divider drags. Keep the button's
-  // mousedown from starting a drag.
-  toggleBtn.addEventListener('mousedown', (e) => e.stopPropagation())
+  // press from starting a drag.
+  toggleBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
   toggleBtn.addEventListener('click', () => window.shellAPI.toggle())
 
-  divider.addEventListener('mousedown', (e) => {
-    if (!collapsed && e.button === 0) window.shellAPI.dragStart()
+  // pointerdown rather than mousedown, and pointerup ends it here as well as in
+  // the overlay: a double click fires two presses, and the second used to start
+  // a drag that nothing ever ended, leaving the divider stuck to the cursor.
+  divider.addEventListener('pointerdown', (e) => {
+    if (collapsed || e.button !== 0 || e.detail > 1) return
+    e.preventDefault()
+    window.shellAPI.dragStart()
   })
+
+  const stop = () => window.shellAPI.dragEnd()
+  divider.addEventListener('pointerup', stop)
+  divider.addEventListener('pointercancel', stop)
+  window.addEventListener('pointerup', stop)
+  window.addEventListener('blur', stop)
+
   divider.addEventListener('click', (e) => {
     if (collapsed && e.target !== toggleBtn) window.shellAPI.toggle()
   })
   divider.addEventListener('dblclick', () => {
+    // Make sure the presses that produced this double click left nothing held.
+    stop()
     if (!collapsed) window.shellAPI.toggle()
   })
 </script>
