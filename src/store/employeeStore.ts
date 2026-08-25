@@ -86,6 +86,15 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
       let message = error.message
       try {
         const ctx = (error as any).context
+        // A 404 means the function was never deployed to this project, which
+        // otherwise surfaces as an opaque "failed to send a request".
+        if (ctx?.status === 404) {
+          return {
+            success: false,
+            error:
+              'The create-employee function is not deployed to Supabase yet. Run "supabase functions deploy create-employee".',
+          }
+        }
         if (ctx?.json) {
           const body = await ctx.json()
           if (body?.error) message = body.error
