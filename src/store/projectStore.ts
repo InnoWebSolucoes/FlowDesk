@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import {
   Project, ResourceCluster, ResourceItem, ResourceItemLink, ResourceItemVersion,
-  ProjectTodo, ProjectTodoLink, ProjectTodoList, CalendarEntry,
+  ProjectTodo, ProjectTodoLink, ProjectTodoList, CalendarEntry, ResourceAccess,
 } from '../types'
 
 const BUCKET = 'attachments'
@@ -50,6 +50,8 @@ interface ProjectState {
 
   // Tags: the clusters a document appears in, beyond its home.
   setItemClusters: (itemId: string, clusterIds: string[]) => Promise<void>
+  /** Who can see a document, and the named people when access is 'specific'. */
+  setItemAccess: (itemId: string, access: ResourceAccess, userIds: string[]) => Promise<void>
   /** Fold one document into another as its newest version. */
   stackItemOnto: (sourceId: string, targetId: string, fromClusterId: string | null) => Promise<void>
   duplicateItem: (itemId: string) => Promise<ResourceItem | null>
@@ -184,6 +186,8 @@ function toItem(row: any): ResourceItem {
       .sort((a: ResourceItemVersion, b: ResourceItemVersion) => b.createdAt.localeCompare(a.createdAt)),
     clusterIds,
     showAtTopLevel: row.show_at_top_level ?? false,
+    access: row.access ?? 'everyone',
+    accessUserIds: (row.resource_item_access ?? []).map((a: any) => a.user_id),
   }
 }
 
@@ -323,10 +327,28 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   // ─── Resources ────────────────────────────────────────────────────────────
 
   loadResources: async (projectId) => {
+    // The access join only resolves once the resource-access migration has run;
+    // fall back rather than leaving the canvas empty in the meantime.
+    const fetchItems = async () => {
+      const withAccess = await supabase
+        .from('resource_items')
+        .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id), resource_item_access(user_id)')
+        .eq('project_id', projectId)
+      if (!withAccess.error) return withAccess
+
+      console.warn('[loadResources] falling back without access:', withAccess.error.message)
+      return supabase
+        .from('resource_items')
+        .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+        .eq('project_id', projectId)
+    }
+
     const [clustersRes, itemsRes] = await Promise.all([
       supabase.from('resource_clusters').select('*').eq('project_id', projectId),
-      supabase.from('resource_items').select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)').eq('project_id', projectId),
+      fetchItems(),
     ])
+
+    if (itemsRes.error) console.error('[loadResources] failed:', itemsRes.error)
 
     set({
       clusters: (clustersRes.data ?? []).map(toCluster),
@@ -448,7 +470,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         // Created outside any cluster means it lives in the main space.
         show_at_top_level: clusterId === null,
       })
-      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id), resource_item_access(user_id)')
       .single()
 
     if (error || !data) return null
@@ -672,7 +694,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // Re-read so the version list reflects the archive insert above.
     const { data } = await supabase
       .from('resource_items')
-      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id), resource_item_access(user_id)')
       .eq('id', itemId)
       .single()
 
@@ -717,7 +739,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
     const { data } = await supabase
       .from('resource_items')
-      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id), resource_item_access(user_id)')
       .eq('id', itemId)
       .single()
 
@@ -839,7 +861,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // Re-read both rows so versions and tags reflect everything above.
     const { data } = await supabase
       .from('resource_items')
-      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id), resource_item_access(user_id)')
       .in('id', [sourceId, targetId])
 
     const fresh = (data ?? []).map(toItem)
@@ -847,6 +869,26 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       items: s.items
         .map((i) => fresh.find((f) => f.id === i.id) ?? i)
         .filter((i) => i.id !== sourceId || fresh.some((f) => f.id === sourceId)),
+    }))
+  },
+
+  setItemAccess: async (itemId, access, userIds) => {
+    await supabase.from('resource_items').update({ access }).eq('id', itemId)
+
+    // The named list only means anything for 'specific', so it is cleared
+    // otherwise rather than left behind to reappear later.
+    await supabase.from('resource_item_access').delete().eq('item_id', itemId)
+    const named = access === 'specific' ? userIds : []
+    if (named.length > 0) {
+      await supabase
+        .from('resource_item_access')
+        .insert(named.map((user_id) => ({ item_id: itemId, user_id })))
+    }
+
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === itemId ? { ...i, access, accessUserIds: named } : i,
+      ),
     }))
   },
 
@@ -868,7 +910,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         // no location at all and is invisible everywhere.
         show_at_top_level: item.showAtTopLevel,
       })
-      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id), resource_item_access(user_id)')
       .single()
 
     if (error || !data) return null

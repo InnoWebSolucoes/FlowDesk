@@ -1,11 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   X, Upload, Trash2, ExternalLink, Plus, Download, History, Check, FolderOpen, Copy, Home,
+  Shield, Users, UserCheck, Globe, UserCog,
 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
-import { ResourceItem } from '../../types'
+import { ResourceItem, ResourceAccess } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
+import { useEmployeeStore } from '../../store/employeeStore'
 import { fileKind, FileKindIcon, formatFileSize } from './ResourceThumbnail'
+
+const ACCESS_OPTIONS: {
+  value: ResourceAccess
+  label: string
+  hint: string
+  Icon: typeof Globe
+}[] = [
+  { value: 'everyone', label: 'Everyone', hint: 'Anyone working on this project', Icon: Globe },
+  { value: 'employees', label: 'Employees', hint: 'Managers and staff on this project', Icon: Users },
+  { value: 'managers', label: 'Managers only', hint: 'Nobody else can open it', Icon: UserCog },
+  { value: 'specific', label: 'Specific people', hint: 'Choose exactly who, below', Icon: UserCheck },
+]
 
 interface Props {
   item: ResourceItem
@@ -20,8 +34,15 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
   const {
     updateItem, removeItemFile, deleteItem, setItemLinks, getFileUrl,
     addItemVersion, makeVersionCurrent, deleteItemVersion,
-    setItemClusters, duplicateItem, clusters,
+    setItemClusters, duplicateItem, clusters, setItemAccess,
   } = useProjectStore()
+  const employees = useEmployeeStore((s) => s.employees)
+
+  const accessUsers = item.accessUserIds
+  const projectPeople = useMemo(
+    () => employees.filter((e) => e.projectId === item.projectId),
+    [employees, item.projectId],
+  )
 
   const [title, setTitle] = useState(item.title)
   const [description, setDescription] = useState(item.description)
@@ -352,6 +373,72 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
             </div>
           </section>
         )}
+
+        {/* Who can see it */}
+        <section>
+          <label className="flex items-center gap-1.5 text-xs font-medium text-text-muted mb-2">
+            <Shield size={13} /> Who can see this
+          </label>
+
+          <div className="space-y-1">
+            {ACCESS_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setItemAccess(item.id, opt.value, accessUsers)}
+                className={`w-full flex items-start gap-2 p-2 rounded-lg border text-left transition-colors ${
+                  item.access === opt.value
+                    ? 'border-primary bg-primary-light'
+                    : 'border-border hover:bg-surface-2'
+                }`}
+              >
+                <opt.Icon size={13} className="mt-0.5 flex-shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-xs text-text-main">{opt.label}</span>
+                  <span className="block text-[11px] text-text-subtle">{opt.hint}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {item.access === 'specific' && (
+            <div className="mt-2 border border-border rounded-lg p-2 space-y-1 max-h-48 overflow-y-auto">
+              {projectPeople.length === 0 ? (
+                <p className="text-[11px] text-text-subtle italic px-1">
+                  Nobody is assigned to this project yet.
+                </p>
+              ) : (
+                projectPeople.map((person) => {
+                  const checked = accessUsers.includes(person.id)
+                  return (
+                    <label
+                      key={person.id}
+                      className="flex items-center gap-2 px-1 py-1 rounded hover:bg-surface-2 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const next = checked
+                            ? accessUsers.filter((id) => id !== person.id)
+                            : [...accessUsers, person.id]
+                          setItemAccess(item.id, 'specific', next)
+                        }}
+                        className="w-3.5 h-3.5 accent-primary"
+                      />
+                      <span className="text-xs text-text-main truncate flex-1">{person.name}</span>
+                      <span className="text-[10px] text-text-subtle">{person.jobTitle}</span>
+                    </label>
+                  )
+                })
+              )}
+            </div>
+          )}
+
+          <p className="text-[11px] text-text-subtle mt-1.5">
+            Managers always have access, so a document can never be locked away
+            from the people responsible for it.
+          </p>
+        </section>
 
         {/* Cluster tags */}
         <section>

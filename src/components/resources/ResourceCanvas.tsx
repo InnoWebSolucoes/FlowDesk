@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ChevronRight, Home, Plus, ZoomIn, ZoomOut, Maximize2, Link2, X,
+  ChevronRight, Home, Plus, ZoomIn, ZoomOut, Maximize2, Link2, Lock, X,
   CornerLeftUp, Search, FolderOpen, ExternalLink, Upload,
 } from 'lucide-react'
 import { ResourceCluster, ResourceItem } from '../../types'

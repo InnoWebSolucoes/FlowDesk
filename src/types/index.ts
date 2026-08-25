@@ -96,7 +96,19 @@ export interface ResourceItem {
   clusterIds: string[]
   /** Whether the document also shows in the project's main space. */
   showAtTopLevel: boolean
+  /** Who can see this document. Managers always can. */
+  access: ResourceAccess
+  /** User ids, when access is 'specific'. */
+  accessUserIds: string[]
 }
+
+/**
+ * everyone   — anyone on the project (the default)
+ * managers   — admins only
+ * employees  — admins and employees on the project
+ * specific   — admins and the named people
+ */
+export type ResourceAccess = 'everyone' | 'managers' | 'employees' | 'specific'
 
 export interface ProjectTodoLink {
   id: string
