@@ -864,6 +864,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         description: item.description,
         x: item.x + 40,
         y: item.y + 40,
+        // Without this a copy of a document that lives in the space inherits
+        // no location at all and is invisible everywhere.
+        show_at_top_level: item.showAtTopLevel,
       })
       .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
       .single()

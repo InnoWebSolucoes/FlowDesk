@@ -103,7 +103,17 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   // Multi-select for bulk moves. The single selection above still drives the
   // details panel; this is the set the marquee and shift-click build up.
+  /**
+   * Selected presences, keyed "<location>::<itemId>" where location is the
+   * cluster id or "space". Selecting a document selects it *where it is*: the
+   * same document tagged into two clusters is two separate presences, so
+   * removing it from one leaves the other alone. Deleting from everywhere is
+   * offered explicitly, and is the only action that ignores location.
+   */
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
+  /** The key for a document as it appears in a given place. */
+  const presenceKey = (itemId: string, location: string | null) => `${location ?? 'space'}::${itemId}`
+  const itemIdOf = (key: string) => key.slice(key.indexOf('::') + 2)
   const lastClickedItem = useRef<string | null>(null)
   // Shift-drag on the background draws a selection box instead of panning.
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
@@ -335,7 +345,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
       const target = e.target as Element | null
       if (!target) return
       if (containerRef.current?.contains(target)) return
-      if (target.closest('[data-resource-item], [role="dialog"], aside')) return
+      if (target.closest('[data-resource-item], [data-canvas-ui], [role="dialog"], aside')) return
       setMultiSelected(new Set())
       setSelectedItemId(null)
     }
@@ -389,7 +399,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         const x1 = r.left - rect.left
         const y1 = r.top - rect.top
         if (x1 < right && x1 + r.width > left && y1 < bottom && y1 + r.height > top) {
-          hits.add(el.dataset.itemId!)
+          hits.add(presenceKey(el.dataset.itemId!, currentClusterId))
         }
       }
       setSelectedItemId(null)
@@ -554,7 +564,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         if (target) {
           // Place it near the centre of its new home rather than at the drop point.
           // A multi-selection moves together, each getting its own slot.
-          const group = multiSelected.has(d.id) ? [...multiSelected] : [d.id]
+          const selfKey = presenceKey(d.id, currentClusterId)
+          const group = multiSelected.has(selfKey) ? [...multiSelected].map(itemIdOf) : [d.id]
           let siblings = store.items.filter((i) => i.clusterId === target.id).length
           for (const id of group) {
             const pos = spawnPosition(siblings++)
@@ -758,7 +769,14 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
    * Untag removes the documents from *this* location only — they stay wherever
    * else they are tagged. Delete removes them from everywhere, permanently.
    */
-  const selectionIds = () => [...multiSelected]
+  /** Selected presences, split back into their document and their location. */
+  const selectionPresences = () =>
+    [...multiSelected].map((key) => {
+      const at = key.slice(0, key.indexOf('::'))
+      return { itemId: itemIdOf(key), location: at === 'space' ? null : at }
+    })
+  /** Distinct documents in the selection, for actions that ignore location. */
+  const selectionIds = () => [...new Set([...multiSelected].map(itemIdOf))]
 
   const bulkIntoNewCluster = async (world: { x: number; y: number }, copy: boolean) => {
     const ids = selectionIds()
@@ -792,13 +810,15 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
 
   /** Remove the selection from here, keeping it wherever else it lives. */
   const bulkUntag = async () => {
-    for (const id of selectionIds()) {
-      const item = items.find((i) => i.id === id)
+    // Each presence is removed from its own location, which is not necessarily
+    // the level currently in view — a cluster selection can span several.
+    for (const { itemId, location } of selectionPresences()) {
+      const item = items.find((i) => i.id === itemId)
       if (!item) continue
-      if (currentClusterId) {
-        await setItemClusters(id, item.clusterIds.filter((c) => c !== currentClusterId))
+      if (location) {
+        await setItemClusters(itemId, item.clusterIds.filter((c) => c !== location))
       } else {
-        await updateItem(id, { showAtTopLevel: false })
+        await updateItem(itemId, { showAtTopLevel: false })
       }
     }
     setMultiSelected(new Set())
@@ -1128,7 +1148,15 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             const isRenaming = renamingClusterId === cluster.id
             // A card dragged across the canvas and a file dragged in from the
             // desktop both land here, so both light the bubble up the same way.
-            const isDropTarget = dropTargetId === cluster.id || fileDropTargetId === cluster.id
+            const isDropTarget = dropTargetId === cluster.id
+            // Shift-selecting a cluster selects its contents; show that on the
+            // bubble too, or the gesture looks like it did nothing.
+            const inside = subtreeIds(clusters, cluster.id)
+            const insideKeys = items.flatMap((i) =>
+              i.clusterIds.filter((c) => inside.has(c)).map((c) => presenceKey(i.id, c)),
+            )
+            const clusterSelected =
+              insideKeys.length > 0 && insideKeys.every((k) => multiSelected.has(k)) || fileDropTargetId === cluster.id
             return (
               <div
                 key={cluster.id}
@@ -1219,20 +1247,27 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                     // depth, rather than navigating into it. Double-click still
                     // opens it, which the handler below takes care of.
                     if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                      // Each document is selected in the cluster that holds it,
+                      // not everywhere it happens to appear.
                       const inside = subtreeIds(clusters, cluster.id)
-                      const ids = items
-                        .filter((i) => i.clusterIds.some((c) => inside.has(c)))
-                        .map((i) => i.id)
+                      const keys: string[] = []
+                      for (const i of items) {
+                        for (const c of i.clusterIds) {
+                          if (inside.has(c)) keys.push(presenceKey(i.id, c))
+                        }
+                      }
                       setSelectedItemId(null)
-                      setMultiSelected((prev) => new Set([...prev, ...ids]))
+                      setMultiSelected((prev) => new Set([...prev, ...keys]))
                       return
                     }
 
                     enterCluster(cluster)
                   }}
                   className={`rounded-full border-2 hover:brightness-105 active:cursor-grabbing ${
-                    dragId === cluster.id ? '' : 'transition-all'
-                  } ${isDropTarget ? 'border-solid scale-105' : 'border-dashed'}`}
+                    dragId === cluster.id ? '' : 'transition-[box-shadow,border-color,opacity,filter]'
+                  } ${isDropTarget ? 'border-solid scale-105' : 'border-dashed'} ${
+                    clusterSelected ? 'ring-4 ring-primary/30 border-solid' : ''
+                  }`}
                   style={{
                     width: cluster.radius * 2,
                     height: cluster.radius * 2,
@@ -1370,10 +1405,11 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 // canvas have none — using the array order swept in whatever
                 // happened to sit between them in the database.
                 if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                  const key = presenceKey(item.id, currentClusterId)
                   setMultiSelected((prev) => {
                     const next = new Set(prev)
-                    if (next.has(item.id)) next.delete(item.id)
-                    else next.add(item.id)
+                    if (next.has(key)) next.delete(key)
+                    else next.add(key)
                     return next
                   })
                   lastClickedItem.current = item.id
@@ -1393,10 +1429,13 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               }}
               title={`${item.title}\nClick for details · double-click to open · right-click for more`}
               className={`group absolute rounded-xl border bg-surface overflow-hidden cursor-pointer select-none hover:shadow-lg active:cursor-grabbing ${
-                // No transition on the dragged node, or it lags the pointer.
-                dragId === item.id ? '' : 'transition-all'
+                // Colours and shadow animate; position never does. Animating
+                // left/top made a node slide across the canvas whenever its
+                // coordinates changed — most visibly for a document that also
+                // sits inside a cluster, which has different coordinates there.
+                dragId === item.id ? '' : 'transition-[box-shadow,border-color,opacity]'
               } ${
-                selectedItemId === item.id || multiSelected.has(item.id)
+                selectedItemId === item.id || multiSelected.has(presenceKey(item.id, currentClusterId))
                   ? 'border-primary ring-2 ring-primary/25'
                   : 'border-border'
               } ${
@@ -1503,11 +1542,13 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         return (
           <>
             <div
+              data-canvas-ui
               className="fixed inset-0 z-40"
               onClick={() => setClusterMenu(null)}
               onContextMenu={(e) => { e.preventDefault(); setClusterMenu(null) }}
             />
             <div
+              data-canvas-ui
               className="fixed z-50 w-52 py-1 bg-surface border border-border rounded-lg shadow-xl"
               style={{ left: clusterMenu.x, top: clusterMenu.y }}
             >
@@ -1553,11 +1594,13 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         return (
           <>
             <div
+              data-canvas-ui
               className="fixed inset-0 z-40"
               onClick={() => setBgMenu(null)}
               onContextMenu={(e) => { e.preventDefault(); setBgMenu(null) }}
             />
             <div
+              data-canvas-ui
               className="fixed z-50 w-60 py-1 bg-surface border border-border rounded-lg shadow-xl"
               style={{ left: bgMenu.x, top: bgMenu.y }}
             >
@@ -1631,8 +1674,9 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         const act = (fn: () => void) => () => { fn(); setMenu(null) }
         return (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }} />
+            <div data-canvas-ui className="fixed inset-0 z-40" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }} />
             <div
+              data-canvas-ui
               className="fixed z-50 w-44 py-1 bg-surface border border-border rounded-lg shadow-xl"
               style={{ left: menu.x, top: menu.y }}
             >
