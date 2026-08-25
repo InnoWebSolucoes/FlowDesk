@@ -78,9 +78,9 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
   const [dropTarget, setDropTarget] = useState<string | null | 'up'>(null)
 
   const startRowDrag = (e: React.DragEvent, item: ResourceItem) => {
-    // Alt drags the file out to another application; a plain drag moves it
+    // Ctrl drags the file out to another application; a plain drag moves it
     // between folders, which is what this view is mostly used for.
-    if (e.altKey && nativeShare && item.storagePath) {
+    if ((e.ctrlKey || e.metaKey) && nativeShare && item.storagePath) {
       e.preventDefault()
       dragDocumentOut(item.storagePath, item.fileName)
       return

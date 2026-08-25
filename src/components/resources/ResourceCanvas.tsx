@@ -1512,11 +1512,22 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               onPointerEnter={() => {
                 if (nativeShare && item.storagePath) prepareDocument(item.storagePath, item.fileName)
               }}
+              onMouseMove={(e) => {
+                // Cursor tells you the drag will leave the app.
+                const el = e.currentTarget as HTMLElement
+                el.style.cursor =
+                  (e.ctrlKey || e.metaKey) && nativeShare && item.storagePath ? 'copy' : ''
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.cursor = ''
+              }}
               onPointerDown={(e) => {
-                // Alt hands the press to the browser so a native file drag can
+                // Ctrl hands the press to the browser so a native file drag can
                 // begin: startDrag calls preventDefault, which would otherwise
-                // stop dragstart ever firing.
-                if (e.altKey && nativeShare && item.storagePath) return
+                // stop dragstart from ever firing. Ctrl-click still toggles the
+                // selection, because a click without movement never becomes a
+                // drag.
+                if ((e.ctrlKey || e.metaKey) && nativeShare && item.storagePath) return
                 startDrag(e, item.id, 'item', item.x, item.y)
               }}
               onClick={(e) => {
@@ -1558,14 +1569,19 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               // In the desktop app a node can be dragged straight out to
               // WhatsApp, Claude, an email — anything that takes a file. The
               // browser cannot hand over file data, so this is off there.
-              // Alt-drag sends the file to another application; a plain drag
+              // Ctrl-drag sends the file to another application; a plain drag
               // moves the node around the canvas.
               draggable={nativeShare && !!item.storagePath}
               onDragStart={(e) => {
                 if (!item.storagePath) return
-                // startDrag hands the OS the file; the HTML5 drag is not used.
+                // The OS drag replaces the HTML5 one entirely.
                 e.preventDefault()
-                dragDocumentOut(item.storagePath, item.fileName)
+                dragDocumentOut(item.storagePath, item.fileName).then((ok) => {
+                  if (!ok) {
+                    setCopied(null)
+                    alert('The file could not be prepared for dragging. Try "Copy file" instead.')
+                  }
+                })
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation()
