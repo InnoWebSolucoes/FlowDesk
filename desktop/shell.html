@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<style>
+  html, body { margin: 0; height: 100%; background: #18181b; overflow: hidden; }
+  #divider {
+    position: absolute; top: 0; bottom: 0;
+    background: #27272a;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none;
+  }
+  #divider:hover { background: #3f3f46; }
+  #divider.expanded { cursor: col-resize; }
+  #divider.collapsed { cursor: pointer; }
+  #toggleBtn {
+    width: 100%; height: 64px;
+    border: none; border-radius: 6px;
+    background: #3f3f46; color: #d4d4d8;
+    font-size: 13px; line-height: 1;
+    cursor: pointer; padding: 0;
+  }
+  #toggleBtn:hover { background: #52525b; color: #fafafa; }
+</style>
+</head>
+<body>
+<div id="divider" class="expanded" title="Drag to resize">
+  <button id="toggleBtn" title="Hide Claude">&#8250;</button>
+</div>
+<script>
+  const divider = document.getElementById('divider')
+  const toggleBtn = document.getElementById('toggleBtn')
+  let collapsed = false
+
+  window.shellAPI.onLayout(({ dividerX, stripW, collapsed: c }) => {
+    collapsed = c
+    divider.style.left = dividerX + 'px'
+    divider.style.width = stripW + 'px'
+    divider.className = c ? 'collapsed' : 'expanded'
+    divider.title = c ? 'Show Claude' : 'Drag to resize'
+    toggleBtn.title = c ? 'Show Claude' : 'Hide Claude'
+    toggleBtn.innerHTML = c ? '&#8249;' : '&#8250;'
+  })
+
+  // The button toggles; the rest of the divider drags. Keep the button's
+  // mousedown from starting a drag.
+  toggleBtn.addEventListener('mousedown', (e) => e.stopPropagation())
+  toggleBtn.addEventListener('click', () => window.shellAPI.toggle())
+
+  divider.addEventListener('mousedown', (e) => {
+    if (!collapsed && e.button === 0) window.shellAPI.dragStart()
+  })
+  divider.addEventListener('click', (e) => {
+    if (collapsed && e.target !== toggleBtn) window.shellAPI.toggle()
+  })
+  divider.addEventListener('dblclick', () => {
+    if (!collapsed) window.shellAPI.toggle()
+  })
+</script>
+</body>
+</html>

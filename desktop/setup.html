@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>FlowDesk Setup</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #18181b; color: #e4e4e7;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .card { width: 30rem; padding: 2rem; }
+  .mark {
+    width: 2.5rem; height: 2.5rem; border-radius: .625rem;
+    background: #1A5C3A; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.1rem; margin-bottom: 1rem;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
+  p { color: #a1a1aa; font-size: .9rem; line-height: 1.5; margin: 0 0 1.5rem; }
+  label { display: block; font-size: .8rem; color: #a1a1aa; margin-bottom: .4rem; }
+  input {
+    width: 100%; box-sizing: border-box; padding: .65rem .75rem;
+    background: #27272a; border: 1px solid #3f3f46; border-radius: 6px;
+    color: #fafafa; font-size: .9rem; font-family: inherit;
+  }
+  input:focus { outline: none; border-color: #6366f1; }
+  #err { color: #f87171; font-size: .8rem; min-height: 1.2rem; margin-top: .5rem; }
+  button {
+    margin-top: 1rem; width: 100%; padding: .7rem;
+    background: #6366f1; color: #fff; border: none; border-radius: 6px;
+    font-size: .9rem; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  button:hover { background: #4f46e5; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="mark">F</div>
+  <h1>Connect to FlowDesk</h1>
+  <p>Enter the web address where FlowDesk is hosted. Ask your administrator if you are unsure &mdash; it looks like <code>https://flowdesk.vercel.app</code>.</p>
+  <label for="url">FlowDesk address</label>
+  <input id="url" type="text" placeholder="https://flowdesk.vercel.app" autofocus spellcheck="false">
+  <div id="err"></div>
+  <button id="go">Continue</button>
+</div>
+<script>
+  const input = document.getElementById('url')
+  const err = document.getElementById('err')
+
+  function submit() {
+    let v = input.value.trim()
+    if (!v) { err.textContent = 'Please enter the FlowDesk address.'; return }
+    if (!/^https?:\/\//i.test(v)) v = 'https://' + v
+    try { new URL(v) } catch { err.textContent = 'That does not look like a valid address.'; return }
+    err.textContent = ''
+    window.setupAPI.save(v)
+  }
+
+  document.getElementById('go').addEventListener('click', submit)
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit() })
+</script>
+</body>
+</html>

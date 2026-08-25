@@ -1,0 +1,58 @@
+# Builds the desktop app for macOS (and Windows) on GitHub's own machines.
+#
+# A .dmg can only be produced on macOS — hdiutil is macOS-only — so this exists
+# to build the Mac version without owning a Mac. Run it from the Actions tab
+# ("Run workflow"), then download the installers from the run's Artifacts.
+
+name: Build desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['desktop-v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            script: dist:mac
+            artifact: FlowDesk-macOS
+            pattern: desktop/dist/*.dmg
+          - os: windows-latest
+            script: dist
+            artifact: FlowDesk-Windows
+            pattern: desktop/dist/*.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Generate the app icon
+        working-directory: desktop
+        run: npm run icon
+
+      - name: Build
+        working-directory: desktop
+        # The app is not code-signed: a certificate is not worth it for an
+        # internal tool. Users get past the warning as described in the README.
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.pattern }}
+          if-no-files-found: error

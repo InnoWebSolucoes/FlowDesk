@@ -1,0 +1,83 @@
+{
+  "name": "flowdesk-desktop",
+  "productName": "FlowDesk",
+  "version": "1.0.4",
+  "private": true,
+  "description": "FlowDesk with Claude side by side",
+  "author": "Innoweb Solucoes",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node build/make-icon.js",
+    "dist": "electron-builder --win",
+    "pack": "electron-builder --win --dir",
+    "dist:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.3"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.3"
+  },
+  "build": {
+    "appId": "com.innoweb.flowdesk",
+    "productName": "FlowDesk",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "setup-preload.js",
+      "sync.js",
+      "config.js",
+      "shell.html",
+      "overlay.html",
+      "setup.html",
+      "build/icon.ico",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FlowDesk",
+      "artifactName": "FlowDesk-Setup-${version}.${ext}",
+      "uninstallDisplayName": "FlowDesk"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "identity": null
+    },
+    "dmg": {
+      "artifactName": "FlowDesk-${version}-${arch}.${ext}"
+    }
+  }
+}
