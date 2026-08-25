@@ -110,6 +110,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   // Right-click on empty canvas: create a cluster, or act on the selection.
   const [bgMenu, setBgMenu] = useState<{ x: number; y: number; world: { x: number; y: number } } | null>(null)
   const marqueeStart = useRef<{ x: number; y: number; additive: Set<string> } | null>(null)
+  const marqueeBox = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const [marqueeActive, setMarqueeActive] = useState(false)
   const [renamingClusterId, setRenamingClusterId] = useState<string | null>(null)
   // Draft for the "add link" dialog; null when the dialog is closed.
   const [linkDraft, setLinkDraft] = useState<{ url: string; title: string } | null>(null)
@@ -343,22 +345,30 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
    * compared against each node's own box in the same space — the nodes live
    * inside the zoom/pan transform, so their screen rects are read directly
    * rather than recomputed from world coordinates.
+   *
+   * The live rectangle is kept in a ref as well as in state: the effect must
+   * not re-subscribe on every mouse move (that would race the pointerup), so
+   * the handlers cannot rely on the state value, which would be stale.
    */
   useEffect(() => {
-    if (!marquee) return
+    if (!marqueeActive) return
 
     const onMove = (e: PointerEvent) => {
       const rect = containerRef.current?.getBoundingClientRect()
       const start = marqueeStart.current
       if (!rect || !start) return
-      setMarquee({ x1: start.x, y1: start.y, x2: e.clientX - rect.left, y2: e.clientY - rect.top })
+      const box = { x1: start.x, y1: start.y, x2: e.clientX - rect.left, y2: e.clientY - rect.top }
+      marqueeBox.current = box
+      setMarquee(box)
     }
 
     const onUp = () => {
       const rect = containerRef.current?.getBoundingClientRect()
       const start = marqueeStart.current
-      const box = marquee
+      const box = marqueeBox.current
       marqueeStart.current = null
+      marqueeBox.current = null
+      setMarqueeActive(false)
       setMarquee(null)
       if (!rect || !start || !box) return
 
@@ -370,14 +380,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
       if (right - left < 4 && bottom - top < 4) return
 
       const hits = new Set(start.additive)
-      for (const el of containerRef.current!.querySelectorAll('[data-item-id]')) {
-        const r = (el as HTMLElement).getBoundingClientRect()
+      for (const el of containerRef.current!.querySelectorAll<HTMLElement>('[data-item-id]')) {
+        const r = el.getBoundingClientRect()
         const x1 = r.left - rect.left
         const y1 = r.top - rect.top
-        const x2 = x1 + r.width
-        const y2 = y1 + r.height
-        if (x1 < right && x2 > left && y1 < bottom && y2 > top) {
-          hits.add((el as HTMLElement).dataset.itemId!)
+        if (x1 < right && x1 + r.width > left && y1 < bottom && y1 + r.height > top) {
+          hits.add(el.dataset.itemId!)
         }
       }
       setSelectedItemId(null)
@@ -390,7 +398,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [marquee])
+  }, [marqueeActive])
 
   const startDrag = (
     e: React.PointerEvent,
@@ -1063,7 +1071,9 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             const x = e.clientX - rect.left
             const y = e.clientY - rect.top
             marqueeStart.current = { x, y, additive: new Set(multiSelected) }
-            setMarquee({ x1: x, y1: y, x2: x, y2: y })
+            marqueeBox.current = { x1: x, y1: y, x2: x, y2: y }
+            setMarquee(marqueeBox.current)
+            setMarqueeActive(true)
             return
           }
           onPanStart(e)
@@ -1396,7 +1406,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             in container pixels rather than world coordinates. */}
         {marquee && (
           <div
-            className="absolute border-2 border-primary bg-primary/10 pointer-events-none z-20"
+            className="absolute border border-primary/40 bg-primary/5 rounded-sm pointer-events-none z-20"
             style={{
               left: Math.min(marquee.x1, marquee.x2),
               top: Math.min(marquee.y1, marquee.y2),
