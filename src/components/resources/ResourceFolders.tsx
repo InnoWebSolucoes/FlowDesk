@@ -67,6 +67,7 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
   const lastClicked = useRef<string | null>(null)
 
   const nativeShare = isNative()
+  const [copied, setCopied] = useState<string | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -270,6 +271,13 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
 
   return (
     <div className="rounded-xl border border-border bg-surface overflow-hidden">
+      {copied && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-4 py-2.5 rounded-lg bg-text-main text-surface shadow-xl">
+          <span className="text-xs">
+            <b>{copied}</b> copied — paste it with Ctrl+V in WhatsApp, Claude, or anywhere else.
+          </span>
+        </div>
+      )}
       {/* Breadcrumb + view switch */}
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border">
         <nav className="flex items-center gap-1 text-sm min-w-0 overflow-x-auto">
@@ -600,6 +608,10 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                       setMenu(null)
                       const res = await copyDocumentFile(menuTarget.storagePath, menuTarget.fileName)
                       if (!res.ok) alert(res.error ?? 'The file could not be copied.')
+                      else {
+                        setCopied(menuTarget.title)
+                        setTimeout(() => setCopied(null), 2600)
+                      }
                     }}
                   />
                 )}

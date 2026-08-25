@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ChevronRight, Home, Plus, ZoomIn, ZoomOut, Maximize2, Link2, Lock, X,
+  ChevronRight, Home, Plus, ZoomIn, ZoomOut, Maximize2, Link2, Lock, Check, X,
   CornerLeftUp, Search, FolderOpen, ExternalLink, Upload,
 } from 'lucide-react'
 import { ResourceCluster, ResourceItem } from '../../types'
@@ -116,6 +116,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
 
   // Whether the OS-level file actions are available (desktop app only).
   const nativeShare = isNative()
+  // Names the document just copied, so the paste step is obvious.
+  const [copied, setCopied] = useState<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const {
@@ -1642,6 +1644,15 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         onChange={handleAddFiles}
       />
 
+      {copied && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-4 py-2.5 rounded-lg bg-text-main text-surface shadow-xl">
+          <Check size={14} />
+          <span className="text-xs">
+            <b>{copied}</b> copied — paste it with Ctrl+V in WhatsApp, Claude, or anywhere else.
+          </span>
+        </div>
+      )}
+
       {/* Cluster right-click: rename, duplicate or delete it. */}
       {clusterMenu && (() => {
         const target = clusters.find((c) => c.id === clusterMenu.clusterId)
@@ -1836,7 +1847,9 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 ...(nativeShare && target.storagePath
                   ? [['Copy file', async () => {
                       const res = await copyDocumentFile(target.storagePath, target.fileName)
+                      setCopied(res.ok ? target.title : null)
                       if (!res.ok) alert(res.error ?? 'The file could not be copied.')
+                      else setTimeout(() => setCopied(null), 2600)
                     }] as [string, () => void]]
                   : []),
               ].map(([label, fn]) => (

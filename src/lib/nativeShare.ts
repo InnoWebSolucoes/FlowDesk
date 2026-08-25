@@ -50,7 +50,14 @@ export async function dragDocumentOut(
   return res.ok
 }
 
-/** Puts the document on the clipboard, ready to paste into another app. */
+/**
+ * Puts the document on the clipboard, ready to paste into another app.
+ *
+ * This is usually the better route to an app that lives in the taskbar or dock:
+ * hovering a drag over a taskbar button to raise its window is a Windows shell
+ * behaviour that an app-initiated drag does not reliably trigger, so dragging
+ * works best onto a window that is already visible.
+ */
 export async function copyDocumentFile(
   storagePath: string | null,
   fileName: string | null,
