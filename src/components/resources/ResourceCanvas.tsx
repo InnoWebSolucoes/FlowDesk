@@ -911,8 +911,42 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     }
   }
 
+  /**
+   * Uploading a file that is already here is almost always a mistake, so say
+   * so before adding a second copy. Matched on name and byte size, which is
+   * enough to catch the real case (the same file picked twice) without reading
+   * every file to hash it.
+   *
+   * Returns the files to actually upload.
+   */
+  const screenForDuplicates = (files: File[]): File[] => {
+    const existing = useProjectStore
+      .getState()
+      .items.filter((i) => i.projectId === projectId && i.fileName)
+
+    const clashes: { file: File; match: string }[] = []
+    for (const file of files) {
+      const match = existing.find((i) => i.fileName === file.name && i.size === file.size)
+      if (match) clashes.push({ file, match: match.title })
+    }
+    if (clashes.length === 0) return files
+
+    const ok = confirm(
+      [
+        `${clashes.length} of these ${clashes.length === 1 ? 'is' : 'are'} already in this project:`,
+        '',
+        ...clashes.map((c) => `- ${c.file.name} (already here as "${c.match}")`),
+        '',
+        'Add anyway as a separate copy?',
+        '',
+        'To update the existing document instead, open it and use "Upload new version".',
+      ].join('\n'),
+    )
+    return ok ? files : files.filter((f) => !clashes.some((c) => c.file === f))
+  }
+
   const handleAddFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
+    const files = screenForDuplicates(Array.from(e.target.files ?? []))
     // Track this batch's positions so a multi-file upload fans out instead of
     // stacking — the store hasn't caught up between iterations.
     const placed: { x: number; y: number }[] = []
@@ -935,7 +969,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     setDropDepth(0)
     setFileDropTargetId(null)
 
-    const files = Array.from(e.dataTransfer.files ?? [])
+    const files = screenForDuplicates(Array.from(e.dataTransfer.files ?? []))
     if (files.length === 0) return
 
     const world = screenToWorld(e.clientX, e.clientY)
