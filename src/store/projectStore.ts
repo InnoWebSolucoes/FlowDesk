@@ -52,6 +52,8 @@ interface ProjectState {
   setItemClusters: (itemId: string, clusterIds: string[]) => Promise<void>
   /** Who can see a document, and the named people when access is 'specific'. */
   setItemAccess: (itemId: string, access: ResourceAccess, userIds: string[]) => Promise<void>
+  /** Who can see a cluster. Everything nested inside inherits it. */
+  setClusterAccess: (clusterId: string, access: ResourceAccess, userIds: string[]) => Promise<void>
   /** Fold one document into another as its newest version. */
   stackItemOnto: (sourceId: string, targetId: string, fromClusterId: string | null) => Promise<void>
   duplicateItem: (itemId: string) => Promise<ResourceItem | null>
@@ -130,6 +132,8 @@ function toCluster(row: any): ResourceCluster {
     y: row.y,
     radius: row.radius,
     createdAt: row.created_at,
+    access: row.access ?? 'everyone',
+    accessUserIds: (row.resource_cluster_access ?? []).map((a: any) => a.user_id),
   }
 }
 
@@ -343,8 +347,19 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         .eq('project_id', projectId)
     }
 
+    const fetchClusters = async () => {
+      const withAccess = await supabase
+        .from('resource_clusters')
+        .select('*, resource_cluster_access(user_id)')
+        .eq('project_id', projectId)
+      if (!withAccess.error) return withAccess
+
+      console.warn('[loadResources] clusters without access:', withAccess.error.message)
+      return supabase.from('resource_clusters').select('*').eq('project_id', projectId)
+    }
+
     const [clustersRes, itemsRes] = await Promise.all([
-      supabase.from('resource_clusters').select('*').eq('project_id', projectId),
+      fetchClusters(),
       fetchItems(),
     ])
 
@@ -869,6 +884,24 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       items: s.items
         .map((i) => fresh.find((f) => f.id === i.id) ?? i)
         .filter((i) => i.id !== sourceId || fresh.some((f) => f.id === sourceId)),
+    }))
+  },
+
+  setClusterAccess: async (clusterId, access, userIds) => {
+    await supabase.from('resource_clusters').update({ access }).eq('id', clusterId)
+    await supabase.from('resource_cluster_access').delete().eq('cluster_id', clusterId)
+
+    const named = access === 'specific' ? userIds : []
+    if (named.length > 0) {
+      await supabase
+        .from('resource_cluster_access')
+        .insert(named.map((user_id) => ({ cluster_id: clusterId, user_id })))
+    }
+
+    set((s) => ({
+      clusters: s.clusters.map((c) =>
+        c.id === clusterId ? { ...c, access, accessUserIds: named } : c,
+      ),
     }))
   },
 

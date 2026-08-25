@@ -44,6 +44,10 @@ export interface ResourceCluster {
   y: number
   radius: number
   createdAt: string
+  /** Who can see this cluster. Everything inside inherits it. */
+  access: ResourceAccess
+  /** User ids, when access is 'specific'. */
+  accessUserIds: string[]
 }
 
 /** One archived iteration of a document's file. */

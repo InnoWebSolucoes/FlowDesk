@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   X, Upload, Trash2, ExternalLink, Plus, Download, History, Check, FolderOpen, Copy, Home,
-  Shield, Users, UserCheck, Globe, UserCog,
+  Shield, Users, UserCheck, Globe, UserCog, ChevronDown,
 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ResourceItem, ResourceAccess } from '../../types'
@@ -20,6 +20,43 @@ const ACCESS_OPTIONS: {
   { value: 'managers', label: 'Managers only', hint: 'Nobody else can open it', Icon: UserCog },
   { value: 'specific', label: 'Specific people', hint: 'Choose exactly who, below', Icon: UserCheck },
 ]
+
+/**
+ * A section that stays folded until it is needed. Both lists below can run to
+ * a dozen rows, which buried the fields underneath them.
+ */
+function Collapsible({
+  icon,
+  label,
+  summary,
+  defaultOpen = false,
+  children,
+}: {
+  icon: React.ReactNode
+  label: string
+  summary: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="border border-border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-2 transition-colors text-left"
+      >
+        <span className="text-text-muted flex-shrink-0">{icon}</span>
+        <span className="text-xs font-medium text-text-muted">{label}</span>
+        <span className="text-[11px] text-text-subtle truncate flex-1 text-right">{summary}</span>
+        <ChevronDown
+          size={14}
+          className={`text-text-subtle flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open && <div className="px-3 pb-3 pt-1 border-t border-border">{children}</div>}
+    </section>
+  )
+}
 
 interface Props {
   item: ResourceItem
@@ -375,11 +412,15 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
         )}
 
         {/* Who can see it */}
-        <section>
-          <label className="flex items-center gap-1.5 text-xs font-medium text-text-muted mb-2">
-            <Shield size={13} /> Who can see this
-          </label>
-
+        <Collapsible
+          icon={<Shield size={13} />}
+          label="Who can see this"
+          summary={
+            item.access === 'specific'
+              ? `${accessUsers.length} person${accessUsers.length === 1 ? '' : 's'}`
+              : ACCESS_OPTIONS.find((o) => o.value === item.access)?.label ?? 'Everyone'
+          }
+        >
           <div className="space-y-1">
             {ACCESS_OPTIONS.map((opt) => (
               <button
@@ -438,13 +479,16 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
             Managers always have access, so a document can never be locked away
             from the people responsible for it.
           </p>
-        </section>
+        </Collapsible>
 
         {/* Cluster tags */}
-        <section>
-          <label className="flex items-center gap-1.5 text-xs font-medium text-text-muted mb-2">
-            <FolderOpen size={13} /> Appears in
-          </label>
+        <Collapsible
+          icon={<FolderOpen size={13} />}
+          label="Appears in"
+          summary={`${item.clusterIds.length + (item.showAtTopLevel ? 1 : 0)} place${
+            item.clusterIds.length + (item.showAtTopLevel ? 1 : 0) === 1 ? '' : 's'
+          }`}
+        >
           <p className="text-[11px] text-text-subtle mb-2">
             One document, shown everywhere you tick. It isn't copied.
           </p>
@@ -497,7 +541,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
               )
             })}
           </div>
-        </section>
+        </Collapsible>
 
         {/* Metadata */}
         <section className="space-y-3">

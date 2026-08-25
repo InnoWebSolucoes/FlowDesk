@@ -137,6 +137,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   const presenceKey = (itemId: string, location: string | null) => `${location ?? 'space'}::${itemId}`
   const itemIdOf = (key: string) => key.slice(key.indexOf('::') + 2)
   const lastClickedItem = useRef<string | null>(null)
+  // Pending single-click, cancelled if a double click follows.
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Shift-drag on the background draws a selection box instead of panning.
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   // Right-click on empty canvas: create a cluster, or act on the selection.
@@ -1461,10 +1463,25 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
 
                 setMultiSelected(new Set())
                 lastClickedItem.current = item.id
-                setSelectedItemId(item.id)
+
+                // Held briefly so a double click can cancel it: otherwise the
+                // panel opens over the node before the second click lands.
+                if (clickTimer.current) clearTimeout(clickTimer.current)
+                clickTimer.current = setTimeout(() => {
+                  clickTimer.current = null
+                  setSelectedItemId(item.id)
+                }, 220)
               }}
               data-item-id={item.id}
-              onDoubleClick={(e) => { e.stopPropagation(); openItem(item) }}
+              onDoubleClick={(e) => {
+                e.stopPropagation()
+                if (clickTimer.current) {
+                  clearTimeout(clickTimer.current)
+                  clickTimer.current = null
+                }
+                setSelectedItemId(null)
+                openItem(item)
+              }}
               onContextMenu={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
