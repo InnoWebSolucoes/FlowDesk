@@ -655,31 +655,48 @@ function TimeGrid({
         })}
       </div>
 
-      {/* Hour grid */}
+      {/* Hour grid.
+          One set of horizontal rules is drawn behind every column rather than
+          bordering each cell, and columns are separated by a single hairline
+          instead of a box. That is the difference between a calendar and a
+          spreadsheet. */}
       <div className="flex relative" style={{ height: gridHeight }}>
-        <div className="w-16 flex-shrink-0">
-          {hours.map((h) => (
+        <div className="w-16 flex-shrink-0 relative">
+          {hours.map((h, i) => (
             <div
               key={h}
-              className="text-[10px] text-text-subtle text-right pr-3 -translate-y-1.5"
-              style={{ height: HOUR_HEIGHT }}
+              className="absolute right-3 text-[11px] text-text-subtle -translate-y-1/2"
+              style={{ top: i * HOUR_HEIGHT }}
             >
-              {h % 12 === 0 ? 12 : h % 12}{h < 12 ? 'am' : 'pm'}
+              {i === 0 ? '' : `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'am' : 'pm'}`}
             </div>
           ))}
         </div>
 
-        {days.map((d) => {
+        {/* The rules themselves, spanning the whole width behind the columns. */}
+        <div className="absolute inset-y-0 left-16 right-0 pointer-events-none">
+          {hours.map((h, i) => (
+            <div
+              key={h}
+              className="absolute left-0 right-0 border-t border-border/50"
+              style={{ top: i * HOUR_HEIGHT }}
+            />
+          ))}
+        </div>
+
+        {days.map((d, di) => {
           const key = dayKey(d)
           const { timed } = blocksFor(key)
           const cols = layoutColumns(timed)
+          const isToday = key === today
+          const nowMinutes = isToday ? new Date().getHours() * 60 + new Date().getMinutes() : null
 
           return (
             <div
               key={key}
               data-day={key}
-              className={`flex-1 min-w-0 border-l border-border/50 relative ${
-                key === today ? 'bg-primary/[0.02]' : ''
+              className={`flex-1 min-w-0 relative ${di > 0 ? 'border-l border-border/40' : ''} ${
+                isToday ? 'bg-primary/[0.025]' : ''
               }`}
               onClick={(e) => {
                 // Only empty space creates; blocks stop propagation themselves,
@@ -689,31 +706,19 @@ function TimeGrid({
                 onCreate(key, offsetToMinutes(e.clientY - rect.top))
               }}
             >
-              {hours.map((h) => (
-                <div
-                  key={h}
-                  className="border-b border-border/40"
-                  style={{ height: HOUR_HEIGHT }}
-                >
-                  {/* Half-hour guide, fainter still, to make slots readable
-                      without the grid reading as a spreadsheet. */}
-                  <div className="h-1/2 border-b border-border/15" />
-                </div>
-              ))}
-
               {timed.map((b) => {
                 const pos = cols.get(b) ?? { col: 0, cols: 1 }
                 const top = minutesToOffset(b.start)
-                const height = Math.max(18, ((b.end - b.start) / 60) * HOUR_HEIGHT - 2)
+                const height = Math.max(20, ((b.end - b.start) / 60) * HOUR_HEIGHT - 3)
                 return (
                   <div
                     key={b.key}
-                    className="absolute px-0.5"
+                    className="absolute z-[5]"
                     style={{
                       top,
                       height,
-                      left: `${(pos.col / pos.cols) * 100}%`,
-                      width: `${(1 / pos.cols) * 100}%`,
+                      left: `calc(${(pos.col / pos.cols) * 100}% + 3px)`,
+                      width: `calc(${(1 / pos.cols) * 100}% - 6px)`,
                     }}
                   >
                     <BlockChip
@@ -742,9 +747,22 @@ function TimeGrid({
                 )
               })}
 
+              {/* Where the current time falls, on today only. */}
+              {nowMinutes != null &&
+                nowMinutes >= DAY_START_HOUR * 60 &&
+                nowMinutes <= DAY_END_HOUR * 60 && (
+                  <div
+                    className="absolute left-0 right-0 pointer-events-none z-10"
+                    style={{ top: minutesToOffset(nowMinutes) }}
+                  >
+                    <div className="h-px bg-danger" />
+                    <div className="absolute -left-1 -top-[3px] w-[7px] h-[7px] rounded-full bg-danger" />
+                  </div>
+                )}
+
               {dragging && hoverSlot?.day === key && hoverSlot.minutes >= 0 && (
                 <div
-                  className="absolute left-0 right-0 h-0.5 bg-primary pointer-events-none z-10"
+                  className="absolute left-0 right-0 h-0.5 bg-primary pointer-events-none z-20"
                   style={{ top: minutesToOffset(hoverSlot.minutes) }}
                 >
                   <span className="absolute -top-4 left-1 text-[10px] font-medium text-primary bg-surface px-1 rounded">
@@ -919,15 +937,21 @@ function BlockChip({
         onContext(e.clientX, e.clientY)
       }}
       title={block.label}
-      className={`relative rounded text-[10px] leading-tight truncate cursor-grab active:cursor-grabbing select-none ${
-        compact ? 'px-1.5 py-1' : 'px-1.5 py-1 h-full overflow-hidden'
+      className={`relative rounded-md text-[11px] leading-tight truncate cursor-grab active:cursor-grabbing select-none shadow-sm ${
+        compact ? 'px-1.5 py-1' : 'px-2 py-1 h-full overflow-hidden'
       } ${block.todo?.isCompleted ? 'line-through opacity-60' : ''}`}
       style={
         block.outlined
           ? { border: `1px solid ${block.color}66`, color: block.color }
           : filled
-            ? { backgroundColor: `${block.color}22`, color: block.color, borderLeft: `2px solid ${block.color}` }
-            : { backgroundColor: `${block.color}1a`, color: block.color }
+            ? {
+                // color-mix keeps the tint while staying fully opaque, so the
+                // hour rules behind the column do not show through the block.
+                backgroundColor: `color-mix(in srgb, ${block.color} 14%, #FFFFFF)`,
+                color: block.color,
+                borderLeft: `3px solid ${block.color}`,
+              }
+            : { backgroundColor: `color-mix(in srgb, ${block.color} 12%, #FFFFFF)`, color: block.color }
       }
     >
       {onToggleDone && (
