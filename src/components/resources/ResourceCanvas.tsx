@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ChevronRight, Home, Plus, FolderPlus, ZoomIn, ZoomOut, Maximize2, Link2, Pencil, Check, X,
+  ChevronRight, Home, Plus, ZoomIn, ZoomOut, Maximize2, Link2, Pencil, Check, X,
   CornerLeftUp, Search, FolderOpen, ExternalLink, Upload,
 } from 'lucide-react'
 import { ResourceCluster, ResourceItem } from '../../types'
@@ -87,7 +87,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   const {
     clusters, items, resourcesLoadedFor, loadResources,
     createCluster, updateCluster, deleteCluster,
-    createItem, moveItem, getFileUrl, deleteItem, duplicateItem, setItemClusters, updateItem,
+    createItem, moveItem, deleteItem, duplicateItem, setItemClusters, updateItem,
     setItemLinks, stackItemOnto,
   } = useProjectStore()
 
@@ -105,6 +105,11 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   // details panel; this is the set the marquee and shift-click build up.
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
   const lastClickedItem = useRef<string | null>(null)
+  // Shift-drag on the background draws a selection box instead of panning.
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  // Right-click on empty canvas: create a cluster, or act on the selection.
+  const [bgMenu, setBgMenu] = useState<{ x: number; y: number; world: { x: number; y: number } } | null>(null)
+  const marqueeStart = useRef<{ x: number; y: number; additive: Set<string> } | null>(null)
   const [renamingClusterId, setRenamingClusterId] = useState<string | null>(null)
   // Draft for the "add link" dialog; null when the dialog is closed.
   const [linkDraft, setLinkDraft] = useState<{ url: string; title: string } | null>(null)
@@ -332,6 +337,60 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     document.addEventListener('pointerdown', onDocPointerDown)
     return () => document.removeEventListener('pointerdown', onDocPointerDown)
   }, [multiSelected.size, selectedItemId])
+
+  /**
+   * Shift-drag selection. The rectangle is tracked in container pixels, then
+   * compared against each node's own box in the same space — the nodes live
+   * inside the zoom/pan transform, so their screen rects are read directly
+   * rather than recomputed from world coordinates.
+   */
+  useEffect(() => {
+    if (!marquee) return
+
+    const onMove = (e: PointerEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect()
+      const start = marqueeStart.current
+      if (!rect || !start) return
+      setMarquee({ x1: start.x, y1: start.y, x2: e.clientX - rect.left, y2: e.clientY - rect.top })
+    }
+
+    const onUp = () => {
+      const rect = containerRef.current?.getBoundingClientRect()
+      const start = marqueeStart.current
+      const box = marquee
+      marqueeStart.current = null
+      setMarquee(null)
+      if (!rect || !start || !box) return
+
+      const left = Math.min(box.x1, box.x2)
+      const right = Math.max(box.x1, box.x2)
+      const top = Math.min(box.y1, box.y2)
+      const bottom = Math.max(box.y1, box.y2)
+      // A stray shift-click shouldn't wipe the selection.
+      if (right - left < 4 && bottom - top < 4) return
+
+      const hits = new Set(start.additive)
+      for (const el of containerRef.current!.querySelectorAll('[data-item-id]')) {
+        const r = (el as HTMLElement).getBoundingClientRect()
+        const x1 = r.left - rect.left
+        const y1 = r.top - rect.top
+        const x2 = x1 + r.width
+        const y2 = y1 + r.height
+        if (x1 < right && x2 > left && y1 < bottom && y2 > top) {
+          hits.add((el as HTMLElement).dataset.itemId!)
+        }
+      }
+      setSelectedItemId(null)
+      setMultiSelected(hits)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [marquee])
 
   const startDrag = (
     e: React.PointerEvent,
@@ -679,8 +738,68 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     [centreWorld, visibleItems, visibleClusters]
   )
 
-  const handleAddCluster = async () => {
-    const pos = spawnNearView()
+  /**
+   * Bulk actions for a multi-selection, from the background right-click menu.
+   *
+   * Untag removes the documents from *this* location only — they stay wherever
+   * else they are tagged. Delete removes them from everywhere, permanently.
+   */
+  const selectionIds = () => [...multiSelected]
+
+  const bulkIntoNewCluster = async (world: { x: number; y: number }, copy: boolean) => {
+    const ids = selectionIds()
+    if (ids.length === 0) return
+    const color = CLUSTER_COLORS[clusters.length % CLUSTER_COLORS.length]
+    const created = await createCluster(projectId, currentClusterId, {
+      title: 'New cluster',
+      color,
+      x: world.x,
+      y: world.y,
+      radius: 160,
+    })
+    if (!created) return
+
+    let placed = 0
+    for (const id of ids) {
+      const item = items.find((i) => i.id === id)
+      if (!item) continue
+      const pos = spawnPosition(placed++)
+      if (copy) {
+        // Tag it into the new cluster as well, leaving it where it is.
+        await setItemClusters(id, [...new Set([...item.clusterIds, created.id])])
+      } else {
+        await moveItem(id, created.id, pos.x, pos.y, currentClusterId ?? undefined)
+      }
+    }
+    setMultiSelected(new Set())
+    setRenamingClusterId(created.id)
+    setRenameValue(created.title)
+  }
+
+  /** Remove the selection from here, keeping it wherever else it lives. */
+  const bulkUntag = async () => {
+    for (const id of selectionIds()) {
+      const item = items.find((i) => i.id === id)
+      if (!item) continue
+      if (currentClusterId) {
+        await setItemClusters(id, item.clusterIds.filter((c) => c !== currentClusterId))
+      } else {
+        await updateItem(id, { showAtTopLevel: false })
+      }
+    }
+    setMultiSelected(new Set())
+  }
+
+  const bulkDelete = async () => {
+    const ids = selectionIds()
+    if (ids.length === 0) return
+    if (!confirm(`Delete ${ids.length} document(s) from everywhere? This cannot be undone.`)) return
+    for (const id of ids) await deleteItem(id)
+    setMultiSelected(new Set())
+  }
+
+  const handleAddCluster = async (at?: { x: number; y: number }) => {
+    const pos = at ?? spawnNearView()
     const color = CLUSTER_COLORS[clusters.length % CLUSTER_COLORS.length]
     const created = await createCluster(projectId, currentClusterId, {
       title: 'New cluster',
@@ -917,13 +1036,6 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
           <div className="w-px h-5 bg-border mx-1" />
 
           <button
-            onClick={handleAddCluster}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:bg-surface-2"
-            title="New cluster"
-          >
-            <FolderPlus size={14} /> Cluster
-          </button>
-          <button
             onClick={() => setLinkDraft({ url: '', title: '' })}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:bg-surface-2"
             title="New link-only item"
@@ -942,8 +1054,25 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
       {/* Canvas surface */}
       <div
         ref={containerRef}
-        onPointerDown={onPanStart}
+        onPointerDown={(e) => {
+          if (e.button === 0 && e.shiftKey) {
+            // Selecting a region, not moving the view.
+            e.preventDefault()
+            const rect = containerRef.current?.getBoundingClientRect()
+            if (!rect) return
+            const x = e.clientX - rect.left
+            const y = e.clientY - rect.top
+            marqueeStart.current = { x, y, additive: new Set(multiSelected) }
+            setMarquee({ x1: x, y1: y, x2: x, y2: y })
+            return
+          }
+          onPanStart(e)
+        }}
         onClick={() => { setSelectedItemId(null); setMultiSelected(new Set()) }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setBgMenu({ x: e.clientX, y: e.clientY, world: screenToWorld(e.clientX, e.clientY) })
+        }}
         onDragEnter={(e) => {
           if (!e.dataTransfer.types.includes('Files')) return
           e.preventDefault()
@@ -1186,19 +1315,11 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 // Any selection gesture closes the details panel.
                 if (e.shiftKey || e.metaKey || e.ctrlKey) setSelectedItemId(null)
 
-                if (e.shiftKey && lastClickedItem.current) {
-                  // Range select across the nodes currently on screen.
-                  const ids = visibleItems.map((v) => v.id)
-                  const from = ids.indexOf(lastClickedItem.current)
-                  const to = ids.indexOf(item.id)
-                  if (from !== -1 && to !== -1) {
-                    const range = ids.slice(Math.min(from, to), Math.max(from, to) + 1)
-                    setMultiSelected((prev) => new Set([...prev, ...range]))
-                    return
-                  }
-                }
-
-                if (e.metaKey || e.ctrlKey) {
+                // Shift and ctrl both add one node to the selection. A range
+                // select would need a running order, and nodes on a free-form
+                // canvas have none — using the array order swept in whatever
+                // happened to sit between them in the database.
+                if (e.shiftKey || e.metaKey || e.ctrlKey) {
                   setMultiSelected((prev) => {
                     const next = new Set(prev)
                     if (next.has(item.id)) next.delete(item.id)
@@ -1213,6 +1334,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 lastClickedItem.current = item.id
                 setSelectedItemId(item.id)
               }}
+              data-item-id={item.id}
               onDoubleClick={(e) => { e.stopPropagation(); openItem(item) }}
               onContextMenu={(e) => {
                 e.preventDefault()
@@ -1270,6 +1392,20 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
           ))}
         </div>
 
+        {/* Selection rectangle. Outside the zoom transform, since it is drawn
+            in container pixels rather than world coordinates. */}
+        {marquee && (
+          <div
+            className="absolute border-2 border-primary bg-primary/10 pointer-events-none z-20"
+            style={{
+              left: Math.min(marquee.x1, marquee.x2),
+              top: Math.min(marquee.y1, marquee.y2),
+              width: Math.abs(marquee.x2 - marquee.x1),
+              height: Math.abs(marquee.y2 - marquee.y1),
+            }}
+          />
+        )}
+
         {isEmpty && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center">
@@ -1300,6 +1436,73 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
           </div>
         )}
       </div>
+
+      {/* Background right-click: create a cluster, or act on the selection. */}
+      {bgMenu && (() => {
+        const count = multiSelected.size
+        const act = (fn: () => void) => () => { fn(); setBgMenu(null) }
+        const where = currentClusterId ? 'this cluster' : 'the main space'
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setBgMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setBgMenu(null) }}
+            />
+            <div
+              className="fixed z-50 w-60 py-1 bg-surface border border-border rounded-lg shadow-xl"
+              style={{ left: bgMenu.x, top: bgMenu.y }}
+            >
+              {count > 0 && (
+                <p className="px-3 py-1.5 text-[11px] text-text-subtle border-b border-border mb-1">
+                  {count} document{count === 1 ? '' : 's'} selected
+                </p>
+              )}
+
+              <button
+                onClick={act(() => handleAddCluster(bgMenu.world))}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                New cluster here
+              </button>
+
+              {count > 0 && (
+                <>
+                  <div className="h-px bg-border my-1" />
+                  <button
+                    onClick={act(() => bulkIntoNewCluster(bgMenu.world, false))}
+                    className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                  >
+                    Move into a new cluster
+                  </button>
+                  <button
+                    onClick={act(() => bulkIntoNewCluster(bgMenu.world, true))}
+                    className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                    title="They stay here as well as appearing in the new cluster"
+                  >
+                    Also add to a new cluster
+                  </button>
+                  <div className="h-px bg-border my-1" />
+                  <button
+                    onClick={act(bulkUntag)}
+                    className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                    title={`Removes them from ${where} only — they stay everywhere else`}
+                  >
+                    Remove from {where}
+                  </button>
+                  <button
+                    onClick={act(bulkDelete)}
+                    className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
+                    title="Deletes the files from every location, permanently"
+                  >
+                    Delete everywhere
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )
+      })()}
 
       {/* Right-click menu. Fixed-positioned, so it escapes the canvas transform. */}
       {menu && (() => {
