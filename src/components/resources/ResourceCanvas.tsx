@@ -477,6 +477,39 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     }
   }, [marqueeActive])
 
+  /**
+   * Ctrl+C copies the selected document as a file, so it can be pasted into
+   * WhatsApp, Claude or anything else. Matches what every file browser does,
+   * rather than making the right-click menu the only route.
+   */
+  useEffect(() => {
+    if (!nativeShare) return
+
+    const onKey = async (e: KeyboardEvent) => {
+      if (!(e.key === 'c' && (e.ctrlKey || e.metaKey))) return
+      // Don't hijack copying text out of an input.
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+
+      const ids = multiSelected.size > 0 ? [...multiSelected].map(itemIdOf) : selectedItemId ? [selectedItemId] : []
+      if (ids.length === 0) return
+
+      // The clipboard holds one file, so a multi-selection copies the first.
+      const target = items.find((i) => i.id === ids[0] && i.storagePath)
+      if (!target) return
+
+      e.preventDefault()
+      const res = await copyDocumentFile(target.storagePath, target.fileName)
+      if (res.ok) {
+        setCopied(target.title)
+        setTimeout(() => setCopied(null), 2600)
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [nativeShare, multiSelected, selectedItemId, items])
+
   const startDrag = (
     e: React.PointerEvent,
     id: string,
