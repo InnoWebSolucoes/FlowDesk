@@ -19,10 +19,14 @@ async function main() {
     // by density, which would otherwise emit larger tiles and bloat the ico.
     const buf = await sharp(svg, { density: 384 }).resize(size, size).png().toBuffer()
     pngs.push(buf)
-    if (size === 256) fs.writeFileSync(path.join(OUT_DIR, 'icon.png'), buf)
   }
   fs.writeFileSync(path.join(OUT_DIR, 'icon.ico'), await pngToIco(pngs))
-  console.log('wrote build/icon.ico and build/icon.png from public/logo.svg')
+
+  // macOS builds icon.png into an .icns and rejects anything under 512px, so
+  // it gets its own render rather than reusing one of the .ico sizes.
+  const mac = await sharp(svg, { density: 512 }).resize(1024, 1024).png().toBuffer()
+  fs.writeFileSync(path.join(OUT_DIR, 'icon.png'), mac)
+  console.log('wrote build/icon.ico (multi-size) and build/icon.png (1024px, for macOS)')
 }
 
 main().catch((e) => {
