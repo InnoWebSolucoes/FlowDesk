@@ -113,6 +113,11 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   const marqueeStart = useRef<{ x: number; y: number; additive: Set<string> } | null>(null)
   const marqueeBox = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [marqueeActive, setMarqueeActive] = useState(false)
+  // Set when a marquee ends, so the click the pointerup generates does not also
+  // run the background's "clear the selection" handler.
+  const justMarqueed = useRef(false)
+  // Lets the right-click menu open the file picker, which needs a real input.
+  const bgUploadRef = useRef<HTMLInputElement>(null)
   const [renamingClusterId, setRenamingClusterId] = useState<string | null>(null)
   // Draft for the "add link" dialog; null when the dialog is closed.
   const [linkDraft, setLinkDraft] = useState<{ url: string; title: string } | null>(null)
@@ -389,6 +394,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
       }
       setSelectedItemId(null)
       setMultiSelected(hits)
+      justMarqueed.current = true
+      setTimeout(() => { justMarqueed.current = false }, 0)
     }
 
     window.addEventListener('pointermove', onMove)
@@ -1077,7 +1084,11 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
           }
           onPanStart(e)
         }}
-        onClick={() => { setSelectedItemId(null); setMultiSelected(new Set()) }}
+        onClick={() => {
+          if (justMarqueed.current) return
+          setSelectedItemId(null)
+          setMultiSelected(new Set())
+        }}
         onContextMenu={(e) => {
           e.preventDefault()
           setBgMenu({ x: e.clientX, y: e.clientY, world: screenToWorld(e.clientX, e.clientY) })
@@ -1476,6 +1487,14 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         )}
       </div>
 
+      <input
+        ref={bgUploadRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleAddFiles}
+      />
+
       {/* Cluster right-click: rename, duplicate or delete it. */}
       {clusterMenu && (() => {
         const target = clusters.find((c) => c.id === clusterMenu.clusterId)
@@ -1548,6 +1567,18 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 </p>
               )}
 
+              <button
+                onClick={act(() => bgUploadRef.current?.click())}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                Upload files…
+              </button>
+              <button
+                onClick={act(() => setLinkDraft({ url: '', title: '' }))}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                Add a link…
+              </button>
               <button
                 onClick={act(() => handleAddCluster(bgMenu.world))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
