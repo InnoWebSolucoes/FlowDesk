@@ -76,6 +76,28 @@ interface Props {
   onOpenItem: (item: ResourceItem) => void
 }
 
+/**
+ * Keeps a right-click menu fully on screen: it flips above or left of the
+ * pointer when there is not enough room below or to the right, and never
+ * starts off the edge. Height is estimated from the item count, since the menu
+ * has not been measured at the point it is positioned.
+ */
+function menuPosition(x: number, y: number, itemCount: number, width = 240) {
+  const ROW = 30
+  const CHROME = 16
+  const MARGIN = 8
+  const height = itemCount * ROW + CHROME
+
+  const left = x + width + MARGIN > window.innerWidth
+    ? Math.max(MARGIN, x - width)
+    : x
+  const top = y + height + MARGIN > window.innerHeight
+    ? Math.max(MARGIN, y - height)
+    : y
+
+  return { left, top, maxHeight: window.innerHeight - top - MARGIN }
+}
+
 /** Lay new nodes out on a spiral so they never spawn on top of each other. */
 function spawnPosition(index: number) {
   const angle = index * 2.399963 // golden angle
@@ -824,6 +846,14 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     setMultiSelected(new Set())
   }
 
+  /** A separate copy of each selected document, beside the original. */
+  const bulkDuplicate = async () => {
+    const ids = selectionIds()
+    if (ids.length === 0) return
+    for (const id of ids) await duplicateItem(id)
+    setMultiSelected(new Set())
+  }
+
   const bulkDelete = async () => {
     const ids = selectionIds()
     if (ids.length === 0) return
@@ -1539,6 +1569,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         const target = clusters.find((c) => c.id === clusterMenu.clusterId)
         if (!target) return null
         const act = (fn: () => void) => () => { fn(); setClusterMenu(null) }
+        const pos = menuPosition(clusterMenu.x, clusterMenu.y, 5, 208)
         return (
           <>
             <div
@@ -1549,8 +1580,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             />
             <div
               data-canvas-ui
-              className="fixed z-50 w-52 py-1 bg-surface border border-border rounded-lg shadow-xl"
-              style={{ left: clusterMenu.x, top: clusterMenu.y }}
+              className="fixed z-50 w-52 py-1 bg-surface border border-border rounded-lg shadow-xl overflow-y-auto"
+              style={{ left: pos.left, top: pos.top, maxHeight: pos.maxHeight }}
             >
               <p className="px-3 py-1.5 text-[11px] text-text-subtle border-b border-border mb-1 truncate">
                 {target.title}
@@ -1579,7 +1610,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 onClick={act(() => handleDeleteCluster(target))}
                 className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
               >
-                Delete cluster
+                Delete
               </button>
             </div>
           </>
@@ -1591,6 +1622,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         const count = multiSelected.size
         const act = (fn: () => void) => () => { fn(); setBgMenu(null) }
         const where = currentClusterId ? 'this cluster' : 'the space'
+        const pos = menuPosition(bgMenu.x, bgMenu.y, count > 0 ? 9 : 3)
         return (
           <>
             <div
@@ -1601,8 +1633,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             />
             <div
               data-canvas-ui
-              className="fixed z-50 w-60 py-1 bg-surface border border-border rounded-lg shadow-xl"
-              style={{ left: bgMenu.x, top: bgMenu.y }}
+              className="fixed z-50 w-60 py-1 bg-surface border border-border rounded-lg shadow-xl overflow-y-auto"
+              style={{ left: pos.left, top: pos.top, maxHeight: pos.maxHeight }}
             >
               {count > 0 && (
                 <p className="px-3 py-1.5 text-[11px] text-text-subtle border-b border-border mb-1">
@@ -1614,36 +1646,43 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 onClick={act(() => bgUploadRef.current?.click())}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >
-                Upload files…
+                Upload files
               </button>
               <button
                 onClick={act(() => setLinkDraft({ url: '', title: '' }))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >
-                Add a link…
+                Add link
               </button>
               <button
                 onClick={act(() => handleAddCluster(bgMenu.world))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >
-                New cluster here
+                Create cluster
               </button>
 
               {count > 0 && (
                 <>
                   <div className="h-px bg-border my-1" />
                   <button
+                    onClick={act(bulkDuplicate)}
+                    className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                    title="A separate copy of each, beside the original"
+                  >
+                    Duplicate
+                  </button>
+                  <button
                     onClick={act(() => bulkIntoNewCluster(bgMenu.world, false))}
                     className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
                   >
-                    Move into a new cluster
+                    Move to new cluster
                   </button>
                   <button
                     onClick={act(() => bulkIntoNewCluster(bgMenu.world, true))}
                     className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
                     title="They stay here as well as appearing in the new cluster"
                   >
-                    Also add to a new cluster
+                    Duplicate into new cluster
                   </button>
                   <div className="h-px bg-border my-1" />
                   <button
@@ -1651,14 +1690,14 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                     className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
                     title={`Removes them from ${where} only — they stay everywhere else`}
                   >
-                    Remove from {where}
+                    Remove
                   </button>
                   <button
                     onClick={act(bulkDelete)}
                     className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
                     title="Deletes the files from every location, permanently"
                   >
-                    Delete everywhere
+                    Delete
                   </button>
                 </>
               )}
@@ -1672,13 +1711,14 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         const target = items.find((i) => i.id === menu.itemId)
         if (!target) return null
         const act = (fn: () => void) => () => { fn(); setMenu(null) }
+        const pos = menuPosition(menu.x, menu.y, 6, 176)
         return (
           <>
             <div data-canvas-ui className="fixed inset-0 z-40" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }} />
             <div
               data-canvas-ui
-              className="fixed z-50 w-44 py-1 bg-surface border border-border rounded-lg shadow-xl"
-              style={{ left: menu.x, top: menu.y }}
+              className="fixed z-50 w-44 py-1 bg-surface border border-border rounded-lg shadow-xl overflow-y-auto"
+              style={{ left: pos.left, top: pos.top, maxHeight: pos.maxHeight }}
             >
               {[
                 ['Open', () => openItem(target)],
@@ -1702,7 +1742,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
                 title="Remove from here only; the document stays everywhere else"
               >
-                {currentClusterId ? 'Remove from this cluster' : 'Remove from the space'}
+                Remove
               </button>
               <div className="h-px bg-border my-1" />
               <button
@@ -1711,7 +1751,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 })}
                 className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
               >
-                Delete permanently
+                Delete
               </button>
             </div>
           </>
