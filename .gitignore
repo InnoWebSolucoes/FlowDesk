@@ -7,3 +7,7 @@ dist
 
 .vercel
 .env*
+
+# Installers downloaded from the GitHub build; they live on the release page.
+desktop/dist-mac/
+desktop/dist-win/
