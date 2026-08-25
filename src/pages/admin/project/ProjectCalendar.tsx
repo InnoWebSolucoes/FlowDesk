@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
+  Circle, CheckCircle2,
 } from 'lucide-react'
 import {
   addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, isSameMonth,
@@ -17,6 +18,15 @@ import {
 } from '../../../components/calendar/calendarShared'
 
 type View = 'day' | 'week' | 'month'
+
+/** Keeps a right-click menu on screen. */
+function menuPos(x: number, y: number, rows: number, width = 192) {
+  const height = rows * 30 + 40
+  return {
+    left: x + width + 8 > window.innerWidth ? Math.max(8, x - width) : x,
+    top: y + height + 8 > window.innerHeight ? Math.max(8, y - height) : y,
+  }
+}
 
 /** What is being dragged, and what the drop should do. */
 type DragState =
@@ -49,8 +59,9 @@ export function ProjectCalendar() {
   const {
     todos, todosLoadedFor, loadTodos, updateTodo,
     todoLists,
+    toggleTodo, deleteTodo,
     calendarEntries, calendarLoadedFor, loadCalendar,
-    createCalendarEntry, updateCalendarEntry,
+    createCalendarEntry, updateCalendarEntry, deleteCalendarEntry,
   } = useProjectStore()
 
   const [view, setView] = useState<View>('week')
@@ -64,6 +75,10 @@ export function ProjectCalendar() {
   // Set when a drag ends, so the click event that follows the pointerup does
   // not also fire "create an entry here".
   const justDragged = useRef(false)
+  // Right-click on a block: complete it, take it off the calendar, or delete.
+  const [blockMenu, setBlockMenu] = useState<
+    { x: number; y: number; todoId?: string; entryId?: string } | null
+  >(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -289,6 +304,13 @@ export function ProjectCalendar() {
     if (created) setOpenEntry(created.id)
   }
 
+  /**
+   * Taking a todo off the calendar clears its do date, which returns it to the
+   * unscheduled list — the todo itself is untouched. A calendar entry has no
+   * life outside the calendar, so it is only ever deleted.
+   */
+  const unscheduleTodo = (id: string) => updateTodo(id, { doDate: null, doStart: null, doEnd: null })
+
   const todo = openTodo ? todos.find((t) => t.id === openTodo) : undefined
   const entry = openEntry ? calendarEntries.find((e) => e.id === openEntry) : undefined
   const today = dayKey(new Date())
@@ -400,6 +422,8 @@ export function ProjectCalendar() {
               onOpenEntry={setOpenEntry}
               onCreate={(day) => createAt(day, -1)}
               justDragged={justDragged}
+              onToggleDone={toggleTodo}
+              onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, grabMinutes: 0, durationMinutes: null })}
               onDragEntry={(e) =>
                 setDrag({
@@ -421,6 +445,8 @@ export function ProjectCalendar() {
               onOpenEntry={setOpenEntry}
               onCreate={createAt}
               justDragged={justDragged}
+              onToggleDone={toggleTodo}
+              onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onResize={(target, id, edge, otherEdgeMinutes) =>
                 setDrag({ kind: 'resize', target, id, edge, otherEdgeMinutes })
               }
@@ -456,6 +482,74 @@ export function ProjectCalendar() {
         />
       </div>
 
+      {/* Right-click on a calendar item. "Remove" only exists for a todo,
+          which lives in the todo list independently of the calendar; a
+          calendar entry has nowhere else to be, so it is only deleted. */}
+      {blockMenu && (() => {
+        const bTodo = blockMenu.todoId ? todos.find((t) => t.id === blockMenu.todoId) : undefined
+        const bEntry = blockMenu.entryId ? calendarEntries.find((e) => e.id === blockMenu.entryId) : undefined
+        if (!bTodo && !bEntry) return null
+        const act = (fn: () => void) => () => { fn(); setBlockMenu(null) }
+        const pos = menuPos(blockMenu.x, blockMenu.y, bTodo ? 4 : 2)
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-[60]"
+              onClick={() => setBlockMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setBlockMenu(null) }}
+            />
+            <div
+              className="fixed z-[61] w-48 py-1 bg-surface border border-border rounded-lg shadow-xl"
+              style={{ left: pos.left, top: pos.top }}
+            >
+              <p className="px-3 py-1.5 text-[11px] text-text-subtle border-b border-border mb-1 truncate">
+                {bTodo?.title ?? bEntry?.title}
+              </p>
+
+              {bTodo && (
+                <button
+                  onClick={act(() => toggleTodo(bTodo.id))}
+                  className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                >
+                  {bTodo.isCompleted ? 'Mark as not done' : 'Mark as complete'}
+                </button>
+              )}
+
+              <button
+                onClick={act(() => (bTodo ? setOpenTodo(bTodo.id) : setOpenEntry(bEntry!.id)))}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                Details
+              </button>
+
+              {bTodo && (
+                <button
+                  onClick={act(() => unscheduleTodo(bTodo.id))}
+                  className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                  title="Takes it off the calendar and back to the unscheduled list; the todo stays"
+                >
+                  Remove
+                </button>
+              )}
+
+              <div className="h-px bg-border my-1" />
+              <button
+                onClick={act(() => {
+                  const label = bTodo?.title ?? bEntry!.title
+                  const what = bTodo ? 'the todo and its calendar slot' : 'this calendar entry'
+                  if (!confirm(`Delete "${label}"? This removes ${what}, and cannot be undone.`)) return
+                  if (bTodo) deleteTodo(bTodo.id)
+                  else deleteCalendarEntry(bEntry!.id)
+                })}
+                className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </>
+        )
+      })()}
+
       {(todo || entry) && (
         <CalendarItemPanel
           todo={todo}
@@ -482,6 +576,8 @@ function TimeGrid({
   onOpenEntry,
   onCreate,
   justDragged,
+  onToggleDone,
+  onBlockContext,
   onResize,
   onDragTodo,
   onDragEntry,
@@ -495,6 +591,8 @@ function TimeGrid({
   onOpenEntry: (id: string) => void
   onCreate: (day: string, minutes: number) => void
   justDragged: React.MutableRefObject<boolean>
+  onToggleDone: (todoId: string) => void
+  onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onResize: (target: 'todo' | 'entry', id: string, edge: 'start' | 'end', otherEdgeMinutes: number) => void
   onDragTodo: (todo: ProjectTodo, grabMinutes: number) => void
   onDragEntry: (entry: CalendarEntry, grabMinutes: number) => void
@@ -505,16 +603,17 @@ function TimeGrid({
   return (
     <div className="rounded-xl border border-border bg-surface overflow-hidden">
       {/* Day headers */}
-      <div className="flex border-b border-border bg-surface-2">
-        <div className="w-14 flex-shrink-0" />
+      <div className="flex border-b border-border">
+        <div className="w-16 flex-shrink-0" />
         {days.map((d) => {
           const key = dayKey(d)
+          const isToday = key === today
           return (
-            <div key={key} className="flex-1 min-w-0 px-2 py-2 text-center border-l border-border">
-              <p className="text-[11px] text-text-muted">{format(d, 'EEE')}</p>
+            <div key={key} className="flex-1 min-w-0 px-2 py-2.5 text-center">
+              <p className="text-[10px] uppercase tracking-wide text-text-subtle">{format(d, 'EEE')}</p>
               <p
-                className={`text-sm font-medium ${
-                  key === today ? 'text-primary' : 'text-text-main'
+                className={`text-lg font-medium mt-0.5 mx-auto w-8 h-8 flex items-center justify-center rounded-full ${
+                  isToday ? 'bg-primary text-white' : 'text-text-main'
                 }`}
               >
                 {format(d, 'd')}
@@ -526,7 +625,7 @@ function TimeGrid({
 
       {/* All-day strip */}
       <div className="flex border-b border-border min-h-[2rem]">
-        <div className="w-14 flex-shrink-0 px-2 py-1 text-[10px] text-text-subtle text-right">all day</div>
+        <div className="w-16 flex-shrink-0 px-2 py-1.5 text-[10px] text-text-subtle text-right">all-day</div>
         {days.map((d) => {
           const key = dayKey(d)
           const { allDay } = blocksFor(key)
@@ -535,7 +634,7 @@ function TimeGrid({
               key={key}
               data-day={key}
               onClick={() => { if (!justDragged.current) onCreate(key, -1) }}
-              className="flex-1 min-w-0 border-l border-border p-1 space-y-1 cursor-pointer hover:bg-surface-2/50"
+              className="flex-1 min-w-0 border-l border-border/50 p-1 space-y-1 cursor-pointer hover:bg-surface-2/40 transition-colors"
             >
               {allDay.map((b) => (
                 <BlockChip
@@ -544,6 +643,10 @@ function TimeGrid({
                   onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
                   onDragStart={() =>
                     b.todo ? onDragTodo(b.todo, 0) : b.entry && onDragEntry(b.entry, 0)
+                  }
+                  onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
+                  onContext={(x, y) =>
+                    onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
                   }
                 />
               ))}
@@ -554,14 +657,14 @@ function TimeGrid({
 
       {/* Hour grid */}
       <div className="flex relative" style={{ height: gridHeight }}>
-        <div className="w-14 flex-shrink-0">
+        <div className="w-16 flex-shrink-0">
           {hours.map((h) => (
             <div
               key={h}
-              className="text-[10px] text-text-subtle text-right pr-2 -translate-y-1.5"
+              className="text-[10px] text-text-subtle text-right pr-3 -translate-y-1.5"
               style={{ height: HOUR_HEIGHT }}
             >
-              {String(h).padStart(2, '0')}:00
+              {h % 12 === 0 ? 12 : h % 12}{h < 12 ? 'am' : 'pm'}
             </div>
           ))}
         </div>
@@ -575,8 +678,8 @@ function TimeGrid({
             <div
               key={key}
               data-day={key}
-              className={`flex-1 min-w-0 border-l border-border relative ${
-                key === today ? 'bg-primary/[0.03]' : ''
+              className={`flex-1 min-w-0 border-l border-border/50 relative ${
+                key === today ? 'bg-primary/[0.02]' : ''
               }`}
               onClick={(e) => {
                 // Only empty space creates; blocks stop propagation themselves,
@@ -589,9 +692,13 @@ function TimeGrid({
               {hours.map((h) => (
                 <div
                   key={h}
-                  className="border-b border-border/60"
+                  className="border-b border-border/40"
                   style={{ height: HOUR_HEIGHT }}
-                />
+                >
+                  {/* Half-hour guide, fainter still, to make slots readable
+                      without the grid reading as a spreadsheet. */}
+                  <div className="h-1/2 border-b border-border/15" />
+                </div>
               ))}
 
               {timed.map((b) => {
@@ -615,6 +722,10 @@ function TimeGrid({
                       onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
                       onDragStart={(grabMinutes) =>
                         b.todo ? onDragTodo(b.todo, grabMinutes) : b.entry && onDragEntry(b.entry, grabMinutes)
+                      }
+                      onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
+                      onContext={(x, y) =>
+                        onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
                       }
                       onResizeStart={(edge, otherEdgeMinutes) =>
                         onResize(
@@ -660,6 +771,8 @@ function MonthGrid({
   onOpenEntry,
   onCreate,
   justDragged,
+  onToggleDone,
+  onBlockContext,
   onDragTodo,
   onDragEntry,
 }: {
@@ -673,6 +786,8 @@ function MonthGrid({
   onOpenEntry: (id: string) => void
   onCreate: (day: string) => void
   justDragged: React.MutableRefObject<boolean>
+  onToggleDone: (todoId: string) => void
+  onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
 }) {
@@ -717,6 +832,10 @@ function MonthGrid({
                   compact
                   onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
                   onDragStart={() => (b.todo ? onDragTodo(b.todo) : b.entry && onDragEntry(b.entry))}
+                  onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
+                  onContext={(x, y) =>
+                    onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
+                  }
                 />
               ))}
               {all.length > 4 && (
@@ -741,6 +860,8 @@ function BlockChip({
   onOpen,
   onDragStart,
   onResizeStart,
+  onToggleDone,
+  onContext,
   blockStart,
   blockEnd,
 }: {
@@ -750,6 +871,8 @@ function BlockChip({
   onOpen: () => void
   onDragStart: (grabMinutes: number) => void
   onResizeStart?: (edge: 'start' | 'end', otherEdgeMinutes: number) => void
+  onToggleDone?: () => void
+  onContext?: (x: number, y: number) => void
   blockStart?: number
   blockEnd?: number
 }) {
@@ -789,6 +912,12 @@ function BlockChip({
         e.stopPropagation()
         if (!moved.current) onOpen()
       }}
+      onContextMenu={(e) => {
+        if (!onContext) return
+        e.preventDefault()
+        e.stopPropagation()
+        onContext(e.clientX, e.clientY)
+      }}
       title={block.label}
       className={`relative rounded text-[10px] leading-tight truncate cursor-grab active:cursor-grabbing select-none ${
         compact ? 'px-1.5 py-1' : 'px-1.5 py-1 h-full overflow-hidden'
@@ -801,6 +930,16 @@ function BlockChip({
             : { backgroundColor: `${block.color}1a`, color: block.color }
       }
     >
+      {onToggleDone && (
+        <button
+          onPointerDown={(e) => { e.stopPropagation(); moved.current = true }}
+          onClick={(e) => { e.stopPropagation(); onToggleDone() }}
+          className="float-left mr-1 mt-[1px] hover:opacity-100 opacity-70"
+          title={block.todo?.isCompleted ? 'Mark as not done' : 'Mark as done'}
+        >
+          {block.todo?.isCompleted ? <CheckCircle2 size={11} /> : <Circle size={11} />}
+        </button>
+      )}
       {blockStart != null && !compact && (
         <span className="opacity-70">{minutesToTime(blockStart)} </span>
       )}

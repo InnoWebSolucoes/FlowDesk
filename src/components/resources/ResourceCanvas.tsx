@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ChevronRight, Home, Plus, ZoomIn, ZoomOut, Maximize2, Link2, Pencil, Check, X,
+  ChevronRight, Home, Plus, ZoomIn, ZoomOut, Maximize2, Link2, X,
   CornerLeftUp, Search, FolderOpen, ExternalLink, Upload,
 } from 'lucide-react'
 import { ResourceCluster, ResourceItem } from '../../types'
@@ -142,6 +142,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   // Right-click on empty canvas: create a cluster, or act on the selection.
   const [bgMenu, setBgMenu] = useState<{ x: number; y: number; world: { x: number; y: number } } | null>(null)
   const [clusterMenu, setClusterMenu] = useState<{ clusterId: string; x: number; y: number } | null>(null)
+  /** Which cluster's nested-cluster list is expanded in its menu. */
+  const [clusterList, setClusterList] = useState<string | null>(null)
   const marqueeStart = useRef<{ x: number; y: number; additive: Set<string> } | null>(null)
   const marqueeBox = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [marqueeActive, setMarqueeActive] = useState(false)
@@ -1174,7 +1176,6 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         >
           {/* Cluster bubbles */}
           {visibleClusters.map((cluster) => {
-            const { childClusters, childItems } = countsFor(cluster.id)
             const isRenaming = renamingClusterId === cluster.id
             // A card dragged across the canvas and a file dragged in from the
             // desktop both land here, so both light the bubble up the same way.
@@ -1202,54 +1203,36 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                   style={{ top: -34 }}
                 >
                   {isRenaming ? (
-                    <div className="flex items-center gap-1 bg-surface border border-border rounded-lg px-1.5 py-1 shadow-sm">
-                      <input
-                        autoFocus
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') commitRename()
-                          if (e.key === 'Escape') setRenamingClusterId(null)
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => e.stopPropagation()}
-                        className="bg-transparent text-sm text-text-main w-36 focus:outline-none px-1"
-                      />
-                      <button onClick={(e) => { e.stopPropagation(); commitRename() }} className="text-success p-0.5">
-                        <Check size={13} />
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); setRenamingClusterId(null) }} className="text-text-subtle p-0.5">
-                        <X size={13} />
-                      </button>
-                    </div>
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                        if (e.key === 'Escape') setRenamingClusterId(null)
+                      }}
+                      // Clicking away saves: there is nothing to confirm, so a
+                      // tick button would only be one more thing to hit.
+                      onBlur={commitRename}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-text-main font-semibold px-2.5 py-1 rounded-lg bg-surface border border-primary shadow-sm w-44 focus:outline-none"
+                      style={{ fontSize: 15 }}
+                    />
                   ) : (
-                    <>
-                      <span
-                        className="text-text-main font-semibold px-2.5 py-1 rounded-lg bg-surface/85 backdrop-blur-sm border border-border shadow-sm"
-                        style={{ fontSize: 15 }}
-                      >
-                        {cluster.title}
-                      </span>
-                      <span className="text-[11px] text-text-subtle bg-surface/85 px-1.5 py-0.5 rounded border border-border">
-                        {childItems + childClusters}
-                      </span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setRenamingClusterId(cluster.id); setRenameValue(cluster.title) }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-text-main transition-opacity p-1 rounded bg-surface/85 border border-border"
-                        title="Rename"
-                      >
-                        <Pencil size={11} />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteCluster(cluster) }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-danger transition-opacity p-1 rounded bg-surface/85 border border-border"
-                        title="Delete cluster"
-                      >
-                        <X size={11} />
-                      </button>
-                    </>
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setRenamingClusterId(cluster.id)
+                        setRenameValue(cluster.title)
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      title="Click to rename"
+                      className="text-text-main font-semibold px-2.5 py-1 rounded-lg bg-surface/85 backdrop-blur-sm border border-border shadow-sm cursor-text hover:border-primary/50 transition-colors"
+                      style={{ fontSize: 15 }}
+                    >
+                      {cluster.title}
+                    </span>
                   )}
                 </div>
 
@@ -1575,8 +1558,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             <div
               data-canvas-ui
               className="fixed inset-0 z-40"
-              onClick={() => setClusterMenu(null)}
-              onContextMenu={(e) => { e.preventDefault(); setClusterMenu(null) }}
+              onClick={() => { setClusterMenu(null); setClusterList(null) }}
+              onContextMenu={(e) => { e.preventDefault(); setClusterMenu(null); setClusterList(null) }}
             />
             <div
               data-canvas-ui
@@ -1592,12 +1575,43 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               >
                 Open
               </button>
-              <button
-                onClick={act(() => { setRenamingClusterId(target.id); setRenameValue(target.title) })}
-                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-              >
-                Rename
-              </button>
+              {(() => {
+                const children = clusters.filter((c) => c.parentClusterId === target.id)
+                if (children.length === 0) return null
+                return (
+                  <button
+                    onClick={() => setClusterList(clusterList === target.id ? null : target.id)}
+                    className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                  >
+                    <span>Clusters inside ({children.length})</span>
+                    <ChevronRight
+                      size={12}
+                      className={`transition-transform ${clusterList === target.id ? 'rotate-90' : ''}`}
+                    />
+                  </button>
+                )
+              })()}
+
+              {clusterList === target.id && (
+                <div className="max-h-48 overflow-y-auto border-y border-border my-1 bg-surface-2/40">
+                  {clusters
+                    .filter((c) => c.parentClusterId === target.id)
+                    .map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={act(() => enterCluster(c))}
+                        className="w-full flex items-center gap-2 pl-5 pr-3 py-1.5 text-xs text-text-main hover:bg-surface transition-colors text-left"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: c.color }}
+                        />
+                        <span className="truncate">{c.title}</span>
+                      </button>
+                    ))}
+                </div>
+              )}
+
               <button
                 onClick={act(() => duplicateCluster(target.id))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"

@@ -23,7 +23,7 @@ export const LAYERS: { key: Layer; label: string; color: string; outlined?: bool
 /** Working day shown in the day/week grids. */
 export const DAY_START_HOUR = 7
 export const DAY_END_HOUR = 21
-export const HOUR_HEIGHT = 48
+export const HOUR_HEIGHT = 56
 
 export const pad = (n: number) => String(n).padStart(2, '0')
 
