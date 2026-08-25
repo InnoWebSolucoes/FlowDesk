@@ -418,12 +418,41 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
       if (right - left < 4 && bottom - top < 4) return
 
       const hits = new Set(start.additive)
-      for (const el of containerRef.current!.querySelectorAll<HTMLElement>('[data-item-id]')) {
+      const intersects = (el: HTMLElement) => {
         const r = el.getBoundingClientRect()
         const x1 = r.left - rect.left
         const y1 = r.top - rect.top
-        if (x1 < right && x1 + r.width > left && y1 < bottom && y1 + r.height > top) {
-          hits.add(presenceKey(el.dataset.itemId!, currentClusterId))
+        return x1 < right && x1 + r.width > left && y1 < bottom && y1 + r.height > top
+      }
+
+      for (const el of containerRef.current!.querySelectorAll<HTMLElement>('[data-item-id]')) {
+        if (intersects(el)) hits.add(presenceKey(el.dataset.itemId!, currentClusterId))
+      }
+
+      // A bubble caught by the box selects everything it holds, at any depth —
+      // the same thing shift-clicking the bubble does. Its documents are
+      // selected in the cluster that holds them, not in the level on screen.
+      const store = useProjectStore.getState()
+      // A bubble is a circle, so its square bounding box would catch clusters
+      // the box only grazes at a corner. Test the circle itself.
+      const touchesCircle = (el: HTMLElement) => {
+        const r = el.getBoundingClientRect()
+        const cx = r.left + r.width / 2 - rect.left
+        const cy = r.top + r.height / 2 - rect.top
+        const radius = r.width / 2
+        // Nearest point of the selection box to the bubble's centre.
+        const nx = Math.max(left, Math.min(cx, right))
+        const ny = Math.max(top, Math.min(cy, bottom))
+        return Math.hypot(cx - nx, cy - ny) <= radius
+      }
+
+      for (const el of containerRef.current!.querySelectorAll<HTMLElement>('[data-cluster-id]')) {
+        if (!touchesCircle(el)) continue
+        const inside = subtreeIds(store.clusters, el.dataset.clusterId!)
+        for (const i of store.items) {
+          for (const c of i.clusterIds) {
+            if (inside.has(c)) hits.add(presenceKey(i.id, c))
+          }
         }
       }
       setSelectedItemId(null)
@@ -1238,6 +1267,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
 
                 {/* The bubble */}
                 <button
+                  data-cluster-id={cluster.id}
                   onPointerDown={(e) => startDrag(e, cluster.id, 'cluster', cluster.x, cluster.y)}
                   onContextMenu={(e) => {
                     e.preventDefault()
