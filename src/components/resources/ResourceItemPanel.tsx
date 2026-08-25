@@ -372,7 +372,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
                 className="accent-primary"
               />
               <Home size={12} className="text-text-muted flex-shrink-0" />
-              <span className="text-xs text-text-main truncate flex-1">Main space</span>
+              <span className="text-xs text-text-main truncate flex-1">Space</span>
             </label>
 
             {projectClusters.length === 0 && (

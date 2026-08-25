@@ -93,7 +93,7 @@ export function ResourceLinkPicker({
       parts.unshift(c.title)
       id = c.parentClusterId
     }
-    return parts.length > 0 ? parts.join(' › ') : 'Main space'
+    return parts.length > 0 ? parts.join(' › ') : 'Space'
   }
 
   return (
@@ -132,7 +132,7 @@ export function ResourceLinkPicker({
                   openCluster === null ? 'text-text-main font-medium' : 'text-text-muted hover:bg-surface-2'
                 }`}
               >
-                <Home size={12} /> Main space
+                <Home size={12} /> Space
               </button>
               {trail.map((t) => (
                 <React.Fragment key={t.id}>

@@ -30,6 +30,8 @@ interface ProjectState {
   createCluster: (projectId: string, parentClusterId: string | null, input: Partial<ResourceCluster>) => Promise<ResourceCluster | null>
   updateCluster: (id: string, updates: Partial<ResourceCluster>) => Promise<void>
   deleteCluster: (id: string) => Promise<void>
+  /** Copy a cluster, its nested clusters, and the documents tagged into them. */
+  duplicateCluster: (id: string) => Promise<ResourceCluster | null>
 
   createItem: (projectId: string, clusterId: string | null, input: Partial<ResourceItem>, file?: File) => Promise<ResourceItem | null>
   updateItem: (id: string, updates: Partial<ResourceItem>) => Promise<void>
@@ -394,6 +396,43 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       clusters: s.clusters.filter((c) => !doomed.has(c.id)),
       items: s.items.filter((i) => !(i.clusterId && doomed.has(i.clusterId))),
     }))
+  },
+
+  duplicateCluster: async (id) => {
+    const { clusters, items } = get()
+    const source = clusters.find((c) => c.id === id)
+    if (!source) return null
+
+    /**
+     * Copies one cluster and recurses into its children. Documents are tagged
+     * into the copy rather than duplicated: one document, many places, which is
+     * how tagging works everywhere else in the canvas.
+     */
+    const copyInto = async (
+      original: ResourceCluster,
+      parentId: string | null,
+      offset: number,
+    ): Promise<ResourceCluster | null> => {
+      const created = await get().createCluster(original.projectId, parentId, {
+        title: parentId === source.parentClusterId ? `${original.title} (copy)` : original.title,
+        color: original.color,
+        x: original.x + offset,
+        y: original.y + offset,
+        radius: original.radius,
+      })
+      if (!created) return null
+
+      for (const item of items.filter((i) => i.clusterIds.includes(original.id))) {
+        await get().setItemClusters(item.id, [...new Set([...item.clusterIds, created.id])])
+      }
+
+      for (const child of clusters.filter((c) => c.parentClusterId === original.id)) {
+        await copyInto(child, created.id, 0)
+      }
+      return created
+    }
+
+    return copyInto(source, source.parentClusterId, 60)
   },
 
   createItem: async (projectId, clusterId, input, file) => {

@@ -29,7 +29,6 @@ export function Sidebar() {
   // themselves so they're reachable from anywhere inside the project.
   const adminNav = activeProjectId
     ? [
-        { to: `/admin/projects/${activeProjectId}/about`, label: t('nav_about'), icon: <Info size={18} /> },
         { to: `/admin/projects/${activeProjectId}/resources`, label: t('nav_resources'), icon: <FolderOpen size={18} /> },
         { to: `/admin/projects/${activeProjectId}/employees`, label: t('nav_employees'), icon: <Users size={18} /> },
         { to: `/admin/projects/${activeProjectId}/todos`, label: t('nav_todos'), icon: <ListTodo size={18} /> },
@@ -72,13 +71,25 @@ export function Sidebar() {
           >
             <ChevronLeft size={12} /> All projects
           </Link>
-          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-surface-2">
+          {/* The project name is the way into its details, so About needs no
+              tab of its own. */}
+          <NavLink
+            to={`/admin/projects/${activeProjectId}/about`}
+            onClick={() => setMobileOpen(false)}
+            title={`${activeProject.name} — project details`}
+            className={({ isActive }) =>
+              `flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
+                isActive ? 'bg-primary-light ring-1 ring-primary/30' : 'bg-surface-2 hover:bg-border'
+              }`
+            }
+          >
             <span
               className="w-2.5 h-2.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: activeProject.color }}
             />
-            <span className="text-sm font-medium text-text-main truncate">{activeProject.name}</span>
-          </div>
+            <span className="text-sm font-medium text-text-main truncate flex-1">{activeProject.name}</span>
+            <Info size={13} className="text-text-subtle flex-shrink-0" />
+          </NavLink>
         </div>
       )}
 

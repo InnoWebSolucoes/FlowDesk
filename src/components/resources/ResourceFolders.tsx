@@ -597,7 +597,7 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
               onClick={() => { setMenu(null); bulkDuplicate() }}
             />
             <MenuItem
-              label={clusterId ? 'Remove from this cluster' : 'Remove from the main space'}
+              label={clusterId ? 'Remove from this cluster' : 'Remove from the space'}
               onClick={() => { setMenu(null); bulkRemoveFromCluster() }}
             />
             <div className="h-px bg-border my-1" />
@@ -637,7 +637,7 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                 className="w-full flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-surface-2 text-left transition-colors"
               >
                 <Home size={15} className="text-text-muted" />
-                <span className="text-sm text-text-main">Main space</span>
+                <span className="text-sm text-text-main">Space</span>
               </button>
               {clusters
                 .filter((c) => c.projectId === projectId)

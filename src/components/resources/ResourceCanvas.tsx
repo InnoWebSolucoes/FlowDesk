@@ -86,7 +86,7 @@ function spawnPosition(index: number) {
 export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }: Props) {
   const {
     clusters, items, resourcesLoadedFor, loadResources,
-    createCluster, updateCluster, deleteCluster,
+    createCluster, updateCluster, deleteCluster, duplicateCluster,
     createItem, moveItem, deleteItem, duplicateItem, setItemClusters, updateItem,
     setItemLinks, stackItemOnto,
   } = useProjectStore()
@@ -109,6 +109,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   // Right-click on empty canvas: create a cluster, or act on the selection.
   const [bgMenu, setBgMenu] = useState<{ x: number; y: number; world: { x: number; y: number } } | null>(null)
+  const [clusterMenu, setClusterMenu] = useState<{ clusterId: string; x: number; y: number } | null>(null)
   const marqueeStart = useRef<{ x: number; y: number; additive: Set<string> } | null>(null)
   const marqueeBox = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [marqueeActive, setMarqueeActive] = useState(false)
@@ -223,12 +224,10 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     return path
   }, [currentClusterId, clusters])
 
-  // While several nodes are selected the panel stays shut: the gesture is
-  // "pick these", not "tell me about this one".
-  const selectedItem =
-    selectedItemId && multiSelected.size === 0
-      ? items.find((i) => i.id === selectedItemId) ?? null
-      : null
+  // A selection gesture clears selectedItemId, so the panel does not pop up
+  // while picking nodes. Asking for details explicitly still opens it, and the
+  // selection is left alone.
+  const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) ?? null : null
 
   /**
    * Position to render a node at. The node being dragged follows the pointer
@@ -1188,11 +1187,37 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 {/* The bubble */}
                 <button
                   onPointerDown={(e) => startDrag(e, cluster.id, 'cluster', cluster.x, cluster.y)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setClusterMenu({ clusterId: cluster.id, x: e.clientX, y: e.clientY })
+                  }}
+                  onDoubleClick={(e) => {
+                    // Opens even when a modifier is held, so shift-selecting a
+                    // few clusters and then opening one still works.
+                    e.stopPropagation()
+                    enterCluster(cluster)
+                  }}
                   onClick={(e) => {
                     e.stopPropagation()
                     // A click that ends a drag must not also open the cluster.
                     if (draggedRef.current === cluster.id) { draggedRef.current = null; return }
-                    if (!dragId) enterCluster(cluster)
+                    if (dragId) return
+
+                    // Shift or ctrl selects everything the cluster holds, at any
+                    // depth, rather than navigating into it. Double-click still
+                    // opens it, which the handler below takes care of.
+                    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                      const inside = subtreeIds(clusters, cluster.id)
+                      const ids = items
+                        .filter((i) => i.clusterIds.some((c) => inside.has(c)))
+                        .map((i) => i.id)
+                      setSelectedItemId(null)
+                      setMultiSelected((prev) => new Set([...prev, ...ids]))
+                      return
+                    }
+
+                    enterCluster(cluster)
                   }}
                   className={`rounded-full border-2 hover:brightness-105 active:cursor-grabbing ${
                     dragId === cluster.id ? '' : 'transition-all'
@@ -1219,7 +1244,11 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                       .slice(0, 6)
                       .map((i) => (
                         <div
-                          key={i.id}
+                          // Scoped to the cluster: a document that also sits in
+                          // the space renders in both places, and a shared key
+                          // would make React treat them as one element and
+                          // animate it between the two positions.
+                          key={`preview-${cluster.id}-${i.id}`}
                           data-resource-item
                           onPointerDown={(e) => {
                             // Start the drag at the bubble's position: the item's
@@ -1440,18 +1469,68 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                   ? `Drop into "${clusters.find((c) => c.id === fileDropTargetId)?.title ?? 'cluster'}"`
                   : currentClusterId
                     ? 'Drop to add to this cluster'
-                    : 'Drop to add to the main space'}
+                    : 'Drop to add to the space'}
               </span>
             </div>
           </div>
         )}
       </div>
 
+      {/* Cluster right-click: rename, duplicate or delete it. */}
+      {clusterMenu && (() => {
+        const target = clusters.find((c) => c.id === clusterMenu.clusterId)
+        if (!target) return null
+        const act = (fn: () => void) => () => { fn(); setClusterMenu(null) }
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setClusterMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setClusterMenu(null) }}
+            />
+            <div
+              className="fixed z-50 w-52 py-1 bg-surface border border-border rounded-lg shadow-xl"
+              style={{ left: clusterMenu.x, top: clusterMenu.y }}
+            >
+              <p className="px-3 py-1.5 text-[11px] text-text-subtle border-b border-border mb-1 truncate">
+                {target.title}
+              </p>
+              <button
+                onClick={act(() => enterCluster(target))}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                Open
+              </button>
+              <button
+                onClick={act(() => { setRenamingClusterId(target.id); setRenameValue(target.title) })}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                Rename
+              </button>
+              <button
+                onClick={act(() => duplicateCluster(target.id))}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+                title="Copies the cluster and its nesting; the documents are tagged into the copy, not duplicated"
+              >
+                Duplicate
+              </button>
+              <div className="h-px bg-border my-1" />
+              <button
+                onClick={act(() => handleDeleteCluster(target))}
+                className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
+              >
+                Delete cluster
+              </button>
+            </div>
+          </>
+        )
+      })()}
+
       {/* Background right-click: create a cluster, or act on the selection. */}
       {bgMenu && (() => {
         const count = multiSelected.size
         const act = (fn: () => void) => () => { fn(); setBgMenu(null) }
-        const where = currentClusterId ? 'this cluster' : 'the main space'
+        const where = currentClusterId ? 'this cluster' : 'the space'
         return (
           <>
             <div
@@ -1548,7 +1627,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
                 title="Remove from here only; the document stays everywhere else"
               >
-                {currentClusterId ? 'Remove from this cluster' : 'Remove from the main space'}
+                {currentClusterId ? 'Remove from this cluster' : 'Remove from the space'}
               </button>
               <div className="h-px bg-border my-1" />
               <button
