@@ -45,22 +45,41 @@ jobs:
 
       - name: Build
         working-directory: desktop
-        # No Apple/Windows certificate: one is not worth it for an internal
-        # tool. macOS builds are still ad-hoc signed (identity "-"), because an
-        # entirely unsigned app is rejected on Apple Silicon as "damaged".
+        # No certificate for either platform: one is not worth it for an
+        # internal tool. macOS is ad-hoc signed below, because an entirely
+        # unsigned app is refused on Apple Silicon as "damaged".
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run ${{ matrix.script }}
 
-      - name: Check the macOS signature
+      - name: Ad-hoc sign the macOS app and repackage
         if: matrix.os == 'macos-latest'
         working-directory: desktop
-        # Fails the build rather than shipping a .dmg that cannot be opened.
+        # electron-builder leaves the app unsigned, so sign each built .app and
+        # rebuild the disk images from the signed copies — signing after the
+        # .dmg exists would not reach the app inside it.
         run: |
-          APP=$(find dist -name 'FlowDesk.app' -maxdepth 3 | head -1)
-          echo "checking $APP"
-          codesign -dv "$APP" 2>&1 | head -5
-          codesign --verify --deep --strict "$APP" && echo "signature OK"
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+
+          # electron-builder puts the arm64 build in dist/mac-arm64 (or dist/mac
+          # when it is the only one) and the Intel build in dist/mac-x64.
+          rm -f dist/*.dmg
+          for APP in $(find dist -name 'FlowDesk.app' -maxdepth 3); do
+            DIR=$(dirname "$APP")
+            case "$DIR" in
+              *x64*) ARCH=x64 ;;
+              *)     ARCH=arm64 ;;
+            esac
+
+            echo "signing $APP ($ARCH)"
+            codesign --force --deep --sign - "$APP"
+            codesign --verify --deep --strict "$APP"
+            codesign -dv "$APP" 2>&1 | head -3
+
+            hdiutil create -volname FlowDesk               -srcfolder "$APP" -ov -format UDZO               "dist/FlowDesk-$VERSION-$ARCH.dmg"
+          done
+          ls -la dist/*.dmg
 
       - uses: actions/upload-artifact@v4
         with:
