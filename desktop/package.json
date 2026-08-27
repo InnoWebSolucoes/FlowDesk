@@ -1,7 +1,7 @@
 {
   "name": "flowdesk-desktop",
   "productName": "FlowDesk",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "description": "FlowDesk with Claude side by side",
   "author": "Innoweb Solucoes",
@@ -75,7 +75,10 @@
       ],
       "icon": "build/icon.png",
       "category": "public.app-category.productivity",
-      "identity": null
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "type": "distribution"
     },
     "dmg": {
       "artifactName": "FlowDesk-${version}-${arch}.${ext}"

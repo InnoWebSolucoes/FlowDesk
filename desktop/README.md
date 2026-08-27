@@ -65,11 +65,20 @@ npm run dist:mac      # writes dist/FlowDesk-<version>-<arch>.dmg
 
 ### Opening it the first time
 
-The app is not signed by Apple, so macOS blocks it on first launch with
-"FlowDesk cannot be opened because the developer cannot be verified". Right-click
-the app in Applications → **Open** → **Open** in the dialog. That is a one-time
-step per machine. (Signing needs a paid Apple Developer account, which is not
-worth it for an internal two-person tool.)
+The app carries an ad-hoc signature but no Apple Developer certificate, so
+macOS challenges it on first launch: right-click the app in Applications →
+**Open** → **Open** in the dialog. One-time step per machine.
+
+If macOS instead says **"FlowDesk is damaged and can't be opened"**, that is
+the quarantine flag Safari and Chrome attach to downloads, not a corrupt app.
+Clear it and open normally:
+
+```bash
+xattr -cr /Applications/FlowDesk.app
+```
+
+An Apple Developer certificate would remove both prompts, but is not worth it
+for an internal tool.
 
 Everything else behaves the same as on Windows, except the sync folder lives at
 `~/Documents/FlowDesk` and is not pinned to a sidebar — macOS has no equivalent

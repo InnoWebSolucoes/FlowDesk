@@ -45,11 +45,22 @@ jobs:
 
       - name: Build
         working-directory: desktop
-        # The app is not code-signed: a certificate is not worth it for an
-        # internal tool. Users get past the warning as described in the README.
+        # No Apple/Windows certificate: one is not worth it for an internal
+        # tool. macOS builds are still ad-hoc signed (identity "-"), because an
+        # entirely unsigned app is rejected on Apple Silicon as "damaged".
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run ${{ matrix.script }}
+
+      - name: Check the macOS signature
+        if: matrix.os == 'macos-latest'
+        working-directory: desktop
+        # Fails the build rather than shipping a .dmg that cannot be opened.
+        run: |
+          APP=$(find dist -name 'FlowDesk.app' -maxdepth 3 | head -1)
+          echo "checking $APP"
+          codesign -dv "$APP" 2>&1 | head -5
+          codesign --verify --deep --strict "$APP" && echo "signature OK"
 
       - uses: actions/upload-artifact@v4
         with:
