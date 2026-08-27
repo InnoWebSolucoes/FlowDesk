@@ -62,24 +62,35 @@ jobs:
           set -e
           VERSION=$(node -p "require('./package.json').version")
 
-          # electron-builder puts the arm64 build in dist/mac-arm64 (or dist/mac
-          # when it is the only one) and the Intel build in dist/mac-x64.
           rm -f dist/*.dmg
           for APP in $(find dist -name 'FlowDesk.app' -maxdepth 3); do
-            DIR=$(dirname "$APP")
-            case "$DIR" in
-              *x64*) ARCH=x64 ;;
-              *)     ARCH=arm64 ;;
-            esac
+            # Read the architecture from the binary itself. Directory names
+            # are unreliable: electron-builder uses dist/mac for one arch and
+            # dist/mac-<arch> for the other, and which one is which varies.
+            BIN="$APP/Contents/MacOS/FlowDesk"
+            if lipo -archs "$BIN" 2>/dev/null | grep -q arm64; then
+              ARCH=arm64
+            else
+              ARCH=x64
+            fi
 
             echo "signing $APP ($ARCH)"
             codesign --force --deep --sign - "$APP"
             codesign --verify --deep --strict "$APP"
             codesign -dv "$APP" 2>&1 | head -3
 
-            hdiutil create -volname FlowDesk               -srcfolder "$APP" -ov -format UDZO               "dist/FlowDesk-$VERSION-$ARCH.dmg"
+            OUT="dist/FlowDesk-$VERSION-$ARCH.dmg"
+            if [ -f "$OUT" ]; then
+              echo "already have $ARCH; skipping $APP"
+              continue
+            fi
+            hdiutil create -volname FlowDesk -srcfolder "$APP" -ov -format UDZO "$OUT"
           done
+
           ls -la dist/*.dmg
+          # Both architectures must exist, or Intel Macs get nothing.
+          test -f "dist/FlowDesk-$VERSION-arm64.dmg"
+          test -f "dist/FlowDesk-$VERSION-x64.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
