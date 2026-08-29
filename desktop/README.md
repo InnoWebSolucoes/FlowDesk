@@ -105,17 +105,49 @@ already running, launching the other exits silently. Close one first.
 | --- | --- |
 | Resize split | Drag the divider |
 | Hide / show Claude | Click the chevron button on the divider (also: `Ctrl+Shift+C`, or double-click the divider) |
+| Show / hide WhatsApp | `Ctrl+Shift+W` (also **View → Toggle WhatsApp**) |
+| Move / resize WhatsApp | Drag its title bar; drag the bottom-right corner |
 | Reload FlowDesk / Claude | `Ctrl+R` / `Ctrl+Shift+R` |
 | Zoom focused pane | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 | Claude back / forward | `Alt+Left` / `Alt+Right` |
 | DevTools for focused pane | `F12` |
 
+## WhatsApp panel
+
+`Ctrl+Shift+W` opens WhatsApp Web as a floating panel above the two panes,
+rather than a third column — a third column would squeeze both panes on a
+laptop screen. Drag its title bar to move it and the bottom-right corner to
+resize; the position is remembered, and **WhatsApp → Reset Panel Position**
+puts it back if it ever ends up somewhere awkward.
+
+**Logging in:** scan the QR with your phone (WhatsApp → Settings → Linked
+devices → Link a device), or use "Log in with phone number" on the same screen.
+Tick **Stay logged in on this browser** so it survives restarts. The session
+lives in its own partition (`persist:whatsapp`), separate from Claude's, so the
+two never interfere. **WhatsApp → Log Out** clears it and brings back the QR.
+
+The page loads on first open rather than at startup — it is heavy, and there is
+no reason to pay for it if nobody opens the panel. Once loaded it stays loaded,
+so messages keep arriving while the panel is hidden.
+
+**From a project:** the contact phone on a project's About tab has a green
+WhatsApp button next to it. Clicking it opens the panel straight to that
+conversation, with the project name pre-filled in the message box. Numbers
+typed without a country code are treated as Brazilian; write `+1 …`, `+351 …`
+and so on for anywhere else, and the `+` is respected.
+
+WhatsApp Web is served the underlying Chrome user agent, because it refuses
+anything it does not recognise as a current desktop browser ("update your
+browser"). Same engine either way, so nothing is being misrepresented about
+what the page runs on.
+
 ## How login persistence works
 
-The Claude pane runs in its own persistent Electron session (`persist:claude`),
-stored under `%APPDATA%/flowdesk-desktop/Partitions/claude/`. Cookies and local
-storage survive restarts, so you log in once and stay logged in. To log out,
-use Claude's own logout — or delete that folder to fully reset the pane.
+The Claude and WhatsApp panes each run in their own persistent Electron session
+(`persist:claude`, `persist:whatsapp`), stored under
+`%APPDATA%/flowdesk-desktop/Partitions/`. Cookies and local storage survive
+restarts, so you log in once and stay logged in. To log out, use the site's own
+logout — or delete that folder to fully reset the pane.
 
 ## Folder sync (save files straight into the app)
 

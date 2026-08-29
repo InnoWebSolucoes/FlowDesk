@@ -1,7 +1,8 @@
 // FlowDesk desktop shell: two WebContentsViews (FlowDesk + claude.ai) inside one
-// window, with a draggable divider rendered by the shell page underneath them.
-// claude.ai loads as a top-level page in its own persistent session, so login
-// cookies survive restarts. See README.md for the gotchas this depends on.
+// window, with a draggable divider rendered by the shell page underneath them,
+// plus a floating WhatsApp panel that hovers above both. claude.ai and WhatsApp
+// load as top-level pages in their own persistent sessions, so login cookies
+// survive restarts. See README.md for the gotchas this depends on.
 
 const { app, BrowserWindow, WebContentsView, ipcMain, session, shell, Menu, clipboard, nativeImage } = require('electron')
 const path = require('node:path')
@@ -19,6 +20,25 @@ const CLAUDE_URL = 'https://claude.ai/'
 // else (links in Claude's answers, docs, etc.) opens in the default browser.
 const CLAUDE_NAV_DOMAINS = ['claude.ai', 'claude.site', 'anthropic.com', 'claudeusercontent.com']
 
+const WHATSAPP_URL = 'https://web.whatsapp.com/'
+const WHATSAPP_NAV_DOMAINS = ['whatsapp.com', 'wa.me']
+// WhatsApp Web refuses anything it does not recognise as a current desktop
+// browser ("update your browser"), and Electron's default UA carries both
+// "Electron" and "FlowDesk". Present the underlying Chrome instead — same
+// engine, so nothing is being faked about what the page actually runs on.
+const CHROME_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+  'Chrome/' + process.versions.chrome.split('.')[0] + '.0.0.0 Safari/537.36'
+
+// The floating WhatsApp panel, as a fraction of the window, with a minimum so
+// it stays usable on a small screen.
+const WA_MIN_W = 380
+const WA_MIN_H = 420
+const WA_MARGIN = 24
+const WA_TITLEBAR_H = 34
+// Border left exposed around the page so the chrome's resize grip is reachable.
+const WA_EDGE = 6
+
 const DEFAULT_SETTINGS = {
   ratio: 0.6,
   claudeCollapsed: false,
@@ -26,6 +46,10 @@ const DEFAULT_SETTINGS = {
   flowdeskUrl: null,
   syncRoot: null,
   quickAccessPinned: false,
+  whatsappOpen: false,
+  // Panel geometry in window coordinates; null until first opened, then
+  // remembered across restarts so it reopens where it was left.
+  whatsappBounds: null,
 }
 
 let settings = { ...DEFAULT_SETTINGS }
@@ -35,8 +59,11 @@ let setupWin = null
 let win = null
 let flowView = null
 let claudeView = null
+let whatsappView = null
+let whatsappChrome = null
 let overlayView = null
 let dragging = false
+let waDrag = null
 let saveTimer = null
 const retryTimers = new Map()
 
@@ -98,7 +125,51 @@ function layout() {
     claudeView.setBounds({ x: leftW + stripW, y: 0, width: w - leftW - stripW, height: h })
   }
   if (overlayView) overlayView.setBounds({ x: 0, y: 0, width: w, height: h })
+  layoutWhatsapp(w, h)
   win.webContents.send('layout', { dividerX: leftW, stripW, collapsed })
+}
+
+// Default position for the panel the first time it is opened: bottom-right,
+// roughly a third of the window, the way a chat window usually sits.
+function defaultWhatsappBounds(w, h) {
+  const width = Math.max(WA_MIN_W, Math.min(460, Math.round(w * 0.32)))
+  const height = Math.max(WA_MIN_H, Math.round(h * 0.72))
+  return { x: w - width - WA_MARGIN, y: h - height - WA_MARGIN, width, height }
+}
+
+// Keeps the panel inside the window: without this, shrinking the window would
+// strand it off-screen with no way to drag it back.
+function clampWhatsappBounds(b, w, h) {
+  const width = Math.max(WA_MIN_W, Math.min(b.width, w - WA_MARGIN))
+  const height = Math.max(WA_MIN_H, Math.min(b.height, h - WA_MARGIN))
+  return {
+    width,
+    height,
+    x: Math.max(0, Math.min(b.x, w - width)),
+    y: Math.max(0, Math.min(b.y, h - height)),
+  }
+}
+
+function layoutWhatsapp(w, h) {
+  if (!whatsappView || !whatsappChrome) return
+  const open = settings.whatsappOpen
+  whatsappView.setVisible(open)
+  whatsappChrome.setVisible(open)
+  if (!open) return
+
+  const b = clampWhatsappBounds(settings.whatsappBounds || defaultWhatsappBounds(w, h), w, h)
+  settings.whatsappBounds = b
+  // The chrome view draws the title bar, border and resize grip; the WhatsApp
+  // page is inset below the title bar and short of the bottom-right corner, so
+  // the grip stays clickable — the page view sits above the chrome and would
+  // otherwise swallow the corner.
+  whatsappChrome.setBounds(b)
+  whatsappView.setBounds({
+    x: b.x + WA_EDGE,
+    y: b.y + WA_TITLEBAR_H,
+    width: b.width - WA_EDGE * 2,
+    height: b.height - WA_TITLEBAR_H - WA_EDGE,
+  })
 }
 
 function waitingPage(label, url, hint) {
@@ -246,11 +317,63 @@ function configureSessions() {
   try {
     claudeSes.setSpellCheckerLanguages(['en-US', 'pt-BR'])
   } catch {}
+
+  const waSes = session.fromPartition('persist:whatsapp')
+  // WhatsApp needs notifications for new messages, clipboard for paste, and
+  // media for voice notes and calls. Everything else is denied.
+  const waAllowed = new Set([
+    'clipboard-sanitized-write',
+    'clipboard-read',
+    'notifications',
+    'fullscreen',
+    'media',
+  ])
+  waSes.setPermissionRequestHandler((_wc, permission, cb) => cb(waAllowed.has(permission)))
+  waSes.setUserAgent(CHROME_UA)
+  try {
+    waSes.setSpellCheckerLanguages(['en-US', 'pt-BR'])
+  } catch {}
 }
 
 function focusedContents() {
+  if (whatsappView && whatsappView.webContents.isFocused()) return whatsappView.webContents
   if (claudeView && claudeView.webContents.isFocused()) return claudeView.webContents
   return flowView.webContents
+}
+
+let whatsappLoaded = false
+
+function ensureWhatsappLoaded() {
+  if (whatsappLoaded || !whatsappView) return
+  whatsappLoaded = true
+  keepLoaded(whatsappView, WHATSAPP_URL, { retryMs: 8000, label: 'WhatsApp' })
+}
+
+function toggleWhatsapp(force) {
+  if (!win || win.isDestroyed()) return
+  settings.whatsappOpen = typeof force === 'boolean' ? force : !settings.whatsappOpen
+  saveSettings()
+  if (settings.whatsappOpen) ensureWhatsappLoaded()
+  layout()
+  if (settings.whatsappOpen) {
+    // The panel floats above both panes, so it must come to the front and take
+    // focus — otherwise typing would still go to whatever was underneath.
+    raiseWhatsapp()
+    whatsappView.webContents.focus()
+  } else {
+    flowView.webContents.focus()
+  }
+}
+
+// Re-adds the panel views on top of the stack. addChildView on a view already
+// in the tree moves it to the front, which is how z-order is expressed here.
+function raiseWhatsapp() {
+  if (!win || win.isDestroyed() || !whatsappView || !whatsappChrome) return
+  win.contentView.addChildView(whatsappChrome)
+  win.contentView.addChildView(whatsappView)
+  // The drag overlay has to stay above everything, or resizing the split would
+  // lose the pointer to whichever pane it passed over.
+  if (overlayView) win.contentView.addChildView(overlayView)
 }
 
 function toggleClaude() {
@@ -305,6 +428,7 @@ function buildMenu() {
       label: 'View',
       submenu: [
         { label: 'Toggle Claude Panel', accelerator: 'CmdOrCtrl+Shift+C', click: toggleClaude },
+        { label: 'Toggle WhatsApp', accelerator: 'CmdOrCtrl+Shift+W', click: () => toggleWhatsapp() },
         {
           label: 'Reset Split',
           click: () => {
@@ -351,6 +475,37 @@ function buildMenu() {
         { label: 'Home (claude.ai)', click: () => claudeView.webContents.loadURL(CLAUDE_URL) },
       ],
     },
+    {
+      label: 'WhatsApp',
+      submenu: [
+        { label: 'Show WhatsApp', accelerator: 'CmdOrCtrl+Shift+W', click: () => toggleWhatsapp(true) },
+        { label: 'Hide WhatsApp', click: () => toggleWhatsapp(false) },
+        { type: 'separator' },
+        { label: 'Reload WhatsApp', click: () => whatsappView.webContents.reload() },
+        {
+          label: 'Reset Panel Position',
+          click: () => {
+            settings.whatsappBounds = null
+            saveSettings()
+            layout()
+          },
+        },
+        { type: 'separator' },
+        {
+          // Signing out of WhatsApp Web is done from the phone; clearing the
+          // partition is the equivalent from this side, and forces a fresh QR.
+          label: 'Log Out (clear WhatsApp session)',
+          click: async () => {
+            try {
+              await session.fromPartition('persist:whatsapp').clearStorageData()
+              whatsappView.webContents.loadURL(WHATSAPP_URL)
+            } catch (e) {
+              console.error('[whatsapp] logout', e)
+            }
+          },
+        },
+      ],
+    },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -384,6 +539,20 @@ function createWindow() {
   claudeView = new WebContentsView({
     webPreferences: { partition: 'persist:claude', sandbox: true },
   })
+  // The floating WhatsApp panel is two views: a chrome view drawing the title
+  // bar / border / resize grip, and the WhatsApp page inset inside it. They are
+  // separate because a WebContentsView cannot host another view's page, and the
+  // title bar has to stay ours (drag, close) rather than WhatsApp's.
+  whatsappChrome = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'whatsapp-chrome-preload.js'),
+      contextIsolation: true,
+      sandbox: true,
+    },
+  })
+  whatsappView = new WebContentsView({
+    webPreferences: { partition: 'persist:whatsapp', sandbox: true },
+  })
   // Full-window transparent view shown only while dragging the divider, so the
   // shell keeps receiving mouse events that would otherwise land on the panes.
   overlayView = new WebContentsView({
@@ -396,13 +565,24 @@ function createWindow() {
 
   win.contentView.addChildView(flowView)
   win.contentView.addChildView(claudeView)
+  win.contentView.addChildView(whatsappChrome)
+  win.contentView.addChildView(whatsappView)
   win.contentView.addChildView(overlayView)
   overlayView.setBackgroundColor('#00000000')
   overlayView.setVisible(false)
   overlayView.webContents.loadFile(path.join(__dirname, 'overlay.html'))
 
+  whatsappChrome.setVisible(false)
+  whatsappView.setVisible(false)
+  whatsappChrome.webContents.loadFile(path.join(__dirname, 'whatsapp-chrome.html'))
+
   attachNavPolicy(flowView, null)
   attachNavPolicy(claudeView, CLAUDE_NAV_DOMAINS)
+  attachNavPolicy(whatsappView, WHATSAPP_NAV_DOMAINS)
+
+  // Clicking anywhere in the panel should bring it forward, in case something
+  // else was raised above it.
+  whatsappView.webContents.on('focus', raiseWhatsapp)
 
   keepLoaded(flowView, flowdeskUrl(), {
     retryMs: 5000,
@@ -412,6 +592,11 @@ function createWindow() {
   })
   keepLoaded(claudeView, CLAUDE_URL, { retryMs: 8000, label: 'Claude' })
 
+  // WhatsApp loads on first open rather than at startup: it is a heavy page,
+  // and someone who never opens the panel should not pay for it. Once loaded it
+  // stays loaded, so messages keep arriving while the panel is hidden.
+  if (settings.whatsappOpen) ensureWhatsappLoaded()
+
   win.loadFile(path.join(__dirname, 'shell.html'))
   win.once('ready-to-show', () => {
     win.show()
@@ -420,7 +605,13 @@ function createWindow() {
   })
   // A drag must not survive the window losing focus: without this a missed
   // release leaves the divider stuck to the cursor.
-  win.on('blur', endDrag)
+  win.on('blur', () => {
+    endDrag()
+    if (waDrag) {
+      waDrag = null
+      saveSettings()
+    }
+  })
   win.on('resize', layout)
   win.on('resized', () => {
     settings.windowBounds = win.getBounds()
@@ -460,6 +651,88 @@ ipcMain.on('divider:drag', (_e, x, buttons) => {
 
 ipcMain.on('divider:dragend', endDrag)
 ipcMain.on('divider:toggle', toggleClaude)
+
+// ─── Floating WhatsApp panel ────────────────────────────────────────────────
+
+ipcMain.on('whatsapp:close', () => toggleWhatsapp(false))
+ipcMain.on('whatsapp:raise', raiseWhatsapp)
+
+// Moving and resizing are driven from the chrome view's title bar and grip. The
+// renderer reports the pointer offset since the press, because a WebContentsView
+// has no window-level drag of its own.
+ipcMain.on('whatsapp:movestart', (_e, mode) => {
+  if (!settings.whatsappOpen || !settings.whatsappBounds) return
+  waDrag = { mode, start: { ...settings.whatsappBounds } }
+  raiseWhatsapp()
+})
+
+ipcMain.on('whatsapp:move', (_e, dx, dy, buttons) => {
+  // A release can be missed (pointer leaves the view, window loses focus); if
+  // nothing is held any more the gesture is over whatever the renderer thinks.
+  if (typeof buttons === 'number' && buttons === 0) {
+    waDrag = null
+    saveSettings()
+    return
+  }
+  if (!waDrag || !win || win.isDestroyed()) return
+  const [w, h] = win.getContentSize()
+  const s = waDrag.start
+  const next =
+    waDrag.mode === 'resize'
+      ? { x: s.x, y: s.y, width: s.width + dx, height: s.height + dy }
+      : { x: s.x + dx, y: s.y + dy, width: s.width, height: s.height }
+  settings.whatsappBounds = clampWhatsappBounds(next, w, h)
+  layoutWhatsapp(w, h)
+})
+
+ipcMain.on('whatsapp:moveend', () => {
+  if (!waDrag) return
+  waDrag = null
+  saveSettings()
+})
+
+/**
+ * WhatsApp addresses a chat by digits only, including the country code. Numbers
+ * in FlowDesk are typed however the manager types them — "(11) 98765-4321",
+ * "+55 11 98765 4321" — so strip the formatting and assume Brazil when no
+ * country code is present, which is the case for every local number.
+ */
+function normalisePhone(raw) {
+  const text = String(raw || '').trim()
+  let digits = text.replace(/\D/g, '')
+  if (!digits) return null
+
+  // A leading + (or the 00 dialled from Brazil) means the country code is
+  // already there — never add another. Without this a US "+1 415 555 2671"
+  // would be read as a bare 11-digit Brazilian number and reach a stranger.
+  const hasCountryCode = text.startsWith('+') || digits.startsWith('00')
+  if (digits.startsWith('00')) digits = digits.slice(2)
+
+  // Otherwise 10 or 11 digits is a local Brazilian number (area + subscriber).
+  if (!hasCountryCode && (digits.length === 10 || digits.length === 11)) {
+    digits = '55' + digits
+  }
+  // Shorter than this cannot carry a country code plus a real number.
+  return digits.length >= 10 ? digits : null
+}
+
+ipcMain.handle('native:open-whatsapp', async (_event, { phone, message } = {}) => {
+  if (!win || win.isDestroyed()) return { ok: false, error: 'No window' }
+  toggleWhatsapp(true)
+
+  if (!phone) return { ok: true } // just open the panel
+
+  const digits = normalisePhone(phone)
+  if (!digits) return { ok: false, error: 'That phone number is not usable' }
+
+  // web.whatsapp.com/send opens the conversation directly. It needs the page to
+  // be logged in; if it is not, WhatsApp shows its own QR screen instead, which
+  // is the right thing to show anyway.
+  let url = `https://web.whatsapp.com/send?phone=${digits}`
+  if (message) url += `&text=${encodeURIComponent(String(message).slice(0, 2000))}`
+  whatsappView.webContents.loadURL(url)
+  return { ok: true, phone: digits }
+})
 
 // First run (or "Change FlowDesk Address"): ask for the FlowDesk URL.
 function createSetupWindow() {
@@ -629,7 +902,7 @@ if (!gotLock) {
   // forget (it returns nothing), so also flush periodically rather than relying
   // on the last moments of shutdown.
   function flushSessions() {
-    for (const p of ['persist:flowdesk', 'persist:claude']) {
+    for (const p of ['persist:flowdesk', 'persist:claude', 'persist:whatsapp']) {
       try {
         session.fromPartition(p).flushStorageData()
       } catch {}

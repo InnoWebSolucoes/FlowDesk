@@ -15,6 +15,10 @@ interface NativeBridge {
   prepareFile: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string }>
   dragFile: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string }>
   copyFile: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string }>
+  openWhatsapp?: (
+    phone?: string,
+    message?: string,
+  ) => Promise<{ ok: boolean; error?: string; phone?: string }>
 }
 
 declare global {
@@ -82,4 +86,55 @@ export async function copyDocumentFile(
   if (!url) return { ok: false, error: 'The file could not be prepared.' }
 
   return native.copyFile(url, fileName ?? 'document')
+}
+
+/**
+ * Opens the WhatsApp panel inside the desktop app, jumping straight to a
+ * conversation when given a phone number.
+ *
+ * Outside the desktop app this falls back to wa.me in the browser, so a contact
+ * phone stays clickable everywhere rather than being dead on the web.
+ */
+export async function openWhatsapp(
+  phone?: string | null,
+  message?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const native = window.flowdeskNative
+
+  if (native?.openWhatsapp) {
+    return native.openWhatsapp(phone ?? undefined, message)
+  }
+
+  // Browser fallback. wa.me needs the same digits-only form the desktop app
+  // builds, and without a number there is nothing to open but WhatsApp itself.
+  const digits = normalisePhoneDigits(phone)
+  if (phone && !digits) return { ok: false, error: 'That phone number is not usable.' }
+
+  const url = digits
+    ? `https://wa.me/${digits}${message ? `?text=${encodeURIComponent(message)}` : ''}`
+    : 'https://web.whatsapp.com/'
+  window.open(url, '_blank', 'noopener')
+  return { ok: true }
+}
+
+/**
+ * Digits only, with a country code. Numbers are typed however the manager types
+ * them, and a bare 10/11-digit number is Brazilian — the same assumption the
+ * desktop app's normalisePhone makes. Keep the two in step: if they disagree,
+ * the same contact opens a different chat in the app than in the browser.
+ */
+export function normalisePhoneDigits(raw?: string | null): string | null {
+  const text = String(raw ?? '').trim()
+  let digits = text.replace(/\D/g, '')
+  if (!digits) return null
+
+  // A leading + (or 00) means the country code is already present — adding 55
+  // would turn a US or Portuguese number into someone else's Brazilian one.
+  const hasCountryCode = text.startsWith('+') || digits.startsWith('00')
+  if (digits.startsWith('00')) digits = digits.slice(2)
+
+  if (!hasCountryCode && (digits.length === 10 || digits.length === 11)) {
+    digits = '55' + digits
+  }
+  return digits.length >= 10 ? digits : null
 }

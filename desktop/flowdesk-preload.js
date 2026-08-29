@@ -25,4 +25,11 @@ contextBridge.exposeInMainWorld('flowdeskNative', {
 
   /** Puts the file on the clipboard, ready to paste into another app. */
   copyFile: (url, fileName) => ipcRenderer.invoke('native:copy-file', { url, fileName }),
+
+  /**
+   * Opens the WhatsApp panel. With a phone number, jumps straight to that
+   * conversation; with text, pre-fills the message box. This is why a contact
+   * phone in FlowDesk can become a chat in one click.
+   */
+  openWhatsapp: (phone, message) => ipcRenderer.invoke('native:open-whatsapp', { phone, message }),
 })

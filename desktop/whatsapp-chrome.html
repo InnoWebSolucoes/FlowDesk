@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<style>
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #111b21; /* WhatsApp's own dark chrome, so the seam is invisible */
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    user-select: none;
+  }
+  #frame {
+    height: 100%;
+    display: flex; flex-direction: column;
+    border: 1px solid #2a3942;
+    border-radius: 8px;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  #bar {
+    height: 33px; flex: none;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 6px 0 12px;
+    background: #202c33;
+    cursor: move;
+  }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: #25d366; flex: none; }
+  #title {
+    flex: 1; min-width: 0;
+    font-size: 12.5px; font-weight: 600; color: #e9edef;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #close {
+    flex: none; width: 26px; height: 22px;
+    border: none; border-radius: 5px;
+    background: transparent; color: #aebac1;
+    font-size: 15px; line-height: 1; cursor: pointer; padding: 0;
+  }
+  #close:hover { background: #ef4444; color: #fff; }
+  /* The page view covers the middle; only the frame's edges show through. */
+  #body { flex: 1; }
+  #grip {
+    position: absolute; right: 0; bottom: 0;
+    width: 18px; height: 18px;
+    cursor: nwse-resize;
+  }
+  #grip::after {
+    content: ""; position: absolute; right: 3px; bottom: 3px;
+    width: 8px; height: 8px;
+    border-right: 2px solid #54656f; border-bottom: 2px solid #54656f;
+  }
+</style>
+</head>
+<body>
+<div id="frame">
+  <div id="bar">
+    <div id="dot"></div>
+    <div id="title">WhatsApp</div>
+    <button id="close" title="Hide WhatsApp (Ctrl+Shift+W)">&#10005;</button>
+  </div>
+  <div id="body"></div>
+</div>
+<div id="grip" title="Resize"></div>
+<script>
+  const bar = document.getElementById('bar')
+  const grip = document.getElementById('grip')
+  const closeBtn = document.getElementById('close')
+
+  closeBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
+  closeBtn.addEventListener('click', () => window.waPanel.close())
+
+  // Move and resize share one gesture: report the offset from where the press
+  // began and let the main process apply it to the bounds it saved at the start.
+  function gesture(el, mode) {
+    let origin = null
+
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.detail > 1) return
+      e.preventDefault()
+      origin = { x: e.screenX, y: e.screenY }
+      // Keep receiving moves even when the pointer runs past this small view.
+      try { el.setPointerCapture(e.pointerId) } catch {}
+      window.waPanel.dragStart(mode)
+    })
+
+    el.addEventListener('pointermove', (e) => {
+      if (!origin) return
+      window.waPanel.drag(e.screenX - origin.x, e.screenY - origin.y, e.buttons)
+      if (e.buttons === 0) origin = null
+    })
+
+    const stop = () => {
+      if (!origin) return
+      origin = null
+      window.waPanel.dragEnd()
+    }
+    el.addEventListener('pointerup', stop)
+    el.addEventListener('pointercancel', stop)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('blur', stop)
+  }
+
+  gesture(bar, 'move')
+  gesture(grip, 'resize')
+</script>
+</body>
+</html>

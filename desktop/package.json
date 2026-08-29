@@ -1,9 +1,9 @@
 {
   "name": "flowdesk-desktop",
   "productName": "FlowDesk",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "private": true,
-  "description": "FlowDesk with Claude side by side",
+  "description": "FlowDesk with Claude and WhatsApp side by side",
   "author": "Innoweb Solucoes",
   "main": "main.js",
   "scripts": {
@@ -34,11 +34,13 @@
       "preload.js",
       "setup-preload.js",
       "flowdesk-preload.js",
+      "whatsapp-chrome-preload.js",
       "sync.js",
       "config.js",
       "shell.html",
       "overlay.html",
       "setup.html",
+      "whatsapp-chrome.html",
       "build/icon.ico",
       "!**/*.map"
     ],

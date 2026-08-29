@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
-import { Save, Trash2, Globe, Mail, Phone, MapPin, User } from 'lucide-react'
+import { Save, Trash2, Globe, Mail, Phone, MapPin, User, MessageCircle } from 'lucide-react'
 import { Project } from '../../../types'
 import { useProjectStore } from '../../../store/projectStore'
 import { useEmployeeStore } from '../../../store/employeeStore'
 import { useTaskStore } from '../../../store/taskStore'
+import { openWhatsapp, normalisePhoneDigits } from '../../../lib/nativeShare'
 
 interface Ctx { project: Project }
 
@@ -54,7 +55,13 @@ function ProjectAboutForm({ project }: { project: Project }) {
   const field = (
     label: string,
     key: keyof Project,
-    opts: { placeholder?: string; type?: string; icon?: React.ReactNode } = {}
+    opts: {
+      placeholder?: string
+      type?: string
+      icon?: React.ReactNode
+      /** Rendered inside the field's right edge, e.g. the WhatsApp shortcut. */
+      action?: React.ReactNode
+    } = {}
   ) => (
     <div>
       <label className="block text-xs font-medium text-text-muted mb-1.5">{label}</label>
@@ -70,12 +77,31 @@ function ProjectAboutForm({ project }: { project: Project }) {
           onChange={(e) => set(key, e.target.value as Project[typeof key])}
           placeholder={opts.placeholder}
           className={`w-full py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary ${
-            opts.icon ? 'pl-9 pr-3' : 'px-3'
-          }`}
+            opts.icon ? 'pl-9' : 'pl-3'
+          } ${opts.action ? 'pr-10' : 'pr-3'}`}
         />
+        {opts.action && (
+          <span className="absolute right-1.5 top-1/2 -translate-y-1/2">{opts.action}</span>
+        )}
       </div>
     </div>
   )
+
+  // The number as typed is only a chat link once it has a country code; when it
+  // is not usable the button is hidden rather than failing on click.
+  const waDigits = normalisePhoneDigits(form.contactPhone)
+  const whatsappButton = waDigits ? (
+    <button
+      type="button"
+      onClick={() =>
+        openWhatsapp(form.contactPhone, `Olá! Sobre o projeto ${project.name}: `)
+      }
+      title={`Open WhatsApp chat with +${waDigits}`}
+      className="p-1.5 rounded-md text-[#25d366] hover:bg-[#25d366]/15 transition-colors"
+    >
+      <MessageCircle size={16} />
+    </button>
+  ) : null
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -110,7 +136,10 @@ function ProjectAboutForm({ project }: { project: Project }) {
           {field('Website', 'website', { placeholder: 'https://', icon: <Globe size={14} /> })}
           {field('Contact name', 'contactName', { icon: <User size={14} /> })}
           {field('Contact email', 'contactEmail', { type: 'email', icon: <Mail size={14} /> })}
-          {field('Contact phone', 'contactPhone', { icon: <Phone size={14} /> })}
+          {field('Contact phone', 'contactPhone', {
+            icon: <Phone size={14} />,
+            action: whatsappButton,
+          })}
           <div className="sm:col-span-2">
             {field('Address', 'address', { icon: <MapPin size={14} /> })}
           </div>
