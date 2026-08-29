@@ -19,6 +19,8 @@ interface NativeBridge {
     phone?: string,
     message?: string,
   ) => Promise<{ ok: boolean; error?: string; phone?: string }>
+  whatsappTab?: (open?: boolean) => Promise<{ ok: boolean; open?: boolean; mode?: string }>
+  onWhatsappState?: (cb: (s: { open: boolean; mode: string }) => void) => () => void
 }
 
 declare global {
@@ -115,6 +117,24 @@ export async function openWhatsapp(
     : 'https://web.whatsapp.com/'
   window.open(url, '_blank', 'noopener')
   return { ok: true }
+}
+
+/**
+ * True when WhatsApp can be shown as a tab — desktop app only. In a browser the
+ * sidebar hides the tab rather than offering one that could do nothing.
+ */
+export const canDockWhatsapp = () => !!window.flowdeskNative?.whatsappTab
+
+/** Shows or hides WhatsApp docked over the page. `undefined` toggles. */
+export async function setWhatsappTab(open?: boolean) {
+  const native = window.flowdeskNative
+  if (!native?.whatsappTab) return { ok: false }
+  return native.whatsappTab(open)
+}
+
+/** Subscribes to WhatsApp opening or closing, however it was triggered. */
+export function onWhatsappState(cb: (s: { open: boolean; mode: string }) => void) {
+  return window.flowdeskNative?.onWhatsappState?.(cb) ?? (() => {})
 }
 
 /**

@@ -38,6 +38,9 @@ const WA_MARGIN = 24
 const WA_TITLEBAR_H = 34
 // Border left exposed around the page so the chrome's resize grip is reachable.
 const WA_EDGE = 6
+// The web app's own sidebar (w-60 = 15rem). Docked WhatsApp starts to its right
+// so the tabs stay reachable — including the one that closes it again.
+const SIDEBAR_W = 240
 
 const DEFAULT_SETTINGS = {
   ratio: 0.6,
@@ -50,6 +53,9 @@ const DEFAULT_SETTINGS = {
   // Panel geometry in window coordinates; null until first opened, then
   // remembered across restarts so it reopens where it was left.
   whatsappBounds: null,
+  // 'float' is the Ctrl+Shift+W panel; 'dock' fills the FlowDesk pane, driven
+  // by the WhatsApp tab in the app's own sidebar.
+  whatsappMode: 'float',
 }
 
 let settings = { ...DEFAULT_SETTINGS }
@@ -125,7 +131,7 @@ function layout() {
     claudeView.setBounds({ x: leftW + stripW, y: 0, width: w - leftW - stripW, height: h })
   }
   if (overlayView) overlayView.setBounds({ x: 0, y: 0, width: w, height: h })
-  layoutWhatsapp(w, h)
+  layoutWhatsapp(w, h, leftW)
   win.webContents.send('layout', { dividerX: leftW, stripW, collapsed })
 }
 
@@ -150,12 +156,22 @@ function clampWhatsappBounds(b, w, h) {
   }
 }
 
-function layoutWhatsapp(w, h) {
+function layoutWhatsapp(w, h, leftW) {
   if (!whatsappView || !whatsappChrome) return
   const open = settings.whatsappOpen
   whatsappView.setVisible(open)
-  whatsappChrome.setVisible(open)
+  // Docked mode is a tab inside FlowDesk, so it gets no floating title bar.
+  whatsappChrome.setVisible(open && settings.whatsappMode !== 'dock')
   if (!open) return
+
+  if (settings.whatsappMode === 'dock') {
+    // Fill the FlowDesk pane but leave its sidebar visible, so the WhatsApp tab
+    // can be clicked again to leave — and the other tabs still work.
+    const paneW = typeof leftW === 'number' ? leftW : w
+    const x = Math.min(SIDEBAR_W, Math.max(0, paneW - WA_MIN_W))
+    whatsappView.setBounds({ x, y: 0, width: Math.max(0, paneW - x), height: h })
+    return
+  }
 
   const b = clampWhatsappBounds(settings.whatsappBounds || defaultWhatsappBounds(w, h), w, h)
   settings.whatsappBounds = b
@@ -349,19 +365,44 @@ function ensureWhatsappLoaded() {
   keepLoaded(whatsappView, WHATSAPP_URL, { retryMs: 8000, label: 'WhatsApp' })
 }
 
-function toggleWhatsapp(force) {
+/**
+ * Shows or hides WhatsApp. `mode` picks how: 'float' is the Ctrl+Shift+W panel,
+ * 'dock' fills the FlowDesk pane for the sidebar tab. Asking for a mode while
+ * that same mode is already showing closes it, so the tab and the shortcut each
+ * toggle their own view rather than fighting over one flag.
+ */
+function toggleWhatsapp(force, mode) {
   if (!win || win.isDestroyed()) return
-  settings.whatsappOpen = typeof force === 'boolean' ? force : !settings.whatsappOpen
+  const want = mode || settings.whatsappMode || 'float'
+  const sameMode = settings.whatsappMode === want
+
+  let open
+  if (typeof force === 'boolean') open = force
+  else open = !(settings.whatsappOpen && sameMode)
+
+  settings.whatsappOpen = open
+  if (open) settings.whatsappMode = want
   saveSettings()
-  if (settings.whatsappOpen) ensureWhatsappLoaded()
+
+  if (open) ensureWhatsappLoaded()
   layout()
-  if (settings.whatsappOpen) {
-    // The panel floats above both panes, so it must come to the front and take
+
+  if (open) {
+    // The view sits above the panes, so it must come to the front and take
     // focus — otherwise typing would still go to whatever was underneath.
     raiseWhatsapp()
     whatsappView.webContents.focus()
   } else {
     flowView.webContents.focus()
+  }
+
+  // Let the web app's sidebar reflect the real state, however it changed —
+  // menu, shortcut or tab.
+  if (flowView && !flowView.webContents.isDestroyed()) {
+    flowView.webContents.send('whatsapp:state', {
+      open: settings.whatsappOpen,
+      mode: settings.whatsappMode,
+    })
   }
 }
 
@@ -428,7 +469,7 @@ function buildMenu() {
       label: 'View',
       submenu: [
         { label: 'Toggle Claude Panel', accelerator: 'CmdOrCtrl+Shift+C', click: toggleClaude },
-        { label: 'Toggle WhatsApp', accelerator: 'CmdOrCtrl+Shift+W', click: () => toggleWhatsapp() },
+        { label: 'Toggle WhatsApp Panel', accelerator: 'CmdOrCtrl+Shift+W', click: () => toggleWhatsapp(undefined, 'float') },
         {
           label: 'Reset Split',
           click: () => {
@@ -478,7 +519,7 @@ function buildMenu() {
     {
       label: 'WhatsApp',
       submenu: [
-        { label: 'Show WhatsApp', accelerator: 'CmdOrCtrl+Shift+W', click: () => toggleWhatsapp(true) },
+        { label: 'Show WhatsApp Panel', accelerator: 'CmdOrCtrl+Shift+W', click: () => toggleWhatsapp(true, 'float') },
         { label: 'Hide WhatsApp', click: () => toggleWhatsapp(false) },
         { type: 'separator' },
         { label: 'Reload WhatsApp', click: () => whatsappView.webContents.reload() },
@@ -661,7 +702,9 @@ ipcMain.on('whatsapp:raise', raiseWhatsapp)
 // renderer reports the pointer offset since the press, because a WebContentsView
 // has no window-level drag of its own.
 ipcMain.on('whatsapp:movestart', (_e, mode) => {
-  if (!settings.whatsappOpen || !settings.whatsappBounds) return
+  // Only the floating panel moves; docked it is a tab and has no title bar.
+  if (!settings.whatsappOpen || settings.whatsappMode === 'dock') return
+  if (!settings.whatsappBounds) return
   waDrag = { mode, start: { ...settings.whatsappBounds } }
   raiseWhatsapp()
 })
@@ -682,7 +725,7 @@ ipcMain.on('whatsapp:move', (_e, dx, dy, buttons) => {
       ? { x: s.x, y: s.y, width: s.width + dx, height: s.height + dy }
       : { x: s.x + dx, y: s.y + dy, width: s.width, height: s.height }
   settings.whatsappBounds = clampWhatsappBounds(next, w, h)
-  layoutWhatsapp(w, h)
+  layout()
 })
 
 ipcMain.on('whatsapp:moveend', () => {
@@ -716,11 +759,24 @@ function normalisePhone(raw) {
   return digits.length >= 10 ? digits : null
 }
 
+/**
+ * Shows or hides the docked WhatsApp tab. Called by the sidebar tab in the web
+ * app, which cannot host a native view itself — so it asks the shell to put one
+ * over its content area instead.
+ */
+ipcMain.handle('native:whatsapp-tab', async (_event, { open } = {}) => {
+  if (!win || win.isDestroyed()) return { ok: false, error: 'No window' }
+  toggleWhatsapp(typeof open === 'boolean' ? open : undefined, 'dock')
+  return { ok: true, open: settings.whatsappOpen, mode: settings.whatsappMode }
+})
+
 ipcMain.handle('native:open-whatsapp', async (_event, { phone, message } = {}) => {
   if (!win || win.isDestroyed()) return { ok: false, error: 'No window' }
-  toggleWhatsapp(true)
+  // A chat opened from a contact keeps whichever mode is already showing, so
+  // clicking it from the docked tab does not shrink WhatsApp to a small panel.
+  toggleWhatsapp(true, settings.whatsappOpen ? settings.whatsappMode : 'float')
 
-  if (!phone) return { ok: true } // just open the panel
+  if (!phone) return { ok: true } // just open WhatsApp
 
   const digits = normalisePhone(phone)
   if (!digits) return { ok: false, error: 'That phone number is not usable' }

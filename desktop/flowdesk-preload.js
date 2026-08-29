@@ -32,4 +32,17 @@ contextBridge.exposeInMainWorld('flowdeskNative', {
    * phone in FlowDesk can become a chat in one click.
    */
   openWhatsapp: (phone, message) => ipcRenderer.invoke('native:open-whatsapp', { phone, message }),
+
+  /**
+   * Shows or hides WhatsApp docked over the page, for the sidebar tab. The web
+   * app cannot host a native view, so it asks the shell to place one instead.
+   */
+  whatsappTab: (open) => ipcRenderer.invoke('native:whatsapp-tab', { open }),
+
+  /** Notifies the page when WhatsApp opens or closes, however it was toggled. */
+  onWhatsappState: (cb) => {
+    const fn = (_e, state) => cb(state)
+    ipcRenderer.on('whatsapp:state', fn)
+    return () => ipcRenderer.removeListener('whatsapp:state', fn)
+  },
 })

@@ -1,14 +1,15 @@
-import React, { useState } from 'react'
-import { NavLink, useNavigate, useMatch, Link } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { NavLink, useNavigate, useMatch, Link, useLocation } from 'react-router-dom'
 import {
   ListTodo, Users, Info, FolderOpen, CalendarDays,
-  CheckSquare, Wrench, BookOpen, Building2,
+  CheckSquare, Wrench, BookOpen, Building2, MessageCircle,
   LogOut, Menu, X, ChevronLeft
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useProjectStore } from '../../store/projectStore'
 import { useLanguageStore } from '../../store/languageStore'
 import { useT } from '../../i18n/useT'
+import { canDockWhatsapp, setWhatsappTab, onWhatsappState } from '../../lib/nativeShare'
 
 export function Sidebar() {
   const { currentUser, logout } = useAuthStore()
@@ -48,6 +49,28 @@ export function Sidebar() {
     logout()
     navigate('/login')
   }
+
+  // ─── WhatsApp tab ─────────────────────────────────────────────────────────
+  // WhatsApp is a native view the desktop shell lays over this page, not a
+  // route: a web page cannot embed web.whatsapp.com. So the tab asks the shell
+  // to show it, and follows the shell's state rather than owning it.
+  const whatsappAvailable = canDockWhatsapp()
+  const [whatsappDocked, setWhatsappDocked] = useState(false)
+  const location = useLocation()
+
+  useEffect(
+    () => onWhatsappState(({ open, mode }) => setWhatsappDocked(open && mode === 'dock')),
+    []
+  )
+
+  // Navigating away has to close it: the native view covers the page, so the
+  // destination would be hidden behind WhatsApp.
+  useEffect(() => {
+    if (whatsappDocked) setWhatsappTab(false)
+    // Only on a route change — depending on whatsappDocked would close it
+    // immediately after it opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
 
   // A plain function, not a component: it closes over local state, and
   // remounting it on every render would drop focus and animation state.
@@ -112,6 +135,25 @@ export function Sidebar() {
             {item.label}
           </NavLink>
         ))}
+
+        {/* Below the other tabs, since it is a tool rather than part of the
+            project's data. Desktop app only — a browser cannot embed it. */}
+        {whatsappAvailable && (
+          <button
+            onClick={() => {
+              setMobileOpen(false)
+              setWhatsappTab(!whatsappDocked)
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+              whatsappDocked
+                ? 'bg-[#25d366] text-white'
+                : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
+            }`}
+          >
+            <MessageCircle size={18} />
+            WhatsApp
+          </button>
+        )}
       </nav>
 
       {/* Language toggle + User section */}
