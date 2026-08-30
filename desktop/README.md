@@ -105,20 +105,35 @@ already running, launching the other exits silently. Close one first.
 | --- | --- |
 | Resize split | Drag the divider |
 | Hide / show Claude | Click the chevron button on the divider (also: `Ctrl+Shift+C`, or double-click the divider) |
-| Show / hide WhatsApp | `Ctrl+Shift+W` (also **View → Toggle WhatsApp**) |
-| Move / resize WhatsApp | Drag its title bar; drag the bottom-right corner |
+| WhatsApp, full width | The **WhatsApp** tab in FlowDesk's own sidebar |
+| WhatsApp, floating panel | `Ctrl+Shift+W` (also **View → Toggle WhatsApp Panel**) |
+| Move / resize the panel | Drag its title bar; drag the bottom-right corner |
 | Reload FlowDesk / Claude | `Ctrl+R` / `Ctrl+Shift+R` |
 | Zoom focused pane | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 | Claude back / forward | `Alt+Left` / `Alt+Right` |
 | DevTools for focused pane | `F12` |
 
-## WhatsApp panel
+## WhatsApp
 
-`Ctrl+Shift+W` opens WhatsApp Web as a floating panel above the two panes,
-rather than a third column — a third column would squeeze both panes on a
-laptop screen. Drag its title bar to move it and the bottom-right corner to
-resize; the position is remembered, and **WhatsApp → Reset Panel Position**
-puts it back if it ever ends up somewhere awkward.
+WhatsApp Web shows up two ways, for two different jobs.
+
+**As a tab**, below Funcionários in FlowDesk's own sidebar: it fills the
+FlowDesk pane, for actually working in WhatsApp. It starts just right of the
+sidebar so the other tabs stay reachable, and clicking any of them closes it —
+a native view laid over the page would otherwise hide wherever you went.
+
+**As a floating panel**, with `Ctrl+Shift+W`: a small window above both panes,
+for glancing at a message without leaving the page. Drag its title bar to move
+it and the bottom-right corner to resize; the position is remembered, and
+**WhatsApp → Reset Panel Position** puts it back if it ends up somewhere
+awkward.
+
+The two are independent — the tab and the shortcut each toggle their own mode,
+so neither disturbs the other.
+
+Note the tab is not a route: a web page cannot embed web.whatsapp.com, so the
+view belongs to the desktop shell and the sidebar only asks it to move. In a
+browser the tab is hidden rather than offered and doing nothing.
 
 **Logging in:** scan the QR with your phone (WhatsApp → Settings → Linked
 devices → Link a device), or use "Log in with phone number" on the same screen.
