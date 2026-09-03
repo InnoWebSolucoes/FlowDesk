@@ -374,11 +374,13 @@ function ensureWhatsappLoaded() {
 function toggleWhatsapp(force, mode) {
   if (!win || win.isDestroyed()) return
   const want = mode || settings.whatsappMode || 'float'
-  const sameMode = settings.whatsappMode === want
 
+  // Toggling closes whatever is on screen, in either mode: pressing the
+  // shortcut while WhatsApp is docked should put it away, not open a second
+  // copy floating over it. Otherwise it opens in the requested mode.
   let open
   if (typeof force === 'boolean') open = force
-  else open = !(settings.whatsappOpen && sameMode)
+  else open = !settings.whatsappOpen
 
   settings.whatsappOpen = open
   if (open) settings.whatsappMode = want
