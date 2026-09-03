@@ -1,7 +1,7 @@
 {
   "name": "flowdesk-desktop",
   "productName": "FlowDesk",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "FlowDesk with Claude and WhatsApp side by side",
   "author": "Innoweb Solucoes",

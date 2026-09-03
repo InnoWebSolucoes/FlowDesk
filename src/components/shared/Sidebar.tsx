@@ -63,8 +63,17 @@ export function Sidebar() {
     []
   )
 
-  // Navigating away has to close it: the native view covers the page, so the
-  // destination would be hidden behind WhatsApp.
+  // Opening WhatsApp does not change the route, so picking the tab you were
+  // already on — the common case, since WhatsApp covered it — would leave the
+  // route identical and close nothing. Every nav link closes it on click
+  // instead, which makes the tabs behave as one selection rather than a toggle
+  // layered over the page.
+  const leaveWhatsapp = () => {
+    if (whatsappDocked) setWhatsappTab(false)
+  }
+
+  // Still needed for the ways out that are not a sidebar click: the project
+  // name, "All projects", or anything else that navigates.
   useEffect(() => {
     if (whatsappDocked) setWhatsappTab(false)
     // Only on a route change — depending on whatsappDocked would close it
@@ -89,7 +98,10 @@ export function Sidebar() {
         <div className="px-3 pt-3 pb-1">
           <Link
             to="/admin/projects"
-            onClick={() => setMobileOpen(false)}
+            onClick={() => {
+              setMobileOpen(false)
+              leaveWhatsapp()
+            }}
             className="flex items-center gap-1 text-[11px] text-text-subtle hover:text-text-main mb-2 px-2 transition-colors"
           >
             <ChevronLeft size={12} /> All projects
@@ -98,11 +110,16 @@ export function Sidebar() {
               tab of its own. */}
           <NavLink
             to={`/admin/projects/${activeProjectId}/about`}
-            onClick={() => setMobileOpen(false)}
+            onClick={() => {
+              setMobileOpen(false)
+              leaveWhatsapp()
+            }}
             title={`${activeProject.name} — project details`}
             className={({ isActive }) =>
               `flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
-                isActive ? 'bg-primary-light ring-1 ring-primary/30' : 'bg-surface-2 hover:bg-border'
+                isActive && !whatsappDocked
+                  ? 'bg-primary-light ring-1 ring-primary/30'
+                  : 'bg-surface-2 hover:bg-border'
               }`
             }
           >
@@ -122,10 +139,16 @@ export function Sidebar() {
           <NavLink
             key={item.to}
             to={item.to}
-            onClick={() => setMobileOpen(false)}
+            onClick={() => {
+              setMobileOpen(false)
+              leaveWhatsapp()
+            }}
             className={({ isActive }) =>
+              // While WhatsApp is covering the page it is the selected tab, so
+              // the route's own tab must not stay lit as well — otherwise two
+              // tabs look active at once.
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-                isActive
+                isActive && !whatsappDocked
                   ? 'bg-primary text-white'
                   : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
               }`
@@ -142,7 +165,9 @@ export function Sidebar() {
           <button
             onClick={() => {
               setMobileOpen(false)
-              setWhatsappTab(!whatsappDocked)
+              // Always open, never toggle: a tab does not deselect itself when
+              // you click it again. You leave by picking another tab.
+              setWhatsappTab(true)
             }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
               whatsappDocked
