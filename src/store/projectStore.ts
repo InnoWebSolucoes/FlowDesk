@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 import {
   Project, ResourceCluster, ResourceItem, ResourceItemLink, ResourceItemVersion,
   ProjectTodo, ProjectTodoLink, ProjectTodoList, CalendarEntry, ResourceAccess,
+  ProjectNote, ProjectNoteItem,
 } from '../types'
 
 const BUCKET = 'attachments'
@@ -65,6 +66,18 @@ interface ProjectState {
   deleteTodoList: (id: string) => Promise<void>
   duplicateTodoList: (id: string) => Promise<ProjectTodoList | null>
   moveTodoToList: (todoId: string, listId: string) => Promise<void>
+
+  // Notes: a Keep-style board of sticky notes, manager-only.
+  notes: ProjectNote[]
+  notesLoadedFor: string | null
+  loadNotes: (projectId: string) => Promise<void>
+  createNote: (projectId: string, input?: Partial<ProjectNote>) => Promise<ProjectNote | null>
+  updateNote: (id: string, updates: Partial<ProjectNote>) => Promise<void>
+  deleteNote: (id: string) => Promise<void>
+  reorderNotes: (orderedIds: string[]) => Promise<void>
+  /** Replaces a note's checklist wholesale; [] turns it back into free text. */
+  setNoteItems: (noteId: string, items: { text: string; isChecked: boolean }[]) => Promise<void>
+  toggleNoteItem: (noteId: string, itemId: string) => Promise<void>
 
   // Todos
   loadTodos: (projectId: string) => Promise<void>
@@ -215,6 +228,33 @@ function toTodoList(row: any): ProjectTodoList {
   }
 }
 
+function toNoteItem(row: any): ProjectNoteItem {
+  return {
+    id: row.id,
+    noteId: row.note_id,
+    text: row.text ?? '',
+    isChecked: row.is_checked ?? false,
+    sortOrder: row.sort_order ?? 0,
+  }
+}
+
+function toNote(row: any): ProjectNote {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    title: row.title ?? '',
+    body: row.body ?? '',
+    color: row.color ?? '#fef3c7',
+    isPinned: row.is_pinned ?? false,
+    isArchived: row.is_archived ?? false,
+    sortOrder: row.sort_order ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at ?? row.created_at,
+    items: (row.project_note_items ?? []).map(toNoteItem)
+      .sort((a: ProjectNoteItem, b: ProjectNoteItem) => a.sortOrder - b.sortOrder),
+  }
+}
+
 function toTodo(row: any): ProjectTodo {
   return {
     id: row.id,
@@ -273,10 +313,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   items: [],
   todos: [],
   todoLists: [],
+  notes: [],
   loading: false,
   initialized: false,
   resourcesLoadedFor: null,
   todosLoadedFor: null,
+  notesLoadedFor: null,
 
   initialize: async () => {
     set({ loading: true })
@@ -323,6 +365,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       items: s.items.filter((i) => i.projectId !== id),
       todos: s.todos.filter((t) => t.projectId !== id),
       todoLists: s.todoLists.filter((l) => l.projectId !== id),
+      notes: s.notes.filter((n) => n.projectId !== id),
     }))
   },
 
@@ -981,6 +1024,133 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   // ─── Todos ────────────────────────────────────────────────────────────────
+
+  // ─── Notes ────────────────────────────────────────────────────────────────
+
+  loadNotes: async (projectId) => {
+    const { data, error } = await supabase
+      .from('project_notes')
+      .select('*, project_note_items(*)')
+      .eq('project_id', projectId)
+      .order('sort_order', { ascending: true })
+
+    if (error) {
+      // Before the migration runs the table does not exist. Treat that as an
+      // empty board rather than letting the tab fail to render.
+      console.error('[loadNotes] failed:', error)
+      set({ notes: [], notesLoadedFor: projectId })
+      return
+    }
+    set({ notes: (data ?? []).map(toNote), notesLoadedFor: projectId })
+  },
+
+  createNote: async (projectId, input = {}) => {
+    // New notes go to the top of the board, which is where you look for what
+    // you just wrote.
+    const minOrder = get().notes.reduce((min, n) => Math.min(min, n.sortOrder), 0)
+    const { data, error } = await supabase
+      .from('project_notes')
+      .insert({
+        project_id: projectId,
+        title: input.title ?? '',
+        body: input.body ?? '',
+        color: input.color ?? '#fef3c7',
+        is_pinned: input.isPinned ?? false,
+        sort_order: minOrder - 1,
+      })
+      .select('*, project_note_items(*)')
+      .single()
+
+    if (error || !data) {
+      console.error('[createNote] failed:', error)
+      return null
+    }
+    const note = toNote(data)
+    set((s) => ({ notes: [note, ...s.notes] }))
+    return note
+  },
+
+  updateNote: async (id, updates) => {
+    const patch: Record<string, unknown> = {}
+    if (updates.title !== undefined) patch.title = updates.title
+    if (updates.body !== undefined) patch.body = updates.body
+    if (updates.color !== undefined) patch.color = updates.color
+    if (updates.isPinned !== undefined) patch.is_pinned = updates.isPinned
+    if (updates.isArchived !== undefined) patch.is_archived = updates.isArchived
+    if (updates.sortOrder !== undefined) patch.sort_order = updates.sortOrder
+    if (Object.keys(patch).length === 0) return
+
+    // Optimistic: typing in a note should never wait on the network.
+    set((s) => ({ notes: s.notes.map((n) => (n.id === id ? { ...n, ...updates } : n)) }))
+    const { error } = await supabase.from('project_notes').update(patch).eq('id', id)
+    if (error) console.error('[updateNote] failed:', error)
+  },
+
+  deleteNote: async (id) => {
+    set((s) => ({ notes: s.notes.filter((n) => n.id !== id) }))
+    const { error } = await supabase.from('project_notes').delete().eq('id', id)
+    if (error) console.error('[deleteNote] failed:', error)
+  },
+
+  reorderNotes: async (orderedIds) => {
+    set((s) => ({
+      notes: s.notes.map((n) => {
+        const i = orderedIds.indexOf(n.id)
+        return i === -1 ? n : { ...n, sortOrder: i }
+      }),
+    }))
+    await Promise.all(
+      orderedIds.map((id, i) =>
+        supabase.from('project_notes').update({ sort_order: i }).eq('id', id)
+      )
+    )
+  },
+
+  setNoteItems: async (noteId, items) => {
+    // Replace wholesale: checklists are short, and this keeps ordering and
+    // deletions correct without diffing.
+    await supabase.from('project_note_items').delete().eq('note_id', noteId)
+
+    let rows: any[] = []
+    if (items.length) {
+      const { data, error } = await supabase
+        .from('project_note_items')
+        .insert(
+          items.map((it, i) => ({
+            note_id: noteId,
+            text: it.text,
+            is_checked: it.isChecked,
+            sort_order: i,
+          }))
+        )
+        .select()
+      if (error) console.error('[setNoteItems] failed:', error)
+      rows = data ?? []
+    }
+
+    const mapped = rows.map(toNoteItem).sort((a, b) => a.sortOrder - b.sortOrder)
+    set((s) => ({ notes: s.notes.map((n) => (n.id === noteId ? { ...n, items: mapped } : n)) }))
+  },
+
+  toggleNoteItem: async (noteId, itemId) => {
+    const note = get().notes.find((n) => n.id === noteId)
+    const item = note?.items.find((i) => i.id === itemId)
+    if (!item) return
+
+    const next = !item.isChecked
+    set((s) => ({
+      notes: s.notes.map((n) =>
+        n.id !== noteId
+          ? n
+          : { ...n, items: n.items.map((i) => (i.id === itemId ? { ...i, isChecked: next } : i)) }
+      ),
+    }))
+    const { error } = await supabase
+      .from('project_note_items')
+      .update({ is_checked: next })
+      .eq('id', itemId)
+    if (error) console.error('[toggleNoteItem] failed:', error)
+  },
 
   loadTodos: async (projectId) => {
     // The shares join only resolves once the do-dates migration has run. Until

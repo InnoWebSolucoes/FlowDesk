@@ -121,6 +121,33 @@ export interface ProjectTodoLink {
   clusterId: string | null
 }
 
+/** One line of a checklist note. */
+export interface ProjectNoteItem {
+  id: string
+  noteId: string
+  text: string
+  isChecked: boolean
+  sortOrder: number
+}
+
+/**
+ * A sticky note on a project's board. Manager-only, like the todo lists.
+ * A note is free text, or a checklist when it has items.
+ */
+export interface ProjectNote {
+  id: string
+  projectId: string
+  title: string
+  body: string
+  color: string
+  isPinned: boolean
+  isArchived: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+  items: ProjectNoteItem[]
+}
+
 /** A named todo list within a project, e.g. "Onboarding". */
 export interface ProjectTodoList {
   id: string

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useMatch, Link, useLocation } from 'react-router-dom'
 import {
   ListTodo, Users, Info, FolderOpen, CalendarDays,
-  CheckSquare, Wrench, BookOpen, Building2, MessageCircle,
+  CheckSquare, Wrench, BookOpen, Building2, MessageCircle, StickyNote,
   LogOut, Menu, X, ChevronLeft
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
@@ -34,6 +34,7 @@ export function Sidebar() {
         { to: `/admin/projects/${activeProjectId}/resources`, label: t('nav_resources'), icon: <FolderOpen size={18} /> },
         { to: `/admin/projects/${activeProjectId}/calendar`, label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
         { to: `/admin/projects/${activeProjectId}/employees`, label: t('nav_employees'), icon: <Users size={18} /> },
+        { to: `/admin/projects/${activeProjectId}/notes`, label: t('nav_notes'), icon: <StickyNote size={18} /> },
       ]
     : [{ to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> }]
 
