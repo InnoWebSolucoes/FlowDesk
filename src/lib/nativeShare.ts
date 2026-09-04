@@ -21,6 +21,8 @@ interface NativeBridge {
   ) => Promise<{ ok: boolean; error?: string; phone?: string }>
   whatsappTab?: (open?: boolean) => Promise<{ ok: boolean; open?: boolean; mode?: string }>
   onWhatsappState?: (cb: (s: { open: boolean; mode: string }) => void) => () => void
+  claudeTab?: (open?: boolean) => Promise<{ ok: boolean; open?: boolean }>
+  onClaudeState?: (cb: (s: { docked: boolean }) => void) => () => void
 }
 
 declare global {
@@ -135,6 +137,21 @@ export async function setWhatsappTab(open?: boolean) {
 /** Subscribes to WhatsApp opening or closing, however it was triggered. */
 export function onWhatsappState(cb: (s: { open: boolean; mode: string }) => void) {
   return window.flowdeskNative?.onWhatsappState?.(cb) ?? (() => {})
+}
+
+/** True when Claude can be shown as a full-width tab — desktop app only. */
+export const canDockClaude = () => !!window.flowdeskNative?.claudeTab
+
+/** Shows or hides Claude filling the page. `undefined` toggles. */
+export async function setClaudeTab(open?: boolean) {
+  const native = window.flowdeskNative
+  if (!native?.claudeTab) return { ok: false }
+  return native.claudeTab(open)
+}
+
+/** Subscribes to Claude's tab opening or closing, however it was triggered. */
+export function onClaudeState(cb: (s: { docked: boolean }) => void) {
+  return window.flowdeskNative?.onClaudeState?.(cb) ?? (() => {})
 }
 
 /**

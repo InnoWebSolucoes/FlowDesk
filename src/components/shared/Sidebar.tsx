@@ -2,14 +2,17 @@ import React, { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useMatch, Link, useLocation } from 'react-router-dom'
 import {
   ListTodo, Users, Info, FolderOpen, CalendarDays,
-  CheckSquare, Wrench, BookOpen, Building2, MessageCircle, StickyNote,
+  CheckSquare, Wrench, BookOpen, Building2, MessageCircle, StickyNote, Sparkles,
   LogOut, Menu, X, ChevronLeft
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useProjectStore } from '../../store/projectStore'
 import { useLanguageStore } from '../../store/languageStore'
 import { useT } from '../../i18n/useT'
-import { canDockWhatsapp, setWhatsappTab, onWhatsappState } from '../../lib/nativeShare'
+import {
+  canDockWhatsapp, setWhatsappTab, onWhatsappState,
+  canDockClaude, setClaudeTab, onClaudeState,
+} from '../../lib/nativeShare'
 
 export function Sidebar() {
   const { currentUser, logout } = useAuthStore()
@@ -56,29 +59,37 @@ export function Sidebar() {
   // route: a web page cannot embed web.whatsapp.com. So the tab asks the shell
   // to show it, and follows the shell's state rather than owning it.
   const whatsappAvailable = canDockWhatsapp()
+  const claudeAvailable = canDockClaude()
   const [whatsappDocked, setWhatsappDocked] = useState(false)
+  const [claudeDocked, setClaudeDocked] = useState(false)
   const location = useLocation()
+
+  // Either docked view covers the page, so both suppress the route's highlight.
+  const nativeTabOpen = whatsappDocked || claudeDocked
 
   useEffect(
     () => onWhatsappState(({ open, mode }) => setWhatsappDocked(open && mode === 'dock')),
     []
   )
 
+  useEffect(() => onClaudeState(({ docked }) => setClaudeDocked(docked)), [])
+
   // Opening WhatsApp does not change the route, so picking the tab you were
   // already on — the common case, since WhatsApp covered it — would leave the
   // route identical and close nothing. Every nav link closes it on click
   // instead, which makes the tabs behave as one selection rather than a toggle
   // layered over the page.
-  const leaveWhatsapp = () => {
+  const leaveNativeTabs = () => {
     if (whatsappDocked) setWhatsappTab(false)
+    if (claudeDocked) setClaudeTab(false)
   }
 
   // Still needed for the ways out that are not a sidebar click: the project
   // name, "All projects", or anything else that navigates.
   useEffect(() => {
-    if (whatsappDocked) setWhatsappTab(false)
-    // Only on a route change — depending on whatsappDocked would close it
-    // immediately after it opened.
+    leaveNativeTabs()
+    // Only on a route change — depending on the docked flags would close them
+    // immediately after they opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname])
 
@@ -101,7 +112,7 @@ export function Sidebar() {
             to="/admin/projects"
             onClick={() => {
               setMobileOpen(false)
-              leaveWhatsapp()
+              leaveNativeTabs()
             }}
             className="flex items-center gap-1 text-[11px] text-text-subtle hover:text-text-main mb-2 px-2 transition-colors"
           >
@@ -113,12 +124,12 @@ export function Sidebar() {
             to={`/admin/projects/${activeProjectId}/about`}
             onClick={() => {
               setMobileOpen(false)
-              leaveWhatsapp()
+              leaveNativeTabs()
             }}
             title={`${activeProject.name} — project details`}
             className={({ isActive }) =>
               `flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
-                isActive && !whatsappDocked
+                isActive && !nativeTabOpen
                   ? 'bg-primary-light ring-1 ring-primary/30'
                   : 'bg-surface-2 hover:bg-border'
               }`
@@ -142,14 +153,14 @@ export function Sidebar() {
             to={item.to}
             onClick={() => {
               setMobileOpen(false)
-              leaveWhatsapp()
+              leaveNativeTabs()
             }}
             className={({ isActive }) =>
               // While WhatsApp is covering the page it is the selected tab, so
               // the route's own tab must not stay lit as well — otherwise two
               // tabs look active at once.
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-                isActive && !whatsappDocked
+                isActive && !nativeTabOpen
                   ? 'bg-primary text-white'
                   : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
               }`
@@ -178,6 +189,23 @@ export function Sidebar() {
           >
             <MessageCircle size={18} />
             WhatsApp
+          </button>
+        )}
+
+        {claudeAvailable && (
+          <button
+            onClick={() => {
+              setMobileOpen(false)
+              setClaudeTab(true)
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+              claudeDocked
+                ? 'bg-[#d97757] text-white'
+                : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
+            }`}
+          >
+            <Sparkles size={18} />
+            Claude
           </button>
         )}
       </nav>

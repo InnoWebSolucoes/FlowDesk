@@ -45,4 +45,14 @@ contextBridge.exposeInMainWorld('flowdeskNative', {
     ipcRenderer.on('whatsapp:state', fn)
     return () => ipcRenderer.removeListener('whatsapp:state', fn)
   },
+
+  /** Shows or hides Claude filling the page, for its sidebar tab. */
+  claudeTab: (open) => ipcRenderer.invoke('native:claude-tab', { open }),
+
+  /** Notifies the page when Claude's tab opens or closes. */
+  onClaudeState: (cb) => {
+    const fn = (_e, state) => cb(state)
+    ipcRenderer.on('claude:state', fn)
+    return () => ipcRenderer.removeListener('claude:state', fn)
+  },
 })
