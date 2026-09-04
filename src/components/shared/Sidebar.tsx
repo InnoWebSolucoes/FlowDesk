@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { NavLink, useNavigate, useMatch, Link, useLocation } from 'react-router-dom'
 import {
   ListTodo, Users, Info, FolderOpen, CalendarDays,
   CheckSquare, Wrench, BookOpen, Building2, MessageCircle, StickyNote, Sparkles,
-  LogOut, Menu, X, ChevronLeft
+  LogOut, Menu, X, ChevronLeft, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useProjectStore } from '../../store/projectStore'
@@ -11,7 +11,7 @@ import { useLanguageStore } from '../../store/languageStore'
 import { useT } from '../../i18n/useT'
 import {
   canDockWhatsapp, setWhatsappTab, onWhatsappState,
-  canDockClaude, setClaudeTab, onClaudeState,
+  canDockClaude, setClaudeTab, onClaudeState, setSidebarWidth,
 } from '../../lib/nativeShare'
 
 export function Sidebar() {
@@ -79,9 +79,35 @@ export function Sidebar() {
   // route identical and close nothing. Every nav link closes it on click
   // instead, which makes the tabs behave as one selection rather than a toggle
   // layered over the page.
+  // Read through a ref, not the state values directly. The route-change effect
+  // below runs with the deps it declares, so closing over the flags would use
+  // whatever they were on the last route change — stale by the time a tab is
+  // clicked, which left the Claude tab open when switching tabs.
+  const dockedRef = useRef({ whatsapp: false, claude: false })
+  dockedRef.current = { whatsapp: whatsappDocked, claude: claudeDocked }
+
+  // Collapsed to icons only, to give the main area more room. Remembered, so
+  // the choice survives a reload.
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('flowdesk.sidebarCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('flowdesk.sidebarCollapsed', collapsed ? '1' : '0')
+    } catch {}
+    // The docked native views start where the sidebar ends, so the shell has
+    // to be told when that width changes or they would overlap or leave a gap.
+    setSidebarWidth(collapsed ? 64 : 240)
+  }, [collapsed])
+
   const leaveNativeTabs = () => {
-    if (whatsappDocked) setWhatsappTab(false)
-    if (claudeDocked) setClaudeTab(false)
+    if (dockedRef.current.whatsapp) setWhatsappTab(false)
+    if (dockedRef.current.claude) setClaudeTab(false)
   }
 
   // Still needed for the ways out that are not a sidebar click: the project
@@ -95,18 +121,47 @@ export function Sidebar() {
 
   // A plain function, not a component: it closes over local state, and
   // remounting it on every render would drop focus and animation state.
-  const sidebarContent = () => (
+  // `mini` is the desktop collapsed rail; the mobile drawer always shows text,
+  // since it slides over the page and is not competing for room.
+  const sidebarContent = (mini = false) => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-border">
+      <div
+        className={`flex items-center border-b border-border ${
+          mini ? 'justify-center px-2 py-5' : 'gap-2.5 px-5 py-5'
+        }`}
+      >
         <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
           <span className="text-white font-bold text-sm">F</span>
         </div>
-        <span className="font-semibold text-text-main text-base">Flow Desk</span>
+        {!mini && <span className="font-semibold text-text-main text-base">Flow Desk</span>}
       </div>
 
-      {/* Which project you're inside, with the way back out */}
-      {activeProject && (
+      {/* Which project you're inside, with the way back out. Collapsed, the
+          project is just its colour dot, the name has nowhere to go. */}
+      {activeProject && mini && (
+        <div className="px-2 pt-3 pb-1 flex justify-center">
+          <NavLink
+            to={`/admin/projects/${activeProjectId}/about`}
+            onClick={() => {
+              setMobileOpen(false)
+              leaveNativeTabs()
+            }}
+            title={`${activeProject.name}, project details`}
+            className={({ isActive }) =>
+              `w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
+                isActive && !nativeTabOpen ? 'bg-primary-light ring-1 ring-primary/30' : 'hover:bg-surface-2'
+              }`
+            }
+          >
+            <span
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: activeProject.color }}
+            />
+          </NavLink>
+        </div>
+      )}
+      {activeProject && !mini && (
         <div className="px-3 pt-3 pb-1">
           <Link
             to="/admin/projects"
@@ -126,7 +181,7 @@ export function Sidebar() {
               setMobileOpen(false)
               leaveNativeTabs()
             }}
-            title={`${activeProject.name} — project details`}
+            title={`${activeProject.name}, project details`}
             className={({ isActive }) =>
               `flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
                 isActive && !nativeTabOpen
@@ -146,7 +201,7 @@ export function Sidebar() {
       )}
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${mini ? 'px-2' : 'px-3'}`}>
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -155,11 +210,15 @@ export function Sidebar() {
               setMobileOpen(false)
               leaveNativeTabs()
             }}
+            // Collapsed, the label only exists as a tooltip.
+            title={mini ? item.label : undefined}
             className={({ isActive }) =>
-              // While WhatsApp is covering the page it is the selected tab, so
-              // the route's own tab must not stay lit as well — otherwise two
-              // tabs look active at once.
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+              // While a docked view is covering the page it is the selected
+              // tab, so the route's own tab must not stay lit as well —
+              // otherwise two tabs look active at once.
+              `flex items-center rounded-lg text-sm font-medium transition-all duration-150 ${
+                mini ? 'justify-center h-10' : 'gap-3 px-3 py-2.5'
+              } ${
                 isActive && !nativeTabOpen
                   ? 'bg-primary text-white'
                   : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
@@ -167,12 +226,12 @@ export function Sidebar() {
             }
           >
             {item.icon}
-            {item.label}
+            {!mini && item.label}
           </NavLink>
         ))}
 
         {/* Below the other tabs, since it is a tool rather than part of the
-            project's data. Desktop app only — a browser cannot embed it. */}
+            project's data. Desktop app only, a browser cannot embed it. */}
         {whatsappAvailable && (
           <button
             onClick={() => {
@@ -181,14 +240,17 @@ export function Sidebar() {
               // you click it again. You leave by picking another tab.
               setWhatsappTab(true)
             }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+            title={mini ? 'WhatsApp' : undefined}
+            className={`w-full flex items-center rounded-lg text-sm font-medium transition-all duration-150 ${
+              mini ? 'justify-center h-10' : 'gap-3 px-3 py-2.5'
+            } ${
               whatsappDocked
                 ? 'bg-[#25d366] text-white'
                 : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
             }`}
           >
             <MessageCircle size={18} />
-            WhatsApp
+            {!mini && 'WhatsApp'}
           </button>
         )}
 
@@ -198,33 +260,55 @@ export function Sidebar() {
               setMobileOpen(false)
               setClaudeTab(true)
             }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+            title={mini ? 'Claude' : undefined}
+            className={`w-full flex items-center rounded-lg text-sm font-medium transition-all duration-150 ${
+              mini ? 'justify-center h-10' : 'gap-3 px-3 py-2.5'
+            } ${
               claudeDocked
                 ? 'bg-[#d97757] text-white'
                 : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
             }`}
           >
             <Sparkles size={18} />
-            Claude
+            {!mini && 'Claude'}
           </button>
         )}
       </nav>
 
       {/* Language toggle + User section */}
-      <div className="border-t border-border px-3 py-3 space-y-2">
-        {/* Language toggle */}
+      <div className={`border-t border-border py-3 space-y-2 ${mini ? 'px-2' : 'px-3'}`}>
+        {/* Language toggle: collapsed, the flag alone carries it. */}
         <button
           onClick={toggle}
-          className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-surface-2 transition-colors"
+          className={`w-full flex items-center rounded-lg hover:bg-surface-2 transition-colors ${
+            mini ? 'justify-center h-9' : 'justify-between px-3 py-2'
+          }`}
           title={lang === 'en' ? 'Mudar para Português' : 'Switch to English'}
         >
-          <span className="text-text-muted text-xs font-medium">{lang === 'en' ? '🇧🇷 Português' : '🇬🇧 English'}</span>
-          <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded">
-            {t('lang_switchLabel')}
-          </span>
+          {mini ? (
+            <span className="text-base leading-none">{lang === 'en' ? '🇧🇷' : '🇬🇧'}</span>
+          ) : (
+            <>
+              <span className="text-text-muted text-xs font-medium">{lang === 'en' ? '🇧🇷 Português' : '🇬🇧 English'}</span>
+              <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded">
+                {t('lang_switchLabel')}
+              </span>
+            </>
+          )}
         </button>
 
-        {/* User */}
+        {/* User: collapsed, the avatar is the logout button's own tooltip. */}
+        {mini ? (
+          <button
+            onClick={handleLogout}
+            title={`${currentUser?.name}, log out`}
+            className="w-full flex justify-center py-1 rounded-lg hover:bg-surface-2 transition-colors group"
+          >
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center group-hover:bg-danger transition-colors">
+              <span className="text-white text-xs font-bold">{currentUser?.avatarInitials}</span>
+            </div>
+          </button>
+        ) : (
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg">
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
             <span className="text-white text-xs font-bold">{currentUser?.avatarInitials}</span>
@@ -241,6 +325,20 @@ export function Sidebar() {
             <LogOut size={15} />
           </button>
         </div>
+        )}
+
+        {/* Collapse to icons, for more room in the main area. Desktop only -
+            the mobile drawer slides away entirely and needs no rail. */}
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className={`hidden md:flex w-full items-center rounded-lg text-text-subtle hover:bg-surface-2 hover:text-text-main transition-colors ${
+            mini ? 'justify-center h-9' : 'gap-2 px-3 py-2'
+          }`}
+        >
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          {!mini && <span className="text-xs font-medium">Collapse</span>}
+        </button>
       </div>
     </div>
   )
@@ -264,8 +362,12 @@ export function Sidebar() {
       )}
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-60 bg-surface border-r border-border flex-shrink-0 h-screen sticky top-0">
-        {sidebarContent()}
+      <aside
+        className={`hidden md:flex flex-col bg-surface border-r border-border flex-shrink-0 h-screen sticky top-0 transition-[width] duration-200 ${
+          collapsed ? 'w-16' : 'w-60'
+        }`}
+      >
+        {sidebarContent(collapsed)}
       </aside>
 
       {/* Mobile sidebar */}

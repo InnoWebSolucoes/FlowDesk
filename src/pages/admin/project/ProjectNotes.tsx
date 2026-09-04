@@ -83,7 +83,7 @@ export function ProjectNotes() {
               ? 'Nothing archived.'
               : query
                 ? 'No notes match that search.'
-                : 'No notes yet — write the first one above.'}
+                : 'No notes yet, write the first one above.'}
           </p>
         </div>
       )}

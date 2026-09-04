@@ -319,7 +319,7 @@ export function ProjectCalendar() {
     view === 'day'
       ? format(cursor, 'EEEE d MMMM yyyy')
       : view === 'week'
-        ? `${format(startOfWeek(cursor, { weekStartsOn: 1 }), 'd MMM')} – ${format(endOfWeek(cursor, { weekStartsOn: 1 }), 'd MMM yyyy')}`
+        ? `${format(startOfWeek(cursor, { weekStartsOn: 1 }), 'd MMM')}, ${format(endOfWeek(cursor, { weekStartsOn: 1 }), 'd MMM yyyy')}`
         : format(cursor, 'MMMM yyyy')
 
   return (

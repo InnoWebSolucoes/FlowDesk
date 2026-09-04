@@ -306,7 +306,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
         </div>
       ) : (
         <p className="text-xs text-text-subtle italic">
-          No file attached — this is a link. You can attach one if you want the document here too.
+          No file attached, this is a link. You can attach one if you want the document here too.
         </p>
       )}
 
@@ -581,7 +581,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
         <button
           onClick={() => duplicateItem(item.id)}
           className="px-3 py-2 rounded-lg border border-border text-text-muted hover:text-primary hover:border-primary transition-colors"
-          title="Duplicate — a real copy, separate from this one"
+          title="Duplicate, a real copy, separate from this one"
         >
           <Copy size={15} />
         </button>

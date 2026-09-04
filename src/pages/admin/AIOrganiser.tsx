@@ -28,8 +28,8 @@ export function AIOrganiser() {
   const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
   function freqLabel(freq: any): string {
-    if (!freq) return '—'
-    if (freq.type === 'daily') return t('task_freqDaily') + ' (Mon–Fri)'
+    if (!freq) return '-'
+    if (freq.type === 'daily') return t('task_freqDaily') + ' (Mon-Fri)'
     if (freq.type === 'weekly') {
       const days = (freq.days ?? []).map((d: number) => DAY_NAMES_EN[d]).join(', ')
       return `${t('task_freqWeekly')}: ${days}`

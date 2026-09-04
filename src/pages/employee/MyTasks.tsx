@@ -397,7 +397,7 @@ export function MyTasks() {
                   <div className="flex items-center gap-3">
                     {isExpanded ? <ChevronDown size={15} className="text-text-subtle" /> : <ChevronRight size={15} className="text-text-subtle" />}
                     <span className="text-sm font-medium text-text-main">
-                      {t('mytasks_week')} {wn + 1} — {format(new Date(weekStart), 'd MMM', dateLocale)} – {format(new Date(weekEnd), 'd MMM', dateLocale)}
+                      {t('mytasks_week')} {wn + 1}, {format(new Date(weekStart), 'd MMM', dateLocale)}, {format(new Date(weekEnd), 'd MMM', dateLocale)}
                     </span>
                   </div>
                   <span className="text-xs text-text-muted">

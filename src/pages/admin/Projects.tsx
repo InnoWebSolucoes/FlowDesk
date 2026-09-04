@@ -65,7 +65,7 @@ export function Projects() {
         <EmptyState
           icon={Building2}
           title="No projects yet"
-          description="Each project is a company you manage — with its own about page, resources, employees and todo list."
+          description="Each project is a company you manage, with its own about page, resources, employees and todo list."
           action={addButton}
         />
       ) : (

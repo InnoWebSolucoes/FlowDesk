@@ -107,13 +107,13 @@ export function Analytics({ forEmployeeId }: Props) {
             <StatCard label={t('analytics_completionRate')} value={`${companyRate}%`} color={companyRate >= 80 ? 'green' : companyRate >= 60 ? 'amber' : 'red'} />
             <StatCard
               label={t('analytics_topPerformer')}
-              value={bestEmployee?.name?.split(' ')[0] ?? '—'}
+              value={bestEmployee?.name?.split(' ')[0] ?? '-'}
               subtitle={bestEmployee ? `${getEmployeeStats(bestEmployee.id, completionLogs, tasks).completionRate}%` : undefined}
               color="green"
             />
             <StatCard
               label={t('analytics_mostMissed')}
-              value={mostMissedTask ? mostMissedId ? `${taskMissMap[mostMissedId]}×` : '—' : '—'}
+              value={mostMissedTask ? mostMissedId ? `${taskMissMap[mostMissedId]}×` : '-' : '-'}
               subtitle={mostMissedTask?.title ?? 'None'}
               color={mostMissedTask ? 'amber' : 'default'}
             />

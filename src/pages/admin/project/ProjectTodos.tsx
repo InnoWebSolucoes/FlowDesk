@@ -247,7 +247,7 @@ export function ProjectTodos() {
                   key={link.id}
                   onClick={() => navigate(`/admin/projects/${project.id}/resources`)}
                   className="flex items-center gap-1 text-[11px] text-text-main bg-surface-2 border border-border hover:border-primary px-1.5 py-1 rounded-md transition-colors max-w-[130px]"
-                  title={`${info.label} — open in Resources`}
+                  title={`${info.label}, open in Resources`}
                 >
                   {info.isCluster ? <FolderOpen size={11} /> : <FileKindIcon mime={info.mime} size={11} />}
                   <span className="truncate">{info.label}</span>
@@ -265,12 +265,12 @@ export function ProjectTodos() {
             </button>
 
             {/* Do date: the day you plan to work on it. This is what the
-                calendar shows — the deadline below is just the limit. */}
+                calendar shows, the deadline below is just the limit. */}
             <label
               className={`flex items-center gap-1 text-[11px] px-1.5 py-1 rounded-md cursor-pointer ${
                 todo.doDate ? 'bg-primary-light text-primary' : 'bg-surface-2 text-text-muted'
               }`}
-              title={todo.doDate ? `Doing it on ${todo.doDate}` : 'Set a do date — when you will actually do it'}
+              title={todo.doDate ? `Doing it on ${todo.doDate}` : 'Set a do date, when you will actually do it'}
             >
               <CalendarClock size={11} />
               <input
@@ -382,7 +382,7 @@ export function ProjectTodos() {
                 className={`text-sm font-medium whitespace-nowrap transition-colors ${
                   isActive ? 'text-primary' : 'text-text-muted hover:text-text-main'
                 }`}
-                title={`${list.name} — right-click for more`}
+                title={`${list.name}, right-click for more`}
               >
                 {list.name}
               </button>
@@ -465,7 +465,7 @@ export function ProjectTodos() {
             rows={newTitle.includes('\n') ? Math.min(8, newTitle.split('\n').length + 1) : 1}
             placeholder={
               currentListId
-                ? 'Add todos — separate with commas, or Shift+Enter for a new line'
+                ? 'Add todos, separate with commas, or Shift+Enter for a new line'
                 : 'Create a list first'
             }
             disabled={!currentListId}
@@ -523,7 +523,7 @@ export function ProjectTodos() {
         <EmptyState
           icon={ListTodo}
           title="Nothing in this list yet"
-          description="These todos are for you and the other managers — employees never see them."
+          description="These todos are for you and the other managers, employees never see them."
         />
       ) : (
         <div className="space-y-2">
@@ -548,7 +548,7 @@ export function ProjectTodos() {
         </div>
       )}
 
-      {/* Resource link picker — clusters can be selected or opened into. */}
+      {/* Resource link picker, clusters can be selected or opened into. */}
       {linkingTodo && (
         <ResourceLinkPicker
           projectId={project.id}

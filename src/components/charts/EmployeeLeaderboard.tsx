@@ -106,7 +106,7 @@ export function EmployeeLeaderboard({ employees }: Props) {
                     {row.trend > 0 ? '↑' : '↓'} {Math.abs(row.trend)}%
                   </span>
                 )}
-                {row.trend === 0 && <span className="text-xs text-text-subtle">—</span>}
+                {row.trend === 0 && <span className="text-xs text-text-subtle">-</span>}
               </td>
             </tr>
           ))}

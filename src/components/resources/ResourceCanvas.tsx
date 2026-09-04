@@ -1708,7 +1708,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-4 py-2.5 rounded-lg bg-text-main text-surface shadow-xl">
           <Check size={14} />
           <span className="text-xs">
-            <b>{copied}</b> copied — paste it with Ctrl+V in WhatsApp, Claude, or anywhere else.
+            <b>{copied}</b> copied, paste it with Ctrl+V in WhatsApp, Claude, or anywhere else.
           </span>
         </div>
       )}
@@ -1868,7 +1868,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                   <button
                     onClick={act(bulkUntag)}
                     className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-                    title={`Removes them from ${where} only — they stay everywhere else`}
+                    title={`Removes them from ${where} only, they stay everywhere else`}
                   >
                     Remove
                   </button>

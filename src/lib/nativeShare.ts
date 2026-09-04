@@ -23,6 +23,7 @@ interface NativeBridge {
   onWhatsappState?: (cb: (s: { open: boolean; mode: string }) => void) => () => void
   claudeTab?: (open?: boolean) => Promise<{ ok: boolean; open?: boolean }>
   onClaudeState?: (cb: (s: { docked: boolean }) => void) => () => void
+  setSidebarWidth?: (width: number) => void
 }
 
 declare global {
@@ -152,6 +153,15 @@ export async function setClaudeTab(open?: boolean) {
 /** Subscribes to Claude's tab opening or closing, however it was triggered. */
 export function onClaudeState(cb: (s: { docked: boolean }) => void) {
   return window.flowdeskNative?.onClaudeState?.(cb) ?? (() => {})
+}
+
+/**
+ * Tells the shell how wide the sidebar is, so a docked Claude or WhatsApp view
+ * starts where the sidebar ends. Without this, collapsing the sidebar would
+ * leave a dead strip beside the docked view.
+ */
+export function setSidebarWidth(width: number) {
+  window.flowdeskNative?.setSidebarWidth?.(width)
 }
 
 /**

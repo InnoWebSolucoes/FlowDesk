@@ -146,7 +146,7 @@ export function TaskCommentPanel({ taskId, currentUserId, currentUserName }: Tas
                     <span className="text-xs text-text-main font-medium">{getAuthorName(log.actorId)}</span>
                     <span className="text-xs text-text-muted"> {activityLabel(log.action)}</span>
                     {log.detail && (
-                      <span className="text-xs text-text-subtle"> — {log.detail}</span>
+                      <span className="text-xs text-text-subtle">, {log.detail}</span>
                     )}
                     <p className="text-[10px] text-text-subtle">
                       {format(parseISO(log.timestamp), 'dd MMM HH:mm')}

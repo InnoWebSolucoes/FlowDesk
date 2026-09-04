@@ -40,13 +40,14 @@ const WA_TITLEBAR_H = 34
 const WA_EDGE = 6
 // The web app's own sidebar (w-60 = 15rem). Docked WhatsApp starts to its right
 // so the tabs stay reachable — including the one that closes it again.
-const SIDEBAR_W = 240
+let sidebarW = 240
 // A docked view never shrinks below this, so a narrow window keeps it usable.
 const MIN_DOCK_W = 380
 
 const DEFAULT_SETTINGS = {
   ratio: 0.6,
-  claudeCollapsed: false,
+  // Closed on a fresh install: FlowDesk should open showing FlowDesk.
+  claudeCollapsed: true,
   // True when Claude is the full-width sidebar tab rather than a side column.
   claudeDocked: false,
   windowBounds: null,
@@ -132,7 +133,7 @@ function layout() {
   if (settings.claudeDocked) {
     flowView.setBounds({ x: 0, y: 0, width: w, height: h })
     claudeView.setVisible(true)
-    const x = Math.min(SIDEBAR_W, Math.max(0, w - MIN_DOCK_W))
+    const x = Math.min(sidebarW, Math.max(0, w - MIN_DOCK_W))
     claudeView.setBounds({ x, y: 0, width: Math.max(0, w - x), height: h })
     if (overlayView) overlayView.setBounds({ x: 0, y: 0, width: w, height: h })
     layoutWhatsapp(w, h, w)
@@ -187,7 +188,7 @@ function layoutWhatsapp(w, h, leftW) {
     // Fill the FlowDesk pane but leave its sidebar visible, so the WhatsApp tab
     // can be clicked again to leave — and the other tabs still work.
     const paneW = typeof leftW === 'number' ? leftW : w
-    const x = Math.min(SIDEBAR_W, Math.max(0, paneW - WA_MIN_W))
+    const x = Math.min(sidebarW, Math.max(0, paneW - WA_MIN_W))
     whatsappView.setBounds({ x, y: 0, width: Math.max(0, paneW - x), height: h })
     return
   }
@@ -376,6 +377,14 @@ function focusedContents() {
   return flowView.webContents
 }
 
+let claudeLoaded = false
+
+function ensureClaudeLoaded() {
+  if (claudeLoaded || !claudeView) return
+  claudeLoaded = true
+  keepLoaded(claudeView, CLAUDE_URL, { retryMs: 8000, label: 'Claude' })
+}
+
 let whatsappLoaded = false
 
 function ensureWhatsappLoaded() {
@@ -457,7 +466,10 @@ function setClaudeDocked(docked) {
   settings.claudeDocked = docked
   // Docking implies Claude is showing; undocking must not leave the pane
   // collapsed, or leaving the tab would reveal nothing.
-  if (docked) settings.claudeCollapsed = false
+  if (docked) {
+    settings.claudeCollapsed = false
+    ensureClaudeLoaded()
+  }
   saveSettings()
 
   // Closing the WhatsApp tab is the shell's job too — two docked views would
@@ -488,6 +500,7 @@ function toggleClaude() {
     return
   }
   settings.claudeCollapsed = !settings.claudeCollapsed
+  if (!settings.claudeCollapsed) ensureClaudeLoaded()
   saveSettings()
   layout()
 
@@ -550,7 +563,12 @@ function buildMenu() {
         // reload() keeps the current page; loadURL() would jump back to the
         // app root, which reads as being logged out.
         { label: 'Reload FlowDesk', accelerator: 'CmdOrCtrl+R', click: () => flowView.webContents.reload() },
-        { label: 'Reload Claude', accelerator: 'CmdOrCtrl+Shift+R', click: () => claudeView.webContents.reload() },
+        {
+          label: 'Reload Claude',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          // Reloading a view that was never loaded leaves it blank, so load it.
+          click: () => (claudeLoaded ? claudeView.webContents.reload() : ensureClaudeLoaded()),
+        },
         { type: 'separator' },
         { label: 'Go to FlowDesk Home', click: () => flowView.webContents.loadURL(flowdeskUrl()) },
         { type: 'separator' },
@@ -585,7 +603,13 @@ function buildMenu() {
         { label: 'Full Width (tab)', click: () => setClaudeDocked(true) },
         { label: 'Side by Side', click: () => setClaudeDocked(false) },
         { type: 'separator' },
-        { label: 'Home (claude.ai)', click: () => claudeView.webContents.loadURL(CLAUDE_URL) },
+        {
+          label: 'Home (claude.ai)',
+          click: () => {
+            claudeLoaded = true
+            claudeView.webContents.loadURL(CLAUDE_URL)
+          },
+        },
       ],
     },
     {
@@ -632,6 +656,10 @@ function createWindow() {
     backgroundColor: '#18181b',
     title: 'FlowDesk',
     icon: APP_ICON,
+    // No menu strip across the top: it is Electron chrome that FlowDesk itself
+    // has no use for. The menu stays registered so its accelerators still work,
+    // and Alt reveals the bar when one of its items is genuinely needed.
+    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -703,16 +731,27 @@ function createWindow() {
     hint: 'Check your internet connection. The address can be changed from <b>App &rarr; Change FlowDesk Address&hellip;</b>',
     reportHttpErrors: true,
   })
-  keepLoaded(claudeView, CLAUDE_URL, { retryMs: 8000, label: 'Claude' })
-
-  // WhatsApp loads on first open rather than at startup: it is a heavy page,
-  // and someone who never opens the panel should not pay for it. Once loaded it
-  // stays loaded, so messages keep arriving while the panel is hidden.
+  // Claude and WhatsApp both load on first use rather than at startup. They are
+  // heavy pages, and FlowDesk should open showing FlowDesk — not two chat apps
+  // that have to be closed again. Once loaded they stay loaded.
+  if (!settings.claudeCollapsed || settings.claudeDocked) ensureClaudeLoaded()
   if (settings.whatsappOpen) ensureWhatsappLoaded()
 
   // The sidebar cannot know which tab the shell is showing until it is told,
   // so send the current state whenever the page (re)loads — a reload would
   // otherwise leave its tab unlit while the view is still docked.
+  // Navigating inside FlowDesk leaves whichever view is docked over it. The
+  // sidebar asks for this too, but the shell is the one that actually knows a
+  // navigation happened, so this catches every route change regardless of what
+  // the page's own handlers did.
+  flowView.webContents.on('did-navigate-in-page', (_e, _url, isMainFrame) => {
+    if (!isMainFrame) return
+    if (settings.claudeDocked) setClaudeDocked(false)
+    else if (settings.whatsappOpen && settings.whatsappMode === 'dock') {
+      toggleWhatsapp(false)
+    }
+  })
+
   flowView.webContents.on('did-finish-load', () => {
     flowView.webContents.send('claude:state', { docked: settings.claudeDocked })
     flowView.webContents.send('whatsapp:state', {
@@ -851,6 +890,17 @@ ipcMain.handle('native:whatsapp-tab', async (_event, { open } = {}) => {
   if (!win || win.isDestroyed()) return { ok: false, error: 'No window' }
   toggleWhatsapp(typeof open === 'boolean' ? open : undefined, 'dock')
   return { ok: true, open: settings.whatsappOpen, mode: settings.whatsappMode }
+})
+
+// The web app's sidebar can be collapsed to icons, so its width is not fixed.
+// Docked views start where it ends; without this they would overlap it or leave
+// a dead strip beside it.
+ipcMain.on('flowdesk:sidebar-width', (_e, width) => {
+  if (typeof width !== 'number' || !Number.isFinite(width)) return
+  const next = Math.max(0, Math.min(400, Math.round(width)))
+  if (next === sidebarW) return
+  sidebarW = next
+  layout()
 })
 
 /** Shows or hides Claude filling the pane, for its sidebar tab. */

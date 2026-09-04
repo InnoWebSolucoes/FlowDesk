@@ -274,7 +274,7 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
       {copied && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-4 py-2.5 rounded-lg bg-text-main text-surface shadow-xl">
           <span className="text-xs">
-            <b>{copied}</b> copied — paste it with Ctrl+V in WhatsApp, Claude, or anywhere else.
+            <b>{copied}</b> copied, paste it with Ctrl+V in WhatsApp, Claude, or anywhere else.
           </span>
         </div>
       )}
@@ -462,7 +462,7 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                   <span className="flex-1 text-sm text-text-main truncate">{f.title}</span>
                   <span className="w-16 flex-shrink-0 text-[11px] text-text-subtle">Folder</span>
                   <span className="w-20 flex-shrink-0 text-[11px] text-text-subtle">
-                    {n + sub > 0 ? `${n + sub} items` : '—'}
+                    {n + sub > 0 ? `${n + sub} items` : '-'}
                   </span>
                   <span className="w-24 flex-shrink-0 text-[11px] text-text-subtle">
                     {format(parseISO(f.createdAt), 'd MMM yyyy')}
@@ -511,7 +511,7 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                     {kindStyle(fileKind(i.mimeType, i.fileName)).label}
                   </span>
                   <span className="w-20 flex-shrink-0 text-[11px] text-text-subtle">
-                    {formatFileSize(i.size) || '—'}
+                    {formatFileSize(i.size) || '-'}
                   </span>
                   <span className="w-24 flex-shrink-0 text-[11px] text-text-subtle">
                     {format(parseISO(i.updatedAt), 'd MMM yyyy')}

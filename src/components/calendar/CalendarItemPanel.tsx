@@ -13,8 +13,8 @@ import { KIND_STYLE } from './calendarShared'
 
 const VISIBILITY: { value: Visibility | ''; label: string; Icon: typeof Lock }[] = [
   { value: '', label: 'Default for my role', Icon: UsersIcon },
-  { value: 'private', label: 'Private — only me', Icon: Lock },
-  { value: 'team', label: 'Team — everyone on this project', Icon: UsersIcon },
+  { value: 'private', label: 'Private, only me', Icon: Lock },
+  { value: 'team', label: 'Team, everyone on this project', Icon: UsersIcon },
   { value: 'everyone', label: 'Everyone in the company', Icon: Globe },
 ]
 
@@ -223,7 +223,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Do date — when you'll work on it">
+        <Field label="Do date, when you'll work on it">
           <input
             type="date"
             value={todo.doDate ?? ''}
@@ -264,7 +264,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
 
       {todo.dueDate && todo.doDate && todo.doDate > todo.dueDate && (
         <p className="text-[11px] text-danger">
-          The do date is after the deadline — you would finish it late.
+          The do date is after the deadline, you would finish it late.
         </p>
       )}
 

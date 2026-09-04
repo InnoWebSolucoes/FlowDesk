@@ -55,4 +55,7 @@ contextBridge.exposeInMainWorld('flowdeskNative', {
     ipcRenderer.on('claude:state', fn)
     return () => ipcRenderer.removeListener('claude:state', fn)
   },
+
+  /** Reports the sidebar's width, so docked views start where it ends. */
+  setSidebarWidth: (width) => ipcRenderer.send('flowdesk:sidebar-width', width),
 })
