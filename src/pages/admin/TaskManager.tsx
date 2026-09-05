@@ -22,6 +22,10 @@ const defaultTask = (): Omit<Task, 'id' | 'createdAt' | 'createdBy' | 'projectId
   categoryId: '',
   priority: 'medium',
   estimatedMinutes: 30,
+  // Optional: a recurring task often has no single date it must be done by,
+  // and a manager may want the employee to choose. Empty is a real value.
+  deadline: null,
+  schedules: [],
   isActive: true,
 })
 
@@ -288,9 +292,9 @@ function TaskForm({
 
         {form.frequency.type === 'one-off' && (
           <div className="mt-2">
-            <label className={lbl}>{t('task_dueDate')}</label>
+            <label className={lbl}>{t('task_onDate')}</label>
             {/* New tasks cannot be dated into the past, but an existing one
-                whose deadline has already passed must still be editable —
+                whose date has already passed must still be editable —
                 clamping it to today would silently reject its own value. */}
             <input type="date" className={inp} value={form.frequency.date ?? ''}
               onChange={e => setFreq('date', e.target.value)}
@@ -298,6 +302,20 @@ function TaskForm({
             {err('date')}
           </div>
         )}
+      </div>
+
+      {/* The deadline is separate from the recurrence: when it must be
+          finished by, regardless of which days it appears on. Optional — left
+          empty, the employee decides, and it simply has no deadline. */}
+      <div>
+        <label className={lbl}>{t('task_deadline')}</label>
+        <input
+          type="date"
+          className={inp}
+          value={form.deadline ?? ''}
+          onChange={e => set('deadline', e.target.value || null)}
+        />
+        <p className="text-text-subtle text-[11px] mt-1">{t('task_deadlineHint')}</p>
       </div>
 
       <div className="flex gap-2 pt-1">
@@ -414,7 +432,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
   }
 
   const handleDelete = async (id: string) => {
-    if (confirm(t('task_deleteConfirm'))) await deleteTask(id)
+    await deleteTask(id)
   }
 
   const freqLabel = (task: Task) => {

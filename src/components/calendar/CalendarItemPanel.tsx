@@ -165,7 +165,6 @@ export function CalendarItemPanel({
             <button
               onClick={() => {
                 const label = todo?.title ?? entry?.title
-                if (!confirm(`Delete "${label}"? This cannot be undone.`)) return
                 if (todo) deleteTodo(todo.id)
                 else deleteCalendarEntry(entry!.id)
                 onClose()

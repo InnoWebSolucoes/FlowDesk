@@ -4,7 +4,10 @@ import { ChevronDown, ChevronRight, PartyPopper, Search } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskCard } from '../../components/shared/TaskCard'
-import { getTasksDueOnDate, getTasksDueThisWeek } from '../../utils/taskScheduler'
+import {
+  getTasksDueOnDate, getTasksDueThrough,
+  getTasksDueThisWeekCumulative, getTasksDueThisMonthCumulative,
+} from '../../utils/taskScheduler'
 import { Task } from '../../types'
 import { useT } from '../../i18n/useT'
 
@@ -57,6 +60,31 @@ function TimeBlock({
   )
 }
 
+/**
+ * What is owed by the end of the period, above the day-by-day breakdown. The
+ * breakdown is laid out per weekday, so without this a task whose deadline
+ * falls on a weekend — or which is already overdue — would not be counted
+ * anywhere, and the tab would understate the work.
+ */
+function OwedSummary({ label, total, done }: { label: string; total: number; done: number }) {
+  if (total === 0) return null
+  const pct = Math.round((done / total) * 100)
+  return (
+    <div className="bg-surface border border-border rounded-xl p-4">
+      <div className="flex justify-between text-sm mb-2">
+        <span className="text-text-main font-medium">{label}</span>
+        <span className="text-text-muted">{done} / {total}</span>
+      </div>
+      <div className="w-full bg-surface-2 rounded-full h-2">
+        <div
+          className="bg-primary rounded-full h-2 transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function MyTasks() {
   const { currentUser } = useAuthStore()
   const { tasks, categories, completionLogs, completeTask, uncompleteTask, isTaskCompleted } = useTaskStore()
@@ -74,7 +102,10 @@ export function MyTasks() {
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
 
-  const todayTasksRaw = getTasksDueOnDate(tasks, empId, today)
+  // Everything owed by the end of today, overdue work included — not just
+  // what today's recurrence happens to produce. A task due yesterday is still
+  // owed, and leaving it off is how work quietly disappears.
+  const todayTasksRaw = getTasksDueThrough(tasks, empId, today)
   const completedToday = completionLogs.filter(l => l.employeeId === empId && l.dueDate === todayStr)
   const completedIds = new Set(completedToday.map(l => l.taskId))
 
@@ -113,7 +144,12 @@ export function MyTasks() {
   })
 
   const monday = startOfWeek(today, { weekStartsOn: 1 })
-  const weekTaskMap = getTasksDueThisWeek(tasks, empId, today)
+  const weekTaskMap = Object.fromEntries(
+    Array.from({ length: 5 }, (_, i) => {
+      const d = addDays(startOfWeek(today, { weekStartsOn: 1 }), i)
+      return [format(d, 'yyyy-MM-dd'), getTasksDueOnDate(tasks, empId, d)]
+    })
+  ) as Record<string, Task[]>
   const weekDays = Array.from({ length: 5 }, (_, i) => {
     const d = addDays(monday, i)
     return { date: d, dateStr: format(d, 'yyyy-MM-dd') }
@@ -127,7 +163,17 @@ export function MyTasks() {
     })
   }
 
-  const monthStart = startOfMonth(today)
+  // Everything owed by the end of each period, which is what the tab claims to
+  // show. The day-by-day breakdown below is how it is laid out; this is the
+  // real total, so nothing that is owed can be missed by it falling outside a
+  // weekday cell.
+  const weekOwed = getTasksDueThisWeekCumulative(tasks, empId, today)
+  const monthOwed = getTasksDueThisMonthCumulative(tasks, empId, today)
+  const owedDone = (list: Task[]) =>
+    list.filter((task) =>
+      completionLogs.some((l) => l.employeeId === empId && l.taskId === task.id)
+    ).length
+
   const daysInMonth = getDaysInMonth(today)
 
   const monthByWeek: { weekNum: number; days: { date: Date; dateStr: string }[] }[] = []
@@ -317,6 +363,11 @@ export function MyTasks() {
 
       {tab === 'week' && (
         <div className="space-y-3">
+          <OwedSummary
+            label={t('mytasks_owedThisWeek')}
+            total={weekOwed.length}
+            done={owedDone(weekOwed)}
+          />
           {weekDays.map(({ date, dateStr }) => {
             const dayTasks = weekTaskMap[dateStr] ?? []
             const done = completionLogs.filter(l => l.employeeId === empId && l.dueDate === dateStr).length
@@ -377,6 +428,11 @@ export function MyTasks() {
 
       {tab === 'month' && (
         <div className="space-y-3">
+          <OwedSummary
+            label={t('mytasks_owedThisMonth')}
+            total={monthOwed.length}
+            done={owedDone(monthOwed)}
+          />
           {monthByWeek.map(({ weekNum: wn, days }) => {
             const weekStart = days[0].dateStr
             const weekEnd = days[days.length - 1].dateStr

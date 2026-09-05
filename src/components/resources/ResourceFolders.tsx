@@ -269,7 +269,6 @@ export function ResourceFolders({
   }
 
   const bulkDelete = async () => {
-    if (!confirm(`Delete ${selectedItems.length} document(s) everywhere? This cannot be undone.`)) return
     for (const i of selectedItems) await deleteItem(i.id)
     clearSelection()
   }

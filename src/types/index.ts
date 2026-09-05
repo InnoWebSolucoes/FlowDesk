@@ -251,12 +251,29 @@ export interface Category {
   color: string
 }
 
+/** When one person plans to do a task they were assigned. */
+export interface TaskSchedule {
+  employeeId: string
+  /** The day they intend to do it. This is what their calendar shows. */
+  doDate: string | null
+  /** Optional window on that day; null start means all-day. */
+  doStart: string | null
+  doEnd: string | null
+}
+
 export interface Task {
   id: string
   projectId: string
   title: string
   description: string
   assignedTo: string[] // employee IDs
+  /**
+   * The date it must be finished by, set by whoever assigned it. Optional —
+   * a recurring task often has no single deadline.
+   */
+  deadline: string | null
+  /** Per-assignee planning. One row per person the task is assigned to. */
+  schedules: TaskSchedule[]
   frequency: TaskFrequency
   categoryId: string
   priority: Priority

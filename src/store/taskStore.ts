@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
-import { Task, CompletionLog, Category, TaskComment, TaskAttachment, ActivityLog } from '../types'
+import { TaskSchedule, Task, CompletionLog, Category, TaskComment, TaskAttachment, ActivityLog } from '../types'
 import { getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOfDay } from '../utils/taskScheduler'
 import { format } from 'date-fns'
 
@@ -19,8 +19,21 @@ interface TaskState {
   activityLogs: ActivityLog[]
 
   initialize: () => Promise<void>
+  /** Re-read everything. Used by the live subscription below. */
+  refresh: () => Promise<void>
+  /** Stop listening for live task changes. */
+  teardown: () => void
 
-  addTask: (task: Omit<Task, 'id' | 'createdAt'>) => Promise<void>
+  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'schedules'> & { schedules?: TaskSchedule[] }) => Promise<void>
+  /**
+   * When one person plans to do a task. Stored on their assignment, so two
+   * people assigned the same task can schedule it independently.
+   */
+  setTaskDoDate: (
+    taskId: string,
+    employeeId: string,
+    schedule: { doDate: string | null; doStart?: string | null; doEnd?: string | null },
+  ) => Promise<void>
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>
   deleteTask: (id: string) => Promise<void>
 
@@ -56,6 +69,13 @@ function toTask(row: any): Task {
     title: row.title,
     description: row.description,
     assignedTo: (row.task_assignments ?? []).map((a: any) => a.employee_id),
+    deadline: row.deadline ?? null,
+    schedules: (row.task_assignments ?? []).map((a: any) => ({
+      employeeId: a.employee_id,
+      doDate: a.do_date ?? null,
+      doStart: a.do_start ?? null,
+      doEnd: a.do_end ?? null,
+    })),
     frequency: row.frequency,
     categoryId: row.category_id,
     priority: row.priority,
@@ -117,6 +137,12 @@ function applyTasks(scopedProjectId: string | null, all: Task[]) {
   }
 }
 
+/**
+ * Live subscription. Kept outside the store because it is a connection, not
+ * state, and must survive re-renders.
+ */
+let channel: ReturnType<typeof supabase.channel> | null = null
+
 export const useTaskStore = create<TaskState>()((set, get) => ({
   tasks: [],
   allTasks: [],
@@ -136,10 +162,38 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   activityLogs: [],
 
   initialize: async () => {
+    await get().refresh()
+
+    // Without this, an employee had to reload to see a task an admin had just
+    // assigned them: every one of these tables is written by someone else's
+    // client, so a fetch on mount was never going to show it.
+    if (channel) return
+    const refetch = () => { get().refresh() }
+    channel = supabase
+      .channel('tasks-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, refetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_assignments' }, refetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'completion_logs' }, refetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_statuses' }, refetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, refetch)
+      .subscribe()
+  },
+
+  teardown: () => {
+    if (!channel) return
+    supabase.removeChannel(channel)
+    channel = null
+  },
+
+  refresh: async () => {
     set({ loading: true })
 
     const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes] = await Promise.all([
-      supabase.from('tasks').select('*, task_assignments(employee_id)'),
+      // The scheduling columns come from the assignment, since two people can
+      // plan the same task for different days.
+      supabase
+        .from('tasks')
+        .select('*, task_assignments(employee_id, do_date, do_start, do_end)'),
       supabase.from('categories').select('*'),
       supabase.from('completion_logs').select('*'),
       supabase.from('task_statuses').select('*'),
@@ -175,6 +229,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
         priority: task.priority,
         associated_tool: task.associatedTool ?? null,
         estimated_minutes: task.estimatedMinutes,
+        deadline: task.deadline || null,
         created_by: task.createdBy,
         is_active: task.isActive,
       })
@@ -217,6 +272,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     if (updates.priority !== undefined) patch.priority = updates.priority
     if (updates.associatedTool !== undefined) patch.associated_tool = updates.associatedTool
     if (updates.estimatedMinutes !== undefined) patch.estimated_minutes = updates.estimatedMinutes
+    if (updates.deadline !== undefined) patch.deadline = updates.deadline || null
     if (updates.isActive !== undefined) patch.is_active = updates.isActive
 
     if (Object.keys(patch).length > 0) {
@@ -242,6 +298,40 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   deleteTask: async (id) => {
     await supabase.from('tasks').delete().eq('id', id)
     set((s) => applyTasks(s.scopedProjectId, s.allTasks.filter((t) => t.id !== id)))
+  },
+
+  setTaskDoDate: async (taskId, employeeId, schedule) => {
+    const patch = {
+      do_date: schedule.doDate || null,
+      do_start: schedule.doStart ?? null,
+      do_end: schedule.doEnd ?? null,
+    }
+    const { error } = await supabase
+      .from('task_assignments')
+      .update(patch)
+      .eq('task_id', taskId)
+      .eq('employee_id', employeeId)
+
+    if (error) {
+      console.error('[setTaskDoDate] failed:', error)
+      throw new Error(error.message)
+    }
+
+    set((s) => applyTasks(s.scopedProjectId, s.allTasks.map((t) => {
+      if (t.id !== taskId) return t
+      const schedules = t.schedules.some((x) => x.employeeId === employeeId)
+        ? t.schedules.map((x) =>
+            x.employeeId === employeeId
+              ? { ...x, doDate: schedule.doDate, doStart: schedule.doStart ?? null, doEnd: schedule.doEnd ?? null }
+              : x)
+        : [...t.schedules, {
+            employeeId,
+            doDate: schedule.doDate,
+            doStart: schedule.doStart ?? null,
+            doEnd: schedule.doEnd ?? null,
+          }]
+      return { ...t, schedules }
+    })))
   },
 
   completeTask: async (taskId, employeeId, dueDate) => {

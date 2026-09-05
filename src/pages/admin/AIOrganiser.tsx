@@ -130,6 +130,8 @@ export function AIOrganiser() {
         categoryId: catId,
         priority: gt.priority,
         estimatedMinutes: Number(gt.estimatedMinutes) || 0,
+        deadline: null,
+        schedules: [],
         createdBy: currentUser.id,
         isActive: true,
       }

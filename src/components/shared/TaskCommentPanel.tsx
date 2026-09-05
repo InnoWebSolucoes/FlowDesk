@@ -107,9 +107,7 @@ export function TaskCommentPanel({ taskId, currentUserId, currentUserName }: Tas
   }
 
   const handleDelete = async (commentId: string) => {
-    if (window.confirm(t('comment_deleteConfirm'))) {
-      await deleteComment(commentId)
-    }
+    await deleteComment(commentId)
   }
 
   const activityLabel = (action: string) => {

@@ -200,9 +200,6 @@ export function TodoBoard({
   }
 
   const handleDeleteList = async (listId: string, name: string) => {
-    const count = todos.filter((t) => t.listId === listId).length
-    const detail = count > 0 ? ` and its ${count} todo(s)` : ''
-    if (!confirm(`Delete the list "${name}"${detail}? This cannot be undone.`)) return
     await deleteTodoList(listId)
   }
 

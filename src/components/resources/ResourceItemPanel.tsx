@@ -189,7 +189,6 @@ export function ResourceItemPanel({
   }
 
   const handleDelete = async () => {
-    if (!confirm(`Delete "${item.title}"? This cannot be undone.`)) return
     await deleteItem(item.id)
     onClose()
   }
@@ -436,9 +435,7 @@ export function ResourceItemPanel({
                     }}
                     onRestore={() => makeVersionCurrent(item.id, v.id)}
                     onDelete={() => {
-                      if (confirm(`Delete version "${v.fileName}"? This cannot be undone.`)) {
-                        deleteItemVersion(item.id, v.id)
-                      }
+                      deleteItemVersion(item.id, v.id)
                     }}
                   />
                 </div>

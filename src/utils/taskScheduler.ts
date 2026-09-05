@@ -1,5 +1,8 @@
 import { Task } from '../types'
-import { format, startOfWeek, addDays, getDay, parseISO } from 'date-fns'
+import {
+  format, startOfWeek, endOfWeek, addDays, getDay, parseISO,
+  startOfMonth, endOfMonth, isWithinInterval, startOfDay, isBefore,
+} from 'date-fns'
 
 /**
  * Returns which week of the month a date falls in (1-4).
@@ -101,6 +104,66 @@ export function getTasksDueThisMonth(
   }
 
   return result
+}
+
+/**
+ * Everything this employee must finish on or before `through`.
+ *
+ * This is what the My Tasks tabs ask for, and it is deliberately cumulative:
+ * "this week" means everything due by the end of the week, today's work
+ * included, not just Monday-to-Friday's recurrences. Anything already overdue
+ * is included too — a task that was due yesterday is still owed today, and
+ * dropping it off the list is how work goes missing.
+ *
+ * A task counts when either date lands in range:
+ *   - its deadline, the day it must be finished by; or
+ *   - a day its recurrence puts it on.
+ */
+export function getTasksDueThrough(
+  tasks: Task[],
+  employeeId: string,
+  through: Date,
+  options: { from?: Date } = {},
+): Task[] {
+  const end = startOfDay(through)
+  // Overdue work carries forward unless a start is given explicitly.
+  const from = options.from ? startOfDay(options.from) : null
+
+  const inRange = (d: Date) => {
+    const day = startOfDay(d)
+    if (day > end) return false
+    return from ? day >= from : true
+  }
+
+  return tasks.filter((task) => {
+    if (!task.isActive) return false
+    if (!task.assignedTo.includes(employeeId)) return false
+
+    // A deadline is the strongest signal: it is the date it is owed by.
+    if (task.deadline) {
+      const dl = parseISO(task.deadline)
+      if (inRange(dl)) return true
+    }
+
+    // Otherwise, does its recurrence put it on any day in the window? Walk the
+    // days rather than reasoning about the rule, which keeps this correct for
+    // every frequency type without duplicating the matching logic.
+    const walkFrom = from ?? startOfDay(addDays(end, -60))
+    for (let d = walkFrom; d <= end; d = addDays(d, 1)) {
+      if (isTaskDueOnDate(task, employeeId, d)) return true
+    }
+    return false
+  })
+}
+
+/** Everything owed by the end of the week containing `date`. */
+export function getTasksDueThisWeekCumulative(tasks: Task[], employeeId: string, date: Date): Task[] {
+  return getTasksDueThrough(tasks, employeeId, endOfWeek(date, { weekStartsOn: 1 }))
+}
+
+/** Everything owed by the end of the month containing `date`. */
+export function getTasksDueThisMonthCumulative(tasks: Task[], employeeId: string, date: Date): Task[] {
+  return getTasksDueThrough(tasks, employeeId, endOfMonth(date))
 }
 
 /**

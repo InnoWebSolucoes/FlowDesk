@@ -929,7 +929,6 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   const bulkDelete = async () => {
     const ids = selectionIds()
     if (ids.length === 0) return
-    if (!confirm(`Delete ${ids.length} document(s) from everywhere? This cannot be undone.`)) return
     for (const id of ids) await deleteItem(id)
     setMultiSelected(new Set())
   }
@@ -1935,7 +1934,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               <div className="h-px bg-border my-1" />
               <button
                 onClick={act(() => {
-                  if (confirm(`Delete "${target.title}" everywhere? This cannot be undone.`)) deleteItem(target.id)
+                  deleteItem(target.id)
                 })}
                 className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
               >

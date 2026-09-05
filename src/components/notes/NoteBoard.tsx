@@ -405,7 +405,7 @@ function NoteCard({ note, readOnly }: { note: ProjectNote; readOnly?: boolean })
           title="Delete"
           danger
           onClick={() => {
-            if (confirm('Delete this note? This cannot be undone.')) deleteNote(note.id)
+            deleteNote(note.id)
           }}
         >
           <Trash2 size={14} />
