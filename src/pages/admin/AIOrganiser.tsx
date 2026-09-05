@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Sparkles, Loader2, Download, AlertCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { Sparkles, Loader2, Download, AlertCircle, Clock, ChevronDown, ChevronUp, Wand2 } from 'lucide-react'
 import { generateTasks } from '../../lib/anthropic'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
@@ -47,6 +47,8 @@ export function AIOrganiser() {
   const [generated, setGenerated] = useState<GeneratedTask[]>([])
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [imported, setImported] = useState(false)
+  const [refinement, setRefinement] = useState('')
+  const [refining, setRefining] = useState(false)
 
   const toggleEmployee = (id: string) => {
     setSelectedEmployees(prev =>
@@ -78,6 +80,27 @@ export function AIOrganiser() {
         : `${t('ai_errorGeneration')} ${e.message ?? 'Unknown error'}`)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Sends the batch back with the manager's corrections applied. The tasks
+  // aren't in the database yet, so revising is just replacing local state.
+  const handleRefine = async () => {
+    if (!refinement.trim()) { setError(t('ai_errorRefineEmpty')); return }
+    setError('')
+    setRefining(true)
+    try {
+      const result = await generateTasks(refinement, generated)
+      if (!Array.isArray(result)) throw new Error('Invalid response format')
+      // Category choices the manager already made are per-index and don't
+      // survive a reshuffle, so let them resolve again from categoryName.
+      setGenerated(result.map(({ _categoryId, ...task }: GeneratedTask) => task))
+      setExpanded(new Set())
+      setRefinement('')
+    } catch (e: any) {
+      setError(`${t('ai_errorGeneration')} ${e.message ?? 'Unknown error'}`)
+    } finally {
+      setRefining(false)
     }
   }
 
@@ -188,6 +211,37 @@ export function AIOrganiser() {
             )}
           </button>
         </div>
+
+        {/* Refinement: only useful once there's a batch to revise. */}
+        {generated.length > 0 && (
+          <div className="bg-surface rounded-xl border border-border p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Wand2 size={16} className="text-primary" />
+              <h3 className="text-text-main font-semibold text-sm">{t('ai_refineTitle')}</h3>
+            </div>
+            <p className="text-text-muted text-xs mb-3">{t('ai_refineHint')}</p>
+
+            <textarea
+              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm text-text-main bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-none"
+              rows={4}
+              value={refinement}
+              onChange={e => setRefinement(e.target.value)}
+              placeholder={t('ai_refinePlaceholder')}
+            />
+
+            <button
+              onClick={handleRefine}
+              disabled={refining || loading}
+              className="mt-3 w-full flex items-center justify-center gap-2 bg-surface text-text-main font-medium py-2.5 rounded-lg border border-border hover:border-primary/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed text-sm"
+            >
+              {refining ? (
+                <><Loader2 size={16} className="animate-spin" /> {t('ai_refining')}</>
+              ) : (
+                <><Wand2 size={16} /> {t('ai_refineBtn')}</>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Right panel */}
