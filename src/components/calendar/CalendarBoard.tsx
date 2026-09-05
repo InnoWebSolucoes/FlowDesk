@@ -32,9 +32,9 @@ function menuPos(x: number, y: number, rows: number, width = 192) {
 // Dragging moves an item from one day to another; there is nothing finer to
 // drag to now that the calendar is day-based.
 type DragState =
-  | { kind: 'todo'; id: string }
-  | { kind: 'entry'; id: string }
-  | { kind: 'unscheduled'; id: string }
+  | { kind: 'todo'; id: string; label: string }
+  | { kind: 'entry'; id: string; label: string }
+  | { kind: 'unscheduled'; id: string; label: string }
 
 interface Block {
   key: string
@@ -92,6 +92,12 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   const [openEntry, setOpenEntry] = useState<string | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const [hoverSlot, setHoverSlot] = useState<string | null>(null)
+  // Where the pointer is, so the dragged item can follow it. Null until the
+  // first move, which keeps the preview from flashing at the origin.
+  const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null)
+  // Set while the pointer is over the unscheduled panel, which drops a todo
+  // off the calendar rather than moving it.
+  const [overUnscheduled, setOverUnscheduled] = useState(false)
   // Set when a drag ends, so the click event that follows the pointerup does
   // not also fire "create an entry here".
   const justDragged = useRef(false)
@@ -223,18 +229,39 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     return el?.dataset.day ?? null
   }, [])
 
+  /** Whether a screen point is over the unscheduled panel. */
+  const overDropOut = useCallback((clientX: number, clientY: number) => {
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+    return !!el?.closest('[data-unscheduled]')
+  }, [])
+
   useEffect(() => {
     if (!drag) return
 
-    const onMove = (e: PointerEvent) => setHoverSlot(slotAt(e.clientX, e.clientY))
+    const onMove = (e: PointerEvent) => {
+      setDragPoint({ x: e.clientX, y: e.clientY })
+      setHoverSlot(slotAt(e.clientX, e.clientY))
+      setOverUnscheduled(drag.kind !== 'entry' && overDropOut(e.clientX, e.clientY))
+    }
 
     const onUp = async (e: PointerEvent) => {
       const day = slotAt(e.clientX, e.clientY)
+      const droppedOut = drag.kind !== 'entry' && overDropOut(e.clientX, e.clientY)
       setDrag(null)
       setHoverSlot(null)
+      setDragPoint(null)
+      setOverUnscheduled(false)
       justDragged.current = true
       // Cleared after the click that this pointerup generates has passed.
       setTimeout(() => { justDragged.current = false }, 0)
+
+      // Dropping a scheduled todo back on the list clears its do date, which
+      // is how something comes off the calendar without being deleted.
+      if (droppedOut) {
+        if (drag.kind === 'todo') await updateTodo(drag.id, { doDate: null })
+        return
+      }
+
       if (!day) return
 
       if (drag.kind === 'unscheduled' || drag.kind === 'todo') {
@@ -267,7 +294,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [drag, slotAt, updateTodo, updateCalendarEntry, calendarEntries])
+  }, [drag, slotAt, overDropOut, updateTodo, updateCalendarEntry, calendarEntries])
 
   /** Click on empty space in a day → a new entry on that day. */
   const createAt = async (day: string) => {
@@ -441,8 +468,8 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               justDragged={justDragged}
               onToggleDone={toggleTodo}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
-              onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id })}
-              onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id })}
+              onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
+              onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
             />
           ) : (
             <DayGrid
@@ -457,8 +484,8 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               justDragged={justDragged}
               onToggleDone={toggleTodo}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
-              onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id })}
-              onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id })}
+              onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
+              onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
             />
           )}
         </div>
@@ -467,10 +494,29 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           todos={todos}
           lists={todoLists}
           dragging={drag?.kind === 'unscheduled' ? drag.id : null}
-          onDragStart={(id) => setDrag({ kind: 'unscheduled', id })}
+          dropActive={overUnscheduled}
+          onDragStart={(id, label) => setDrag({ kind: 'unscheduled', id, label })}
           onOpen={setOpenTodo}
         />
       </div>
+
+      {/* The item follows the cursor, so it is obvious what is being moved and
+          where it would land. Pointer events pass through it, or it would sit
+          under the cursor and hide the day being hovered. */}
+      {drag && dragPoint && (
+        <div
+          className="fixed z-50 pointer-events-none px-2 py-1 rounded-md text-xs font-medium shadow-lg border max-w-[220px] truncate"
+          style={{
+            left: dragPoint.x + 12,
+            top: dragPoint.y + 12,
+            background: overUnscheduled ? 'var(--color-surface, #fff)' : '#1A5C3A',
+            color: overUnscheduled ? '#dc2626' : '#fff',
+            borderColor: overUnscheduled ? '#dc2626' : 'transparent',
+          }}
+        >
+          {overUnscheduled ? `Unschedule: ${drag.label}` : drag.label}
+        </div>
+      )}
 
       {/* Right-click on a calendar item. "Remove" only exists for a todo,
           which lives in the todo list independently of the calendar; a
@@ -838,13 +884,16 @@ function Unscheduled({
   todos,
   lists,
   dragging,
+  dropActive,
   onDragStart,
   onOpen,
 }: {
   todos: ProjectTodo[]
   lists: { id: string; name: string }[]
   dragging: string | null
-  onDragStart: (id: string) => void
+  /** True while a scheduled todo is being dragged over this panel. */
+  dropActive?: boolean
+  onDragStart: (id: string, label: string) => void
   onOpen: (id: string) => void
 }) {
   // Only the main list, as asked — otherwise every list's backlog piles in here.
@@ -854,14 +903,24 @@ function Unscheduled({
   )
 
   return (
-    <aside className="w-60 flex-shrink-0 rounded-xl border border-border bg-surface p-3 hidden lg:block">
+    <aside
+      data-unscheduled
+      className={`w-60 flex-shrink-0 rounded-xl border bg-surface p-3 hidden lg:block transition-colors ${
+        dropActive ? 'border-primary ring-2 ring-primary/30' : 'border-border'
+      }`}
+    >
       <h3 className="text-text-main font-medium text-sm flex items-center gap-1.5">
         <CalendarClock size={14} className="text-text-muted" />
         Not scheduled
       </h3>
       <p className="text-text-subtle text-[11px] mt-0.5 mb-3">
-        {lists[0] ? `From "${lists[0].name}".` : ''} Drag onto a day to set its do date.
+        {lists[0] ? `From "${lists[0].name}".` : ''} Drag onto a day to set its do
+        date, or back here to unschedule it.
       </p>
+
+      {dropActive && (
+        <p className="text-[11px] text-primary font-medium mb-2">Drop to unschedule</p>
+      )}
 
       {pending.length === 0 ? (
         <p className="text-xs text-text-subtle italic">Everything has a do date.</p>
@@ -872,7 +931,7 @@ function Unscheduled({
               key={t.id}
               onPointerDown={(e) => {
                 if (e.button !== 0) return
-                onDragStart(t.id)
+                onDragStart(t.id, t.title)
               }}
               onClick={() => onOpen(t.id)}
               className={`group flex items-start gap-1.5 p-2 rounded-lg border text-left cursor-grab active:cursor-grabbing transition-colors ${

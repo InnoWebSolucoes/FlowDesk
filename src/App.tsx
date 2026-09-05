@@ -172,11 +172,12 @@ export default function App() {
                 <Route path="tasks" element={<TaskManager />} />
                 <Route path="ai-organiser" element={<AIOrganiser />} />
                 <Route path="analytics" element={<Analytics />} />
+
+                {/* A profile is opened from the team tab and stays inside it,
+                    so the project and team tabs do not vanish underneath. */}
+                <Route path="team/:id" element={<EmployeeProfile />} />
               </Route>
             </Route>
-
-            {/* Employee profiles are reached from a project but render full-width. */}
-            <Route path="employees/:id" element={<EmployeeProfile />} />
           </Route>
 
           {/* Employee routes */}

@@ -160,7 +160,7 @@ export function Employees() {
                 </div>
 
                 <Link
-                  to={`/admin/employees/${emp.id}`}
+                  to={emp.projectId ? `/admin/projects/${emp.projectId}/employees/team/${emp.id}` : "/admin/projects"}
                   className="w-full text-center text-sm font-medium text-primary border border-primary/30 rounded-lg py-2 hover:bg-primary-light transition-colors"
                 >
                   {t('employees_viewProfile')}
