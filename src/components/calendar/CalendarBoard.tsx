@@ -74,6 +74,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     toggleTodo, deleteTodo,
     calendarEntries, calendarLoadedFor, loadCalendar,
     createCalendarEntry, updateCalendarEntry, deleteCalendarEntry,
+    overlayTodos, loadOverlayTodos,
   } = useProjectStore()
 
   const { tasks, setTaskDoDate } = useTaskStore()
@@ -162,6 +163,21 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
         }
       }
 
+      // The overlaid people's own todos, so their week reads as a week rather
+      // than a list of assignments. Their name rides along, as tasks do.
+      if (canOverlay && overlaid.size > 0 && visible('do')) {
+        for (const t of overlayTodos) {
+          if (t.doDate !== day || !t.ownerId || !overlaid.has(t.ownerId)) continue
+          blocks.push({
+            key: `overlay-todo-${t.id}`,
+            label: t.title,
+            color: '#1A5C3A',
+            todo: t,
+            ownerName: employees.find((e) => e.id === t.ownerId)?.name,
+          })
+        }
+      }
+
       // Assigned work belongs on the calendar too, otherwise an employee has
       // to hold two lists in their head. Shown on the day they planned it; if
       // they have not planned it, on its deadline so it is not invisible.
@@ -208,10 +224,16 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       for (const e of calendarEntries) {
         if (!visible(e.kind)) continue
         if (!entryCoversDay(e, day)) continue
+        // Someone else's entry only shows while they are overlaid, and says
+        // whose it is so a busy day is attributable.
+        const mine = !ownerId || e.ownerId === ownerId
+        const theirs = canOverlay && overlaid.has(e.ownerId)
+        if (!mine && !theirs && canOverlay && overlaid.size > 0) continue
         blocks.push({
           key: `entry-${e.id}`,
           label: e.title,
           color: KIND_STYLE[e.kind].color,
+          ownerName: theirs ? employees.find((x) => x.id === e.ownerId)?.name : undefined,
           entry: e,
         })
       }
@@ -219,10 +241,16 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       return blocks
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay],
+    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
+  // Other people's todos only arrive when someone is actually overlaid, so a
+  // manager looking at their own week pays nothing for the feature.
+  useEffect(() => {
+    if (canOverlay) loadOverlayTodos(project.id, [...overlaid])
+  }, [canOverlay, project.id, overlaid, loadOverlayTodos])
+
   /** Screen point → the day column it falls in. */
   const slotAt = useCallback((clientX: number, clientY: number): string | null => {
     const el = document.elementFromPoint(clientX, clientY)?.closest('[data-day]') as HTMLElement | null

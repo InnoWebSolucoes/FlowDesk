@@ -294,20 +294,54 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
 }
 
 /** Floating button that opens the assistant from anywhere inside a project. */
+/**
+ * Opens the assistant on a keystroke instead of parking a button over the
+ * page. Ctrl+K (Cmd+K on a Mac) is the usual command shortcut, and Escape
+ * closes it — the panel has no other way out once the button is gone.
+ *
+ * A hint appears the first few times so the shortcut is discoverable; it stops
+ * showing itself once the assistant has actually been opened.
+ */
 export function AssistantLauncher({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false)
+  const [everOpened, setEverOpened] = useState(() => {
+    try {
+      return localStorage.getItem('flowdesk:assistantUsed') === '1'
+    } catch {
+      return true
+    }
+  })
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setOpen((v) => !v)
+        setEverOpened(true)
+        try {
+          localStorage.setItem('flowdesk:assistantUsed', '1')
+        } catch {
+          // A blocked store only costs the hint, so carry on.
+        }
+      }
+      // Typing in the assistant's own box should not close it, but Escape
+      // anywhere else should.
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <>
-      {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-primary text-white shadow-lg hover:bg-primary/90 transition-colors"
-          title="Ask the assistant"
-        >
-          <Sparkles size={17} />
-          <span className="text-sm font-medium hidden sm:inline">Assistant</span>
-        </button>
+      {!open && !everOpened && (
+        <div className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-border shadow-sm text-xs text-text-muted">
+          <Sparkles size={13} className="text-primary" />
+          Press <kbd className="px-1.5 py-0.5 rounded bg-surface-2 border border-border font-medium">Ctrl</kbd>
+          +
+          <kbd className="px-1.5 py-0.5 rounded bg-surface-2 border border-border font-medium">K</kbd>
+          for the assistant
+        </div>
       )}
       {open && <Assistant projectId={projectId} onClose={() => setOpen(false)} />}
     </>

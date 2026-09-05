@@ -100,6 +100,12 @@ interface ProjectState {
 
   // Todos
   loadTodos: (projectId: string, ownerId?: string | null) => Promise<void>
+  /**
+   * Other people's todos, for showing their calendar alongside yours. Kept in
+   * their own bucket: `todos` is always just the board you are looking at.
+   */
+  overlayTodos: ProjectTodo[]
+  loadOverlayTodos: (projectId: string, ownerIds: string[]) => Promise<void>
   createTodo: (projectId: string, input: Partial<ProjectTodo>, ownerId?: string | null) => Promise<ProjectTodo | null>
   updateTodo: (id: string, updates: Partial<ProjectTodo>) => Promise<void>
   toggleTodo: (id: string) => Promise<void>
@@ -1240,6 +1246,30 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       .update({ is_checked: next })
       .eq('id', itemId)
     if (error) console.error('[toggleNoteItem] failed:', error)
+  },
+
+  overlayTodos: [],
+
+  loadOverlayTodos: async (projectId, ownerIds) => {
+    if (ownerIds.length === 0) {
+      set({ overlayTodos: [] })
+      return
+    }
+
+    // RLS decides what actually comes back; a manager who cannot see someone
+    // simply gets nothing for them rather than an error.
+    const { data, error } = await supabase
+      .from('project_todos')
+      .select('*')
+      .eq('project_id', projectId)
+      .in('owner_id', ownerIds)
+
+    if (error) {
+      console.warn('[loadOverlayTodos] failed:', error.message)
+      set({ overlayTodos: [] })
+      return
+    }
+    set({ overlayTodos: (data ?? []).map(toTodo) })
   },
 
   loadTodos: async (projectId, ownerId = null) => {
