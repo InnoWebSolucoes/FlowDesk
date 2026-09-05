@@ -179,7 +179,10 @@ Deno.serve(async (req) => {
   if (messages.length === 0) return json({ error: 'messages must not be empty' }, 400)
 
   // ── Context: what the assistant knows before it answers ──────────────────
-  const [projectRes, listsRes, todosRes, peopleRes, itemsRes, entriesRes] = await Promise.all([
+  const [
+    projectRes, listsRes, todosRes, peopleRes, itemsRes, entriesRes,
+    tasksRes, doneRes, progressRes,
+  ] = await Promise.all([
     db.from('projects').select('id,name,company_name,description,industry').eq('id', projectId).single(),
     db.from('project_todo_lists').select('id,name').eq('project_id', projectId).order('sort_order'),
     db
@@ -202,6 +205,21 @@ Deno.serve(async (req) => {
       .gte('ends_at', new Date(Date.now() - 7 * 864e5).toISOString())
       .order('starts_at')
       .limit(80),
+
+    // The assigned work. This was missing entirely, which is why the assistant
+    // insisted employees had no tasks: project_todos is the managers' own
+    // board, not what anyone was actually given to do.
+    db
+      .from('tasks')
+      .select('id,title,description,frequency,priority,deadline,is_active,created_at,task_assignments(employee_id,do_date)')
+      .eq('project_id', projectId)
+      .limit(200),
+    db
+      .from('completion_logs')
+      .select('task_id,employee_id,due_date,completed_at,was_late')
+      .gte('due_date', new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10))
+      .limit(400),
+    db.from('task_statuses').select('task_id,employee_id,due_date').limit(200),
   ])
 
   if (projectRes.error || !projectRes.data) {
@@ -213,6 +231,58 @@ Deno.serve(async (req) => {
   const todos = todosRes.data ?? []
   const people = peopleRes.data ?? []
   const now = new Date()
+  const today = now.toISOString().slice(0, 10)
+
+  // ── Assigned work, per person ───────────────────────────────────────────
+  const allTasks = (tasksRes.data ?? []) as any[]
+  const doneLogs = (doneRes.data ?? []) as any[]
+  const inProgress = (progressRes.data ?? []) as any[]
+
+  const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? 'someone'
+
+  const statusOf = (taskId: string, employeeId: string): string => {
+    if (doneLogs.some((l) => l.task_id === taskId && l.employee_id === employeeId && l.due_date === today)) {
+      return 'DONE today'
+    }
+    if (inProgress.some((s) => s.task_id === taskId && s.employee_id === employeeId && s.due_date === today)) {
+      return 'IN PROGRESS'
+    }
+    return 'not started'
+  }
+
+  const freqText = (f: any): string => {
+    if (!f || typeof f !== 'object') return 'once'
+    if (f.type === 'daily') return 'every weekday'
+    if (f.type === 'weekly') return `weekly (days ${(f.days ?? []).join(',')})`
+    if (f.type === 'monthly') return `monthly (week ${f.weekOfMonth}, day ${f.dayOfWeek})`
+    if (f.type === 'one-off') return `one-off${f.date ? ` on ${f.date}` : ''}`
+    return String(f.type ?? 'once')
+  }
+
+  // Grouped by person, because that is how it is always asked about: "what
+  // does X have on", "is X behind".
+  const workByPerson = people
+    .filter((p) => p.role !== 'admin')
+    .map((p) => {
+      const mine = allTasks.filter(
+        (t) => t.is_active && (t.task_assignments ?? []).some((a: any) => a.employee_id === p.id),
+      )
+      if (mine.length === 0) return `${p.name} [${p.id}]: no tasks assigned`
+
+      const lines = mine.map((t) => {
+        const assignment = (t.task_assignments ?? []).find((a: any) => a.employee_id === p.id)
+        const overdue = t.deadline && t.deadline < today
+        return `  - ${t.title} [${t.id}] — ${freqText(t.frequency)}, ${t.priority} priority`
+          + `${t.deadline ? `, deadline ${t.deadline}${overdue ? ' (OVERDUE)' : ''}` : ', no deadline'}`
+          + `${assignment?.do_date ? `, planned for ${assignment.do_date}` : ''}`
+          + ` — ${statusOf(t.id, p.id)}`
+      })
+      return `${p.name} [${p.id}]: ${mine.length} task(s)
+${lines.join('\n')}`
+    })
+
+  const employeeCount = people.filter((p) => p.role !== 'admin').length
+  const managerCount = people.filter((p) => p.role === 'admin').length
 
   const system = `You are the FlowDesk assistant for the project "${project.name}"${
     project.company_name ? ` (${project.company_name})` : ''
@@ -228,7 +298,15 @@ Current project description:
 ${project.description || '(empty)'}
 
 Todo lists: ${lists.length ? lists.map((l) => `${l.name} [${l.id}]`).join(', ') : '(none yet)'}
-People: ${people.length ? people.map((p) => `${p.name} [${p.id}]${p.role === 'admin' ? ' (manager)' : ''}`).join(', ') : '(none)'}
+
+TEAM — ${employeeCount} employee(s) and ${managerCount} manager(s) on this project:
+${people.length ? people.map((p) => `- ${p.name} [${p.id}]${p.role === 'admin' ? ' (manager)' : ' (employee)'}${p.email ? ` <${p.email}>` : ''}`).join('\n') : '(nobody yet)'}
+
+ASSIGNED WORK — the tasks people were actually given, with live status.
+"DONE today" means completed today, "IN PROGRESS" means they have started it
+and not finished, "not started" means neither. This is the authoritative
+answer to anything about what someone has to do or how they are getting on:
+${workByPerson.length ? workByPerson.join('\n') : '(nobody has any tasks)'}
 
 Open todos:
 ${
@@ -248,6 +326,12 @@ Recent documents:
 ${(itemsRes.data ?? []).slice(0, 12).map((i) => `- ${i.title}`).join('\n') || '(none)'}
 
 How to behave:
+- Answer counts and status questions from the context above — it is complete
+  and current. Never say you cannot see the data, and never claim someone has
+  no tasks unless their line above actually says so.
+- "Todos" and "tasks" are different things here. Todos are the manager's own
+  lists; tasks are the work assigned to employees. Read which one is meant, and
+  say which one you are answering about if it could be either.
 - Act, don't just advise. If asked to add a todo, call create_todo.
 - Use ask_user only for a decision genuinely yours to get wrong — which list, which person, which of two days. Never for something the context already answers.
 - When suggesting when to do something, respect what is already on the calendar and say briefly why you picked that slot.

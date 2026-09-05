@@ -21,12 +21,12 @@ const json = (body: unknown, status = 200) =>
 // JSON mode requires the response to be an object, not a bare array, so the
 // tasks come back wrapped and get unwrapped below. The front end still
 // receives a plain array and needs no changes.
-const SYSTEM = `You are a workforce management assistant. The user will describe what they need an employee to do. Return ONLY a valid JSON object of the form {"tasks": [...]} — no markdown, no explanation, no code blocks. Each task object in the array must have these exact fields: title (string), description (string), frequency (object with type being one of 'daily', 'weekly', 'monthly', or 'one-off'; for weekly include days as an array of numbers 0-6 where 1=Mon…5=Fri; for monthly include weekOfMonth 1-4 and dayOfWeek 1-5; for one-off include date as an ISO string), categoryName (string), priority (one of 'low', 'medium', 'high'), estimatedMinutes (number). Be thorough — extract every distinct task.`
+const SYSTEM = `You are a workforce management assistant. The user will describe what they need an employee to do. Return ONLY a valid JSON object of the form {"tasks": [...]} — no markdown, no explanation, no code blocks. Each task object in the array must have these exact fields: title (string), description (string), frequency (object with type being one of 'daily', 'weekly', 'monthly', or 'one-off'; for weekly include days as an array of numbers 0-6 where 1=Mon…5=Fri; for monthly include weekOfMonth 1-4 and dayOfWeek 1-5; for one-off include date as an ISO string), categoryName (string), priority (one of 'low', 'medium', 'high'), estimatedMinutes (number), suggestedAssignees (array of strings — the names of the people this task should go to, chosen from the team list given below; use an empty array if the brief gives no basis to choose). Be thorough — extract every distinct task. When the brief names people or describes roles, route each task to whoever it belongs to rather than assigning everything to everyone.`
 
 // Refinement keeps the batch the manager is already looking at and applies
 // their comments to it, so small corrections (a typo, a stray task, a date
 // that shifted) don't mean describing all the work again from scratch.
-const REFINE_SYSTEM = `You are a workforce management assistant revising a batch of tasks you previously generated. You will be given the current tasks as JSON and the manager's requested changes. Apply ONLY the requested changes and return the COMPLETE revised batch — every task that should still exist, not just the ones you changed. Keep untouched tasks byte-identical. Remove tasks the manager says to remove, add ones they ask for, and edit the rest as instructed. Return ONLY a valid JSON object of the form {"tasks": [...]} — no markdown, no explanation, no code blocks. Each task object must have these exact fields: title (string), description (string), frequency (object with type being one of 'daily', 'weekly', 'monthly', or 'one-off'; for weekly include days as an array of numbers 0-6 where 1=Mon…5=Fri; for monthly include weekOfMonth 1-4 and dayOfWeek 1-5; for one-off include date as an ISO string), categoryName (string), priority (one of 'low', 'medium', 'high'), estimatedMinutes (number).`
+const REFINE_SYSTEM = `You are a workforce management assistant revising a batch of tasks you previously generated. You will be given the current tasks as JSON and the manager's requested changes. Apply ONLY the requested changes and return the COMPLETE revised batch — every task that should still exist, not just the ones you changed. Keep untouched tasks byte-identical. Remove tasks the manager says to remove, add ones they ask for, and edit the rest as instructed. Return ONLY a valid JSON object of the form {"tasks": [...]} — no markdown, no explanation, no code blocks. Each task object must have these exact fields: title (string), description (string), frequency (object with type being one of 'daily', 'weekly', 'monthly', or 'one-off'; for weekly include days as an array of numbers 0-6 where 1=Mon…5=Fri; for monthly include weekOfMonth 1-4 and dayOfWeek 1-5; for one-off include date as an ISO string), categoryName (string), priority (one of 'low', 'medium', 'high'), estimatedMinutes (number), suggestedAssignees (array of strings — the names of the people this task should go to, chosen from the team list given below; use an empty array if the brief gives no basis to choose).`
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -54,6 +54,18 @@ Deno.serve(async (req) => {
   // Generating tasks is a manager action, and it spends API credit.
   const { data: profile } = await db.from('users').select('role').eq('id', user.id).single()
   if (profile?.role !== 'admin') return json({ error: 'Only managers can generate tasks.' }, 403)
+
+  // The model can only route work to people it knows about, so the team goes
+  // in with the brief. Names only — it never needs ids, and the client matches
+  // them back afterwards.
+  const { data: team } = await db
+    .from('users')
+    .select('name, job_title, department')
+    .eq('role', 'employee')
+  const roster = (team ?? [])
+    .map((p: any) =>
+      `- ${p.name}${p.job_title ? ` (${p.job_title}${p.department ? `, ${p.department}` : ''})` : ''}`)
+    .join('\n')
 
   let description = ''
   let currentTasks: unknown = null
@@ -88,7 +100,12 @@ ${description}`,
           ]
         : [
             { role: 'system', content: SYSTEM },
-            { role: 'user', content: description },
+            {
+              role: 'user',
+              content: roster
+                ? `Team available:\n${roster}\n\nBrief:\n${description}`
+                : description,
+            },
           ],
     })
 

@@ -18,6 +18,14 @@ interface GeneratedTask {
   /** '' only while being typed; 0 means no estimate. */
   estimatedMinutes: number | ''
   _categoryId?: string
+  /**
+   * Who this particular task goes to. The AI proposes names it can infer from
+   * the description; the manager can change any of them. Falls back to the
+   * batch selection when it has no opinion.
+   */
+  _assignedTo?: string[]
+  /** Names the model suggested, resolved to ids on arrival. */
+  suggestedAssignees?: string[]
 }
 
 export function AIOrganiser() {
@@ -73,7 +81,7 @@ export function AIOrganiser() {
     try {
       const result = await generateTasks(description)
       if (!Array.isArray(result)) throw new Error('Invalid response format')
-      setGenerated(result)
+      setGenerated(result.map(withSuggested))
     } catch (e: any) {
       setError(e.message?.includes('API')
         ? t('ai_errorApi')
@@ -94,7 +102,7 @@ export function AIOrganiser() {
       if (!Array.isArray(result)) throw new Error('Invalid response format')
       // Category choices the manager already made are per-index and don't
       // survive a reshuffle, so let them resolve again from categoryName.
-      setGenerated(result.map(({ _categoryId, ...task }: GeneratedTask) => task))
+      setGenerated(result.map(({ _categoryId, ...task }: GeneratedTask) => withSuggested(task)))
       setExpanded(new Set())
       setRefinement('')
     } catch (e: any) {
@@ -103,6 +111,31 @@ export function AIOrganiser() {
       setRefining(false)
     }
   }
+
+  /**
+   * Turn the model's suggested names into real employee ids. It only ever sees
+   * names, and matching is loose because it will not reproduce them exactly.
+   */
+  const withSuggested = (task: GeneratedTask): GeneratedTask => {
+    if (task._assignedTo?.length) return task
+    const names = task.suggestedAssignees ?? []
+    const ids = names
+      .map((n) => {
+        const needle = n.trim().toLowerCase()
+        return employees.find(
+          (e) =>
+            e.name.toLowerCase() === needle ||
+            e.name.toLowerCase().startsWith(needle) ||
+            needle.startsWith(e.name.toLowerCase().split(' ')[0]),
+        )?.id
+      })
+      .filter((id): id is string => !!id)
+
+    return { ...task, _assignedTo: ids.length ? ids : selectedEmployees }
+  }
+
+  const setTaskAssignees = (index: number, ids: string[]) =>
+    setGenerated((g) => g.map((t, i) => (i === index ? { ...t, _assignedTo: ids } : t)))
 
   const resolveCategory = async (name: string): Promise<string> => {
     const existing = categories.find(c => c.name.toLowerCase() === name.toLowerCase())
@@ -115,17 +148,22 @@ export function AIOrganiser() {
   const handleImportAll = async () => {
     if (!currentUser) return
 
-    // An employee belongs to exactly one project, so the selection fixes the project.
-    const projectId = employees.find(e => e.id === selectedEmployees[0])?.projectId
-    if (!projectId) return
-
     for (const gt of generated) {
+      // Each task carries its own people now, so a single batch can be split
+      // across the team rather than all landing on the same person.
+      const assignees = gt._assignedTo?.length ? gt._assignedTo : selectedEmployees
+      if (assignees.length === 0) continue
+
+      // An employee belongs to exactly one project, so the assignees fix it.
+      const projectId = employees.find(e => e.id === assignees[0])?.projectId
+      if (!projectId) continue
+
       const catId = gt._categoryId ?? await resolveCategory(gt.categoryName)
       const task: Omit<Task, 'id' | 'createdAt'> = {
         projectId,
         title: gt.title,
         description: gt.description,
-        assignedTo: selectedEmployees,
+        assignedTo: assignees,
         frequency: gt.frequency,
         categoryId: catId,
         priority: gt.priority,
@@ -338,6 +376,44 @@ export function AIOrganiser() {
                             <option value="high">{t('ai_priorityHigh')}</option>
                           </select>
                         </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-medium text-text-muted mb-1 block">{t('ai_assignThisTask')}</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {employees.map(emp => {
+                              const picked = (gt._assignedTo ?? []).includes(emp.id)
+                              const noProject = !emp.projectId
+                              return (
+                                <button
+                                  key={emp.id}
+                                  type="button"
+                                  disabled={noProject}
+                                  title={noProject ? `${emp.name} is not on a project yet` : undefined}
+                                  onClick={() =>
+                                    setTaskAssignees(
+                                      i,
+                                      picked
+                                        ? (gt._assignedTo ?? []).filter(id => id !== emp.id)
+                                        : [...(gt._assignedTo ?? []), emp.id],
+                                    )
+                                  }
+                                  className={`px-2 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                                    noProject
+                                      ? 'bg-surface-2 text-text-subtle border-border cursor-not-allowed opacity-60'
+                                      : picked
+                                        ? 'bg-primary text-white border-primary'
+                                        : 'bg-surface text-text-muted border-border hover:border-primary/50'
+                                  }`}
+                                >
+                                  {emp.name}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          {(gt._assignedTo ?? []).length === 0 && (
+                            <p className="text-danger text-[11px] mt-1">{t('ai_assignNobody')}</p>
+                          )}
+                        </div>
+
                         <div>
                           <label className="text-xs font-medium text-text-muted mb-1 block">{t('ai_estMinutesLabel')}</label>
                           {/* Same as the task form: the raw value while you

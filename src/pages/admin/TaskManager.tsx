@@ -332,6 +332,55 @@ function TaskForm({
   )
 }
 
+/**
+ * Who is doing this task right now, and who has finished it.
+ *
+ * The table listed what a task *is* but never whether anything was happening
+ * with it, so a manager had to open each one to find out. Status is per person
+ * and per day: the same task is done by one assignee and untouched by another.
+ */
+function TaskStatusCells({
+  task,
+  employees,
+}: {
+  task: Task
+  employees: import('../../types').Employee[]
+}) {
+  const { isTaskCompleted, isInProgress } = useTaskStore()
+  const today = format(new Date(), 'yyyy-MM-dd')
+
+  if (task.assignedTo.length === 0) {
+    return <span className="text-[11px] text-text-subtle">—</span>
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {task.assignedTo.map((empId) => {
+        const who = employees.find((e) => e.id === empId)
+        const done = isTaskCompleted(task.id, empId, today)
+        const running = !done && isInProgress(task.id, empId, today)
+        const label = who?.avatarInitials ?? who?.name?.slice(0, 2).toUpperCase() ?? '??'
+
+        return (
+          <span
+            key={empId}
+            title={`${who?.name ?? 'Unknown'} — ${done ? 'done today' : running ? 'in progress' : 'not started'}`}
+            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${
+              done
+                ? 'bg-success-bg text-success border-success/30'
+                : running
+                  ? 'bg-warning-bg text-warning border-warning/30'
+                  : 'bg-surface-2 text-text-subtle border-border'
+            }`}
+          >
+            {label}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: string }) {
   const { tasks, categories, addTask, updateTask, deleteTask, addCategory, scopedProjectId } = useTaskStore()
   const { employees } = useEmployeeStore()
@@ -536,6 +585,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
                       <Th label={t('task_colCategory')} col="categoryId" />
                       <Th label={t('task_colPriority')} col="priority" />
                       <Th label={t('task_colTime')} col="estimatedMinutes" />
+                      <Th label={t('task_colStatus')} />
                       <Th label="" />
                     </tr>
                   </thead>
@@ -565,6 +615,9 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
                           </td>
                           <td className="py-2.5 px-3 text-text-muted text-xs">
                             {task.estimatedMinutes > 0 ? `${task.estimatedMinutes}m` : t('task_estMinutesNone')}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <TaskStatusCells task={task} employees={employees} />
                           </td>
                           <td className="py-2.5 px-3">
                             <div className="flex items-center gap-1">

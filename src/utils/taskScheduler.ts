@@ -20,6 +20,14 @@ export function isTaskDueOnDate(task: Task, employeeId: string, date: Date): boo
   if (!task.isActive) return false
   if (!task.assignedTo.includes(employeeId)) return false
 
+  // A recurrence describes what happens from now on, not what should have
+  // happened before the task existed. Without this a new monthly task appears
+  // as months of missed work the moment it is created.
+  if (task.createdAt) {
+    const created = startOfDay(parseISO(task.createdAt))
+    if (startOfDay(date) < created) return false
+  }
+
   const dayOfWeek = getDay(date) // 0=Sun, 1=Mon, ..., 6=Sat
   const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5
 
