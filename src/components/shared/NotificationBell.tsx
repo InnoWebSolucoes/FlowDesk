@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Bell, X, CheckCircle2, AlertTriangle, MessageSquare, Clock, Calendar } from 'lucide-react'
+import {
+  Bell, X, CheckCircle2, AlertTriangle, MessageSquare, Clock, Calendar,
+  PlayCircle, RotateCcw, Paperclip,
+} from 'lucide-react'
 import { useNotificationStore } from '../../store/notificationStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
@@ -18,6 +21,10 @@ function notifIcon(type: AppNotification['type']) {
     case 'comment_added': return <MessageSquare size={14} className="text-primary" />
     case 'workload_alert': return <AlertTriangle size={14} className="text-amber" />
     case 'inactivity_alert': return <AlertTriangle size={14} className="text-danger" />
+    case 'task_started': return <PlayCircle size={14} className="text-primary" />
+    case 'task_completed': return <CheckCircle2 size={14} className="text-success" />
+    case 'task_reopened': return <RotateCcw size={14} className="text-amber" />
+    case 'file_uploaded': return <Paperclip size={14} className="text-primary" />
     default: return <Bell size={14} className="text-text-muted" />
   }
 }

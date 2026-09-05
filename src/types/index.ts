@@ -363,7 +363,20 @@ export interface ActivityLog {
 
 export interface AppNotification {
   id: string
-  type: 'task_assigned' | 'task_due_today' | 'task_due_tomorrow' | 'task_overdue' | 'comment_added' | 'workload_alert' | 'inactivity_alert'
+  type:
+    | 'task_assigned'
+    | 'task_due_today'
+    | 'task_due_tomorrow'
+    | 'task_overdue'
+    | 'comment_added'
+    | 'workload_alert'
+    | 'inactivity_alert'
+    // Raised by database triggers when an employee acts, so managers are told
+    // whether or not anyone has the app open. See 20260906000000.
+    | 'task_started'
+    | 'task_completed'
+    | 'task_reopened'
+    | 'file_uploaded'
   title: string
   message: string
   taskId?: string
