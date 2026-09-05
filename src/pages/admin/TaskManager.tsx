@@ -344,61 +344,50 @@ function TaskForm({
  * status code but was not one — a one-word name gave a bare "E" and told you
  * nothing. It now names the state, and the person, in words.
  */
-function TaskStatusCells({
-  task,
-  employees,
-}: {
-  task: Task
-  employees: import('../../types').Employee[]
-}) {
+function TaskStatusCells({ task }: { task: Task }) {
   const { isTaskCompleted, isInProgress } = useTaskStore()
   const { t } = useT()
   const today = format(new Date(), 'yyyy-MM-dd')
 
   if (task.assignedTo.length === 0) {
-    return <span className="text-[11px] text-text-subtle">—</span>
+    return <span className="text-[11px] text-text-subtle">-</span>
   }
 
   const states = task.assignedTo.map((empId) => {
-    const who = employees.find((e) => e.id === empId)
     const done = isTaskCompleted(task.id, empId, today)
-    const running = !done && isInProgress(task.id, empId, today)
-    return { empId, name: who?.name ?? 'Unknown', done, running }
+    return { done, running: !done && isInProgress(task.id, empId, today) }
   })
 
-  const label = (s: { done: boolean; running: boolean }) =>
-    s.done ? t('status_completed') : s.running ? t('status_inProgress') : t('status_notStarted')
+  // One status for the task, however many people are on it. Completed only
+  // when everyone has finished, since one person finishing does not finish the
+  // task; in progress the moment anyone has started.
+  const done = states.every((s) => s.done)
+  const running = !done && states.some((s) => s.running || s.done)
 
-  const style = (s: { done: boolean; running: boolean }) =>
-    s.done
-      ? 'bg-success-bg text-success border-success/30'
-      : s.running
-        ? 'bg-warning-bg text-warning border-warning/30'
-        : 'bg-surface-2 text-text-subtle border-border'
+  const label = done
+    ? t('status_completed')
+    : running
+      ? t('status_inProgress')
+      : t('status_notStarted')
 
-  // One assignee is the common case, and naming them again would just repeat
-  // the Assigned column beside it. Several people need saying who is who.
-  if (states.length === 1) {
-    return (
-      <span
-        className={`text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${style(states[0])}`}
-      >
-        {label(states[0])}
-      </span>
-    )
-  }
+  const style = done
+    ? 'bg-success-bg text-success border-success/30'
+    : running
+      ? 'bg-warning-bg text-warning border-warning/30'
+      : 'bg-surface-2 text-text-subtle border-border'
+
+  // How far along, when the task is shared and only some have finished. The
+  // Assigned column already says who they are.
+  const finished = states.filter((s) => s.done).length
+  const partial = states.length > 1 && finished > 0 && !done
 
   return (
-    <div className="flex flex-col gap-1">
-      {states.map((s) => (
-        <span
-          key={s.empId}
-          className={`text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${style(s)}`}
-        >
-          {s.name.split(' ')[0]} · {label(s)}
-        </span>
-      ))}
-    </div>
+    <span
+      className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${style}`}
+    >
+      {label}
+      {partial && ` ${finished}/${states.length}`}
+    </span>
   )
 }
 
@@ -638,7 +627,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
                             {task.estimatedMinutes > 0 ? `${task.estimatedMinutes}m` : t('task_estMinutesNone')}
                           </td>
                           <td className="py-2.5 px-3">
-                            <TaskStatusCells task={task} employees={employees} />
+                            <TaskStatusCells task={task} />
                           </td>
                           <td className="py-2.5 px-3">
                             <div className="flex items-center gap-1">
