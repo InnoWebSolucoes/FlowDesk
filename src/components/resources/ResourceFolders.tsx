@@ -55,6 +55,12 @@ interface Props {
    * being able to move or delete the project's.
    */
   canEditItem?: (item: ResourceItem) => boolean
+  /**
+   * Open a cluster's details. Omitted, folders can only be navigated into —
+   * which is right for the employee view, where cluster settings are not
+   * theirs to change.
+   */
+  onOpenCluster?: (clusterId: string) => void
 }
 
 /**
@@ -69,6 +75,7 @@ export function ResourceFolders({
   onSelectItem,
   onOpenItem,
   canEditItem,
+  onOpenCluster,
 }: Props) {
   const { clusters, items, moveItem, setItemClusters, deleteItem, duplicateItem, updateItem } = useProjectStore()
   const [mode, setMode] = useState<ViewMode>('list')
@@ -477,6 +484,12 @@ export function ResourceFolders({
                   key={f.id}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => onNavigate(f.id)}
+                  onContextMenu={(e) => {
+                    if (!onOpenCluster) return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onOpenCluster(f.id)
+                  }}
                   onDragOver={(e) => {
                     if (!dragIds) return
                     e.preventDefault()
@@ -568,6 +581,12 @@ export function ResourceFolders({
                   key={f.id}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => onNavigate(f.id)}
+                  onContextMenu={(e) => {
+                    if (!onOpenCluster) return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onOpenCluster(f.id)
+                  }}
                   onDragOver={(e) => {
                     if (!dragIds) return
                     e.preventDefault()

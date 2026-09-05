@@ -950,7 +950,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     await supabase.from('resource_clusters').update({ access }).eq('id', clusterId)
     await supabase.from('resource_cluster_access').delete().eq('cluster_id', clusterId)
 
-    const named = access === 'specific' ? userIds : []
+    // 'relative' names people too — they are who may enter the cluster. Only
+    // the levels that name nobody clear the list.
+    const named = access === 'specific' || access === 'relative' ? userIds : []
     if (named.length > 0) {
       await supabase
         .from('resource_cluster_access')

@@ -115,8 +115,11 @@ export interface ResourceItem {
  * managers   — admins only
  * employees  — admins and employees on the project
  * specific   — admins and the named people
+ * relative   — clusters only: the named people may enter, and each document
+ *              inside is then judged on its own access rather than being
+ *              opened up wholesale. Entry, not a blanket grant.
  */
-export type ResourceAccess = 'everyone' | 'managers' | 'employees' | 'specific'
+export type ResourceAccess = 'everyone' | 'managers' | 'employees' | 'specific' | 'relative'
 
 export interface ProjectTodoLink {
   id: string

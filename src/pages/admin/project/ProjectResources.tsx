@@ -6,6 +6,7 @@ import { useProjectStore } from '../../../store/projectStore'
 import { ResourceCanvas } from '../../../components/resources/ResourceCanvas'
 import { ResourceFolders } from '../../../components/resources/ResourceFolders'
 import { ResourceItemPanel } from '../../../components/resources/ResourceItemPanel'
+import { ClusterPanel } from '../../../components/resources/ClusterPanel'
 import { DocumentWindow } from '../../../components/resources/DocumentWindow'
 import { googleEmbedUrl } from '../../../components/resources/googleDocs'
 
@@ -15,7 +16,10 @@ type View = 'canvas' | 'folders'
 
 export function ProjectResources() {
   const { project } = useOutletContext<Ctx>()
-  const { resourcesLoadedFor, loadResources, items } = useProjectStore()
+  const {
+    resourcesLoadedFor, loadResources, items, clusters,
+    duplicateCluster, deleteCluster,
+  } = useProjectStore()
 
   const [view, setView] = useState<View>(() => {
     try {
@@ -28,6 +32,8 @@ export function ProjectResources() {
   const [clusterId, setClusterId] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [openDocId, setOpenDocId] = useState<string | null>(null)
+  // A cluster's details, reachable from the folder view by right-clicking it.
+  const [detailClusterId, setDetailClusterId] = useState<string | null>(null)
 
   useEffect(() => {
     if (resourcesLoadedFor !== project.id) loadResources(project.id)
@@ -60,6 +66,9 @@ export function ProjectResources() {
 
   const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) ?? null : null
   const openDoc = openDocId ? items.find((i) => i.id === openDocId) ?? null : null
+  const detailCluster = detailClusterId
+    ? clusters.find((c) => c.id === detailClusterId) ?? null
+    : null
 
   return (
     <div>
@@ -103,6 +112,7 @@ export function ProjectResources() {
             onNavigate={setClusterId}
             onSelectItem={(i) => setSelectedItemId(i.id)}
             onOpenItem={openItem}
+            onOpenCluster={setDetailClusterId}
           />
           {selectedItem && (
             <div className="fixed inset-y-0 right-0 z-40 w-full sm:w-[380px]">
@@ -110,6 +120,27 @@ export function ProjectResources() {
                 key={selectedItem.id}
                 item={selectedItem}
                 onClose={() => setSelectedItemId(null)}
+              />
+            </div>
+          )}
+          {detailCluster && (
+            <div className="fixed inset-y-0 right-0 z-40 w-full sm:w-[380px]">
+              <ClusterPanel
+                key={detailCluster.id}
+                cluster={detailCluster}
+                onClose={() => setDetailClusterId(null)}
+                onOpen={() => {
+                  setClusterId(detailCluster.id)
+                  setDetailClusterId(null)
+                }}
+                onDuplicate={() => {
+                  setDetailClusterId(null)
+                  duplicateCluster(detailCluster.id)
+                }}
+                onDelete={() => {
+                  setDetailClusterId(null)
+                  deleteCluster(detailCluster.id)
+                }}
               />
             </div>
           )}

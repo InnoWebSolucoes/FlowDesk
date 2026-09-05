@@ -7,6 +7,7 @@ import { ResourceCluster, ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { useCanvasViewport, ZOOM_ENTER_THRESHOLD, ZOOM_EXIT_THRESHOLD } from './useCanvasViewport'
 import { ResourceItemPanel } from './ResourceItemPanel'
+import { ClusterPanel } from './ClusterPanel'
 import { googleEmbedUrl } from './googleDocs'
 import { isNative, dragDocumentOut, copyDocumentFile, prepareDocument } from '../../lib/nativeShare'
 import { ResourceThumbnail } from './ResourceThumbnail'
@@ -150,6 +151,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   // Right-click on empty canvas: create a cluster, or act on the selection.
   const [bgMenu, setBgMenu] = useState<{ x: number; y: number; world: { x: number; y: number } } | null>(null)
   const [clusterMenu, setClusterMenu] = useState<{ clusterId: string; x: number; y: number } | null>(null)
+  // The cluster whose details are open, the counterpart to selectedItemId.
+  const [detailClusterId, setDetailClusterId] = useState<string | null>(null)
   /** Which cluster's nested-cluster list is expanded in its menu. */
   const [clusterList, setClusterList] = useState<string | null>(null)
   const marqueeStart = useRef<{ x: number; y: number; additive: Set<string> } | null>(null)
@@ -275,6 +278,11 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   // while picking nodes. Asking for details explicitly still opens it, and the
   // selection is left alone.
   const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) ?? null : null
+  // Resolved from the store, not held as state, so an edit made in the panel
+  // is reflected back into it immediately.
+  const detailCluster = detailClusterId
+    ? clusters.find((c) => c.id === detailClusterId) ?? null
+    : null
 
   /**
    * Position to render a node at. The node being dragged follows the pointer
@@ -1740,6 +1748,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               >
                 Open
               </button>
+              <button
+                onClick={act(() => setDetailClusterId(target.id))}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                Details and sharing…
+              </button>
               {(() => {
                 const children = clusters.filter((c) => c.parentClusterId === target.id)
                 if (children.length === 0) return null
@@ -2005,6 +2019,28 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             </div>
           </div>
         </div>
+      )}
+
+      {/* A cluster's own details: name, colour, who can open it, what is in
+          it. Keyed so switching clusters re-seeds the form. */}
+      {detailCluster && (
+        <ClusterPanel
+          key={detailCluster.id}
+          cluster={detailCluster}
+          onClose={() => setDetailClusterId(null)}
+          onOpen={() => {
+            setDetailClusterId(null)
+            enterCluster(detailCluster)
+          }}
+          onDuplicate={() => {
+            setDetailClusterId(null)
+            duplicateCluster(detailCluster.id)
+          }}
+          onDelete={() => {
+            setDetailClusterId(null)
+            handleDeleteCluster(detailCluster)
+          }}
+        />
       )}
 
       {/* Keyed on id so the edit form re-seeds when a different item is selected. */}
