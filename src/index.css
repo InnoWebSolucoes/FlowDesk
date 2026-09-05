@@ -85,6 +85,20 @@ body {
   animation: checkBounce 0.3s ease-out;
 }
 
+/* What a notification points at. Arriving on a page of fifty rows, the one the
+   notification meant has to announce itself — so it pulses a few times and
+   then settles, rather than either flashing once (missed while the page is
+   still settling) or staying lit for good (indistinguishable from selection). */
+@keyframes highlightPulse {
+  0%, 100% { outline-color: transparent; background-color: transparent; }
+  25%, 75% { outline-color: #1A5C3A; background-color: rgba(26, 92, 58, 0.07); }
+  50% { outline-color: #1A5C3A; background-color: rgba(26, 92, 58, 0.12); }
+}
+
+.animate-highlight-pulse {
+  animation: highlightPulse 1.3s ease-in-out 3;
+}
+
 /* Recharts tooltip */
 .recharts-tooltip-wrapper { z-index: 100; }
 

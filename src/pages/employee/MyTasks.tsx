@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { format, startOfWeek, addDays, startOfMonth, getDaysInMonth } from 'date-fns'
 import { ChevronDown, ChevronRight, PartyPopper, Search } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
@@ -10,6 +10,7 @@ import {
 } from '../../utils/taskScheduler'
 import { Task } from '../../types'
 import { useT } from '../../i18n/useT'
+import { useHighlight } from '../../hooks/useHighlight'
 
 const TABS = ['today', 'week', 'month'] as const
 type Tab = typeof TABS[number]
@@ -23,6 +24,7 @@ function TimeBlock({
   onUncomplete,
   empId,
   todayStr,
+  highlight,
 }: {
   label: string
   tasks: Task[]
@@ -32,6 +34,7 @@ function TimeBlock({
   onUncomplete: (id: string) => void
   empId: string
   todayStr: string
+  highlight: ReturnType<typeof useHighlight>
 }) {
   const { isInProgress: isInProgressFn, setInProgress, clearInProgress } = useTaskStore()
 
@@ -53,6 +56,8 @@ function TimeBlock({
             onClearInProgress={() => clearInProgress(task.id, empId, todayStr)}
             currentUserId={empId}
             dueDate={todayStr}
+            highlighted={highlight.isHighlighted(task.id)}
+            highlightRef={highlight.ref}
           />
         ))}
       </div>
@@ -209,6 +214,50 @@ export function MyTasks() {
 
   const [completedCollapsed, setCompletedCollapsed] = useState(false)
 
+  const highlight = useHighlight()
+
+  /**
+   * A highlighted task is no use behind a filter or inside a collapsed
+   * section, so arriving with one clears whatever would hide it: the filters
+   * go, the completed list opens, and the tab switches to whichever period
+   * actually contains the task.
+   */
+  useEffect(() => {
+    const id = highlight.activeId
+    if (!id) return
+
+    setSearchQuery('')
+    setFilterPriority('')
+    setFilterCategoryId('')
+    setCompletedCollapsed(false)
+
+    // Today is where most notifications point; fall back to the wider periods
+    // so a task due later in the week is still found rather than silently
+    // missing from the tab that happened to be open.
+    if (todayTasksRaw.some((x) => x.id === id)) {
+      setTab('today')
+      return
+    }
+    const weekDay = weekDays.find(({ dateStr }) =>
+      (weekTaskMap[dateStr] ?? []).some((x) => x.id === id)
+    )
+    if (weekDay) {
+      setTab('week')
+      setExpandedDays((prev) => new Set(prev).add(weekDay.dateStr))
+      return
+    }
+    const monthWeek = monthByWeek.find(({ days }) =>
+      days.some(({ date }) => getTasksDueOnDate(tasks, empId, date).some((x) => x.id === id))
+    )
+    if (monthWeek) {
+      setTab('month')
+      setExpandedWeeks((prev) => new Set(prev).add(monthWeek.weekNum))
+    }
+    // Only when the highlight changes: re-running as the lists re-derive would
+    // fight the user's own tab and filter choices for as long as the ring is up.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight.activeId])
+
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
       <div className="border-b border-border flex gap-0 mb-6">
@@ -307,6 +356,7 @@ export function MyTasks() {
                 onUncomplete={handleUncomplete}
                 empId={empId}
                 todayStr={todayStr}
+                highlight={highlight}
               />
               <TimeBlock
                 label={t('mytasks_afternoon')}
@@ -317,6 +367,7 @@ export function MyTasks() {
                 onUncomplete={handleUncomplete}
                 empId={empId}
                 todayStr={todayStr}
+                highlight={highlight}
               />
               <TimeBlock
                 label={t('mytasks_endOfDay')}
@@ -327,6 +378,7 @@ export function MyTasks() {
                 onUncomplete={handleUncomplete}
                 empId={empId}
                 todayStr={todayStr}
+                highlight={highlight}
               />
             </>
           )}
@@ -352,6 +404,8 @@ export function MyTasks() {
                       onUncomplete={() => handleUncomplete(task.id)}
                       currentUserId={empId}
                       dueDate={todayStr}
+                      highlighted={highlight.isHighlighted(task.id)}
+                      highlightRef={highlight.ref}
                     />
                   ))}
                 </div>
@@ -416,6 +470,8 @@ export function MyTasks() {
                         onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
                         currentUserId={empId}
                         dueDate={dateStr}
+                        highlighted={highlight.isHighlighted(task.id)}
+                        highlightRef={highlight.ref}
                       />
                     ))}
                   </div>
@@ -480,6 +536,8 @@ export function MyTasks() {
                                 onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
                                 currentUserId={empId}
                                 dueDate={dateStr}
+                                highlighted={highlight.isHighlighted(task.id)}
+                                highlightRef={highlight.ref}
                               />
                             ))}
                           </div>

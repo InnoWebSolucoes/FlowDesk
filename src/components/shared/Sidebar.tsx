@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef } from 'react'
 import { NavLink, useNavigate, useMatch, Link, useLocation } from 'react-router-dom'
 import {
   ListTodo, Users, Info, FolderOpen, CalendarDays,
-  CheckSquare, Wrench, BookOpen, Building2, MessageCircle, StickyNote, Sparkles,
+  CheckSquare, Wrench, BookOpen, Building2, MessageCircle, MessageSquare, StickyNote, Sparkles,
   LogOut, Menu, X, ChevronLeft, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useProjectStore } from '../../store/projectStore'
 import { useLanguageStore } from '../../store/languageStore'
+import { useChatStore } from '../../store/chatStore'
 import { useT } from '../../i18n/useT'
 import {
   canDockWhatsapp, setWhatsappTab, onWhatsappState,
@@ -38,8 +39,12 @@ export function Sidebar() {
         { to: `/admin/projects/${activeProjectId}/calendar`, label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
         { to: `/admin/projects/${activeProjectId}/employees`, label: t('nav_employees'), icon: <Users size={18} /> },
         { to: `/admin/projects/${activeProjectId}/notes`, label: t('nav_notes'), icon: <StickyNote size={18} /> },
+        { to: '/admin/chat', label: t('nav_chat'), icon: <MessageSquare size={18} /> },
       ]
-    : [{ to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> }]
+    : [
+        { to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> },
+        { to: '/admin/chat', label: t('nav_chat'), icon: <MessageSquare size={18} /> },
+      ]
 
   // The same tabs the managers get inside a project, plus the employee's own
   // assigned work. Todos, resources and notes are their side of the project:
@@ -50,11 +55,18 @@ export function Sidebar() {
     { to: '/employee/resources', label: t('nav_resources'), icon: <FolderOpen size={18} /> },
     { to: '/employee/calendar', label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
     { to: '/employee/notes', label: t('nav_notes'), icon: <StickyNote size={18} /> },
+    { to: '/employee/chat', label: t('nav_chat'), icon: <MessageSquare size={18} /> },
     { to: '/employee/toolbox', label: t('nav_toolbox'), icon: <Wrench size={18} /> },
     { to: '/employee/guidelines', label: t('nav_guidelines'), icon: <BookOpen size={18} /> },
   ]
 
-  const navItems = currentUser?.role === 'admin' ? adminNav : employeeNav
+  // Live, so a message arriving while you are on another tab shows up on the
+  // Chat tab without a reload.
+  const unreadChats = useChatStore((s) => s.totalUnread())
+
+  const navItems = (currentUser?.role === 'admin' ? adminNav : employeeNav).map((item) =>
+    item.to.endsWith('/chat') ? { ...item, badge: unreadChats } : item
+  )
 
   const handleLogout = () => {
     logout()
@@ -232,8 +244,24 @@ export function Sidebar() {
               }`
             }
           >
-            {item.icon}
+            {/* Collapsed, the badge rides the icon; expanded, it sits at the
+                end of the row where a count belongs. */}
+            {mini && 'badge' in item && (item.badge ?? 0) > 0 ? (
+              <span className="relative">
+                {item.icon}
+                <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] bg-danger text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
+                  {(item.badge ?? 0) > 9 ? '9+' : item.badge}
+                </span>
+              </span>
+            ) : (
+              item.icon
+            )}
             {!mini && item.label}
+            {!mini && 'badge' in item && (item.badge ?? 0) > 0 && (
+              <span className="ml-auto min-w-[18px] h-[18px] bg-danger text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                {(item.badge ?? 0) > 99 ? '99+' : item.badge}
+              </span>
+            )}
           </NavLink>
         ))}
 

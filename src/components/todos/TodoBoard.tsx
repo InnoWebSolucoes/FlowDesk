@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useHighlight } from '../../hooks/useHighlight'
+import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import {
   ListTodo, Plus, Trash2, Link2, ChevronUp, ChevronDown, Circle, CheckCircle2,
   FolderOpen, Calendar, CalendarClock, Pencil, Check, Copy,
@@ -83,8 +85,11 @@ export function TodoBoard({
   const [linkingId, setLinkingId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   // ?todo=<id> opens that todo directly, so a link from the assistant lands on
-  // the item itself rather than just the board it lives on.
+  // the item itself rather than just the board it lives on. ?highlight=<id> is
+  // the lighter version: it rings the row in place rather than opening it,
+  // which is what a notification wants.
   const [searchParams, setSearchParams] = useSearchParams()
+  const highlight = useHighlight()
   // Remembered per project so a reload returns to the list you were on.
   const [activeListId, setActiveListId] = useState<string | null>(() => {
     try {
@@ -275,9 +280,10 @@ export function TodoBoard({
 
     return (
       <div
+        ref={highlight.isHighlighted(todo.id) ? highlight.ref : undefined}
         className={`group bg-surface border border-border rounded-xl px-3 py-2.5 ${
           todo.isCompleted ? 'opacity-60' : ''
-        }`}
+        } ${highlight.isHighlighted(todo.id) ? HIGHLIGHT_CLASS : ''}`}
       >
         {/* Single row: checkbox · title · metadata · actions */}
         <div className="flex items-center gap-3">
@@ -428,6 +434,20 @@ export function TodoBoard({
   }
 
   const linkingTodo = linkingId ? todos.find((t) => t.id === linkingId) ?? null : null
+  /**
+   * A ringed todo is no use on a tab you are not looking at, so arriving with
+   * a highlight switches to the list that actually holds it and opens the
+   * completed section in case it is finished.
+   */
+  useEffect(() => {
+    const id = highlight.activeId
+    if (!id) return
+    const target = todos.find((x) => x.id === id)
+    if (!target) return
+    if (target.listId) setActiveListId(target.listId)
+    if (target.isCompleted) setShowCompleted(true)
+  }, [highlight.activeId, todos])
+
   const detailTodo = detailId ? todos.find((t) => t.id === detailId) ?? undefined : undefined
 
   useEffect(() => {

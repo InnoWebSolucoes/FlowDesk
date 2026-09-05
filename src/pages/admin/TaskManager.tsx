@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { Plus, Search, Pencil, Trash2, X, Check, ListTodo } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
@@ -8,6 +8,8 @@ import { Badge } from '../../components/shared/Badge'
 import { EmptyState } from '../../components/shared/EmptyState'
 import { format } from 'date-fns'
 import { useT } from '../../i18n/useT'
+import { useHighlight } from '../../hooks/useHighlight'
+import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 
 const PRIORITY_OPTIONS: Priority[] = ['low', 'medium', 'high']
 const FREQ_OPTIONS: FrequencyType[] = ['daily', 'weekly', 'monthly', 'one-off']
@@ -435,6 +437,33 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
 
+  const highlight = useHighlight()
+
+  /**
+   * A notification points at one task, but this table filters and paginates —
+   * so the row it means is usually neither visible nor on the current page.
+   * Arriving with a highlight therefore clears every filter and pages to
+   * wherever the task actually sits.
+   */
+  useEffect(() => {
+    const id = highlight.activeId
+    if (!id) return
+    setSearch('')
+    setFilterEmp('')
+    setFilterCat('')
+    setFilterFreq('')
+    setFilterPri('')
+  }, [highlight.activeId])
+
+  // Paging is a second step: the index is only meaningful once the filters
+  // above have actually been cleared and `filtered` has been rebuilt.
+  useEffect(() => {
+    const id = highlight.activeId
+    if (!id) return
+    const index = filtered.findIndex((x) => x.id === id)
+    if (index >= 0) setPage(Math.floor(index / PAGE_SIZE))
+  }, [highlight.activeId, filtered, PAGE_SIZE])
+
   const handleSort = (col: string) => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortCol(col); setSortDir('asc') }
@@ -606,7 +635,13 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
                         .map(id => employees.find(e => e.id === id)?.name?.split(' ')[0] ?? id)
                         .join(', ')
                       return (
-                        <tr key={task.id} className="border-b border-border/50 hover:bg-surface-2/40 transition-colors">
+                        <tr
+                          key={task.id}
+                          ref={highlight.isHighlighted(task.id) ? highlight.ref : undefined}
+                          className={`border-b border-border/50 hover:bg-surface-2/40 transition-colors ${
+                            highlight.isHighlighted(task.id) ? HIGHLIGHT_CLASS : ''
+                          }`}
+                        >
                           <td className="py-2.5 px-3 font-medium text-text-main max-w-xs">
                             <span className="line-clamp-1">{task.title}</span>
                           </td>

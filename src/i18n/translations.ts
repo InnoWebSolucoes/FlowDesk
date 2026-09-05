@@ -281,6 +281,7 @@ const en = {
   taskcard_markIncomplete: 'Mark incomplete',
   taskcard_markComplete: 'Mark complete',
   taskcard_min: 'min',
+  taskcard_discuss: 'Discuss in chat',
 
   // Stat Card
   statcard_vsLastPeriod: 'vs last period',
@@ -338,6 +339,7 @@ const en = {
   notif_commentAdded: 'New Comment',
   notif_workloadAlert: 'Workload Alert',
   notif_inactivityAlert: 'Inactivity Alert',
+  notif_chatMessage: 'New message',
 
   // Task status
   status_pending: 'Pending',
@@ -351,6 +353,36 @@ const en = {
   deadline_today: 'Due today',
   deadline_tomorrow: 'Due tomorrow',
   deadline_inDays: 'Due in {n} days',
+
+  // Chat
+  nav_chat: 'Chat',
+  chat_people: 'People',
+  chat_taskThreads: 'Task threads',
+  chat_startChat: 'Start a chat',
+  chat_direct: 'Direct message',
+  chat_taskThread: 'Task discussion',
+  chat_searchPlaceholder: 'Search people and tasks…',
+  chat_noConversations: 'No conversations yet',
+  chat_pickConversation: 'Pick a conversation',
+  chat_pickConversationDesc: 'Choose someone to message, or a task to discuss.',
+  chat_noMessages: 'No messages yet. Say something.',
+  chat_messagePlaceholder: 'Write a message…',
+  chat_you: 'You',
+  chat_delete: 'Delete message',
+  chat_openTask: 'Open task',
+  chat_openFolder: 'Open this chat’s folder in Resources',
+  chat_files: 'Files',
+  chat_uploadFile: 'Upload a document',
+  chat_linkDoc: 'Send a document from Resources',
+  chat_linkDocDesc: 'Pick documents already in this project.',
+  chat_uploading: 'Uploading…',
+  chat_fileGone: 'This document was removed.',
+  chat_whereToFile: 'Where should this be filed?',
+  chat_whereToFileDesc: '{n} file(s). They are always kept in this chat.',
+  chat_fileInRoom: 'This chat’s folder',
+  chat_searchFolders: 'Search folders…',
+  chat_noFolders: 'No other folders in this project.',
+  chat_cancel: 'Cancel',
 
   // Comments
   comment_title: 'Comments',
@@ -666,6 +698,7 @@ const pt: typeof en = {
   taskcard_markIncomplete: 'Marcar como incompleto',
   taskcard_markComplete: 'Marcar como concluído',
   taskcard_min: 'min',
+  taskcard_discuss: 'Discutir na conversa',
 
   // Stat Card
   statcard_vsLastPeriod: 'vs período anterior',
@@ -723,6 +756,7 @@ const pt: typeof en = {
   notif_commentAdded: 'Novo Comentário',
   notif_workloadAlert: 'Alerta de Sobrecarga',
   notif_inactivityAlert: 'Alerta de Inatividade',
+  notif_chatMessage: 'Nova mensagem',
 
   // Task status
   status_pending: 'Pendente',
@@ -736,6 +770,36 @@ const pt: typeof en = {
   deadline_today: 'Vence hoje',
   deadline_tomorrow: 'Vence amanhã',
   deadline_inDays: 'Vence em {n} dias',
+
+  // Chat
+  nav_chat: 'Conversas',
+  chat_people: 'Pessoas',
+  chat_taskThreads: 'Tarefas',
+  chat_startChat: 'Iniciar conversa',
+  chat_direct: 'Mensagem direta',
+  chat_taskThread: 'Discussão da tarefa',
+  chat_searchPlaceholder: 'Procurar pessoas e tarefas…',
+  chat_noConversations: 'Ainda sem conversas',
+  chat_pickConversation: 'Escolha uma conversa',
+  chat_pickConversationDesc: 'Escolha alguém para falar, ou uma tarefa para discutir.',
+  chat_noMessages: 'Ainda sem mensagens. Diga algo.',
+  chat_messagePlaceholder: 'Escreva uma mensagem…',
+  chat_you: 'Você',
+  chat_delete: 'Apagar mensagem',
+  chat_openTask: 'Abrir tarefa',
+  chat_openFolder: 'Abrir a pasta desta conversa nos Recursos',
+  chat_files: 'Ficheiros',
+  chat_uploadFile: 'Carregar um documento',
+  chat_linkDoc: 'Enviar um documento dos Recursos',
+  chat_linkDocDesc: 'Escolha documentos já existentes neste projeto.',
+  chat_uploading: 'A carregar…',
+  chat_fileGone: 'Este documento foi removido.',
+  chat_whereToFile: 'Onde deve ser arquivado?',
+  chat_whereToFileDesc: '{n} ficheiro(s). Ficam sempre nesta conversa.',
+  chat_fileInRoom: 'Pasta desta conversa',
+  chat_searchFolders: 'Procurar pastas…',
+  chat_noFolders: 'Sem outras pastas neste projeto.',
+  chat_cancel: 'Cancelar',
 
   // Comments
   comment_title: 'Comentários',

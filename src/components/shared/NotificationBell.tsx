@@ -12,6 +12,7 @@ import { format, differenceInDays, parseISO } from 'date-fns'
 import { useT } from '../../i18n/useT'
 import { AppNotification } from '../../types'
 import { getTasksDueOnDate } from '../../utils/taskScheduler'
+import { withHighlight } from '../../lib/highlight'
 
 function notifIcon(type: AppNotification['type']) {
   switch (type) {
@@ -26,6 +27,7 @@ function notifIcon(type: AppNotification['type']) {
     case 'task_completed': return <CheckCircle2 size={14} className="text-success" />
     case 'task_reopened': return <RotateCcw size={14} className="text-amber" />
     case 'file_uploaded': return <Paperclip size={14} className="text-primary" />
+    case 'chat_message': return <MessageSquare size={14} className="text-primary" />
     default: return <Bell size={14} className="text-text-muted" />
   }
 }
@@ -153,14 +155,29 @@ export function NotificationBell() {
   }
 
   /**
-   * Take the reader to whatever the notification is about. Everything raised
-   * today concerns a task, and where a task lives differs by role: an admin
-   * manages it inside its project, an employee sees it in My Tasks.
+   * Take the reader to whatever the notification is about — and point at it.
+   *
+   * Landing on the right page was never enough: My Tasks and the task manager
+   * both show long lists, so the reader still had to find the one row the
+   * notification meant. Every route built here therefore carries
+   * `?highlight=<id>`, which the destination list uses to ring that row and
+   * scroll it into view for a few seconds.
    */
   const openNotification = (notif: AppNotification) => {
     setOpen(false)
+
+    // A message points at its room, not at a page of rows — the room itself is
+    // the thing, and chat opens it directly.
+    if (notif.conversationId) {
+      navigate(
+        `${role === 'admin' ? '/admin/chat' : '/employee/chat'}?conversation=${notif.conversationId}`
+      )
+      return
+    }
+
     if (!notif.taskId) {
-      // Workload and inactivity alerts are about people, not one task.
+      // Workload and inactivity alerts are about a person, not one task, so
+      // the team list is as specific as this can get.
       if (notif.type === 'workload_alert' || notif.type === 'inactivity_alert') {
         navigate(role === 'admin' ? '/admin/projects' : '/employee/tasks')
       }
@@ -168,7 +185,7 @@ export function NotificationBell() {
     }
 
     if (role !== 'admin') {
-      navigate('/employee/tasks')
+      navigate(withHighlight('/employee/tasks', notif.taskId))
       return
     }
 
@@ -177,7 +194,7 @@ export function NotificationBell() {
     const task = tasks.find(x => x.id === notif.taskId)
     navigate(
       task?.projectId
-        ? `/admin/projects/${task.projectId}/employees/tasks`
+        ? withHighlight(`/admin/projects/${task.projectId}/employees/tasks`, notif.taskId)
         : '/admin/projects'
     )
   }

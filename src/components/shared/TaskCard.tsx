@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Clock, CheckCircle2, Circle, Timer, MessageSquare } from 'lucide-react'
 import { Task, Category } from '../../types'
 import { Badge } from './Badge'
-import { TaskCommentPanel } from './TaskCommentPanel'
-import { useTaskStore } from '../../store/taskStore'
+import { useChatStore } from '../../store/chatStore'
 import { useAuthStore } from '../../store/authStore'
 import { useT } from '../../i18n/useT'
 import { differenceInDays, parseISO } from 'date-fns'
+import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 
 interface TaskCardProps {
   task: Task
@@ -21,6 +22,12 @@ interface TaskCardProps {
   employeeName?: string
   currentUserId?: string
   dueDate?: string
+  /**
+   * Rings the card and scrolls it into view. Set when a notification pointed
+   * at this task, so the reader is not left hunting a long list for it.
+   */
+  highlighted?: boolean
+  highlightRef?: (node: HTMLElement | null) => void
 }
 
 const priorityColors: Record<string, string> = {
@@ -79,16 +86,37 @@ export function TaskCard({
   employeeName,
   currentUserId,
   dueDate,
+  highlighted,
+  highlightRef,
 }: TaskCardProps) {
   const [animating, setAnimating] = useState(false)
-  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [opening, setOpening] = useState(false)
   const { t } = useT()
-  const { getTaskComments } = useTaskStore()
+  const navigate = useNavigate()
   const { currentUser } = useAuthStore()
+  // Discussion of a task lives in chat now, not on the card. The count is of
+  // that room, so the card still says whether there is anything to read.
+  const { conversations, messages, openTaskRoom } = useChatStore()
 
-  const userId = currentUserId ?? currentUser?.id ?? ''
-  const userName = currentUser?.name ?? employeeName ?? ''
-  const commentCount = getTaskComments(task.id).length
+  const room = conversations.find((c) => c.taskId === task.id)
+  const messageCount = room ? (messages[room.id] ?? []).length : 0
+
+  /**
+   * Open this task's discussion. The room is created on demand, so a task
+   * nobody has talked about yet still has somewhere to go — it just does not
+   * exist until someone opens it.
+   */
+  const openDiscussion = async () => {
+    setOpening(true)
+    try {
+      const conv = await openTaskRoom(task.id, task.projectId)
+      if (!conv) return
+      const base = currentUser?.role === 'admin' ? '/admin/chat' : '/employee/chat'
+      navigate(`${base}?conversation=${conv.id}`)
+    } finally {
+      setOpening(false)
+    }
+  }
 
   const handleToggle = () => {
     setAnimating(true)
@@ -147,11 +175,12 @@ export function TaskCard({
 
   return (
     <div
+      ref={highlighted ? highlightRef : undefined}
       className={`p-3 rounded-lg border transition-all duration-200 ${
         isCompleted
           ? 'bg-surface-2/50 border-border opacity-70'
           : 'bg-surface border-border hover:border-border-md hover:shadow-sm'
-      }`}
+      } ${highlighted ? HIGHLIGHT_CLASS : ''}`}
     >
       <div className="flex items-start gap-3">
         {statusButton()}
@@ -196,26 +225,20 @@ export function TaskCard({
               )}
             </div>
 
-            {/* Comment toggle button */}
+            {/* The way into this task's discussion, over in chat. */}
             <button
-              onClick={() => setCommentsOpen(o => !o)}
-              className={`flex items-center gap-1 text-xs transition-colors ${commentsOpen ? 'text-primary' : 'text-text-subtle hover:text-text-main'}`}
+              onClick={openDiscussion}
+              disabled={opening}
+              title={t('taskcard_discuss')}
+              className="flex items-center gap-1 text-xs text-text-subtle hover:text-text-main transition-colors disabled:opacity-50"
             >
               <MessageSquare size={13} />
-              {commentCount > 0 && <span>{commentCount}</span>}
+              {messageCount > 0 && <span>{messageCount}</span>}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Inline comment panel */}
-      {commentsOpen && (
-        <TaskCommentPanel
-          taskId={task.id}
-          currentUserId={userId}
-          currentUserName={userName}
-        />
-      )}
     </div>
   )
 }

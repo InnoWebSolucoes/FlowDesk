@@ -6,6 +6,8 @@ import { format, parseISO } from 'date-fns'
 import { Project, ProjectNote } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { NoteEditor } from './NoteEditor'
+import { useHighlight } from '../../hooks/useHighlight'
+import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 
 interface NoteBoardProps {
   project: Project
@@ -57,6 +59,21 @@ export function NoteBoard({ project, ownerId, readOnly = false }: NoteBoardProps
   const [query, setQuery] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
+  const highlight = useHighlight()
+
+  /**
+   * A ringed note has to be findable: a search box that excludes it, or the
+   * archive it was filed into, would both leave the reader looking at a list
+   * the note is not in.
+   */
+  useEffect(() => {
+    const id = highlight.activeId
+    if (!id) return
+    const target = notes.find((n) => n.id === id)
+    if (!target) return
+    setQuery('')
+    if (target.isArchived) setShowArchived(true)
+  }, [highlight.activeId, notes])
 
   const boardKey = `${project.id}:${ownerId ?? 'shared'}`
 
@@ -161,10 +178,11 @@ export function NoteBoard({ project, ownerId, readOnly = false }: NoteBoardProps
               return (
                 <button
                   key={note.id}
+                  ref={highlight.isHighlighted(note.id) ? highlight.ref : undefined}
                   onClick={() => setOpenId(note.id)}
                   className={`w-full text-left px-3 py-2.5 border-b border-border transition-colors ${
                     open?.id === note.id ? 'bg-primary-light' : 'hover:bg-surface-2'
-                  }`}
+                  } ${highlight.isHighlighted(note.id) ? HIGHLIGHT_CLASS : ''}`}
                 >
                   <div className="flex items-center gap-1.5">
                     <span

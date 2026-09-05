@@ -5,6 +5,8 @@ export interface User {
   email: string
   name: string
   role: Role
+  /** Full access everywhere, and the only one who can grant admin access. */
+  isOwner?: boolean
   avatarInitials: string
   joinDate: string
   /** The project this user belongs to. Always null for admins, who see all. */
@@ -13,6 +15,8 @@ export interface User {
 
 export interface Employee extends User {
   role: 'employee'
+  /** Every project they work on. projectId is their primary one. */
+  projectIds: string[]
   jobTitle: string
   department: string
   managerId: string | null
@@ -379,6 +383,43 @@ export interface ActivityLog {
   timestamp: string
 }
 
+/**
+ * A room in chat. Either two people talking directly, or the discussion of one
+ * task — which is where task comments now live, rather than on the task card.
+ */
+export interface Conversation {
+  id: string
+  kind: 'direct' | 'task'
+  projectId: string | null
+  /** Set when kind is 'task'. What the room is about. */
+  taskId: string | null
+  /** The room's folder in Resources. Created on the first upload. */
+  clusterId: string | null
+  createdAt: string
+  lastMessageAt: string
+  /** Members of a direct room. Empty for a task room, whose audience is derived. */
+  memberIds: string[]
+  /** When the signed-in user last read this room. */
+  lastReadAt: string | null
+  /**
+   * Messages waiting for the signed-in user. Counted at the source rather than
+   * derived from loaded messages, so a room this session has never opened
+   * still shows its badge.
+   */
+  unread: number
+}
+
+export interface ChatMessage {
+  id: string
+  conversationId: string
+  authorId: string
+  body: string
+  createdAt: string
+  editedAt: string | null
+  /** Documents sent with the message. Real resource items, never copies. */
+  itemIds: string[]
+}
+
 export interface AppNotification {
   id: string
   type:
@@ -395,9 +436,13 @@ export interface AppNotification {
     | 'task_completed'
     | 'task_reopened'
     | 'file_uploaded'
+    // A message in chat, pointing at the room it was sent in.
+    | 'chat_message'
   title: string
   message: string
   taskId?: string
+  /** The room a chat notification opens. */
+  conversationId?: string
   isRead: boolean
   createdAt: string
   targetUserId: string | null // employee id, or null when targetRole is set

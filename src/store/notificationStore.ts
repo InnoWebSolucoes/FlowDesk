@@ -24,6 +24,7 @@ function toNotification(row: any): AppNotification {
     title: row.title,
     message: row.message,
     taskId: row.task_id ?? undefined,
+    conversationId: row.conversation_id ?? undefined,
     isRead: row.is_read,
     createdAt: row.created_at,
     targetUserId: row.target_user_id,
@@ -99,6 +100,7 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
         title: notif.title,
         message: notif.message,
         task_id: notif.taskId ?? null,
+        conversation_id: notif.conversationId ?? null,
         target_user_id: notif.targetUserId,
         target_role: notif.targetRole,
       })

@@ -6,6 +6,7 @@ import { useEmployeeStore } from './store/employeeStore'
 import { useToolStore } from './store/toolStore'
 import { useNotificationStore } from './store/notificationStore'
 import { useProjectStore } from './store/projectStore'
+import { useChatStore } from './store/chatStore'
 import { Layout } from './components/shared/Layout'
 
 // Pages
@@ -33,6 +34,7 @@ import { MyTodos } from './pages/employee/MyTodos'
 import { MyNotes } from './pages/employee/MyNotes'
 import { MyResources } from './pages/employee/MyResources'
 import { MyCalendar } from './pages/employee/MyCalendar'
+import { Chat } from './pages/Chat'
 
 function LoadingScreen() {
   return (
@@ -102,6 +104,8 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
   const initTools = useToolStore(s => s.initialize)
   const initNotifications = useNotificationStore(s => s.initialize)
   const initProjects = useProjectStore(s => s.initialize)
+  const initChat = useChatStore(s => s.initialize)
+  const currentUserId = useAuthStore(s => s.currentUser?.id)
 
   useEffect(() => {
     initAuth()
@@ -110,6 +114,7 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
   const tearDownTasks = useTaskStore(s => s.teardown)
   const tearDownNotifications = useNotificationStore(s => s.teardown)
   const tearDownProjects = useProjectStore(s => s.teardown)
+  const tearDownChat = useChatStore(s => s.teardown)
 
   useEffect(() => {
     if (authStatus === 'authenticated') {
@@ -118,6 +123,9 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
       initTasks()
       initTools()
       initNotifications()
+      // Chat is per-person — whose rooms these are decides what comes back —
+      // so it needs the id, not just the fact that someone is signed in.
+      if (currentUserId) initChat(currentUserId)
       return
     }
 
@@ -127,7 +135,8 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
     tearDownTasks()
     tearDownNotifications()
     tearDownProjects()
-  }, [authStatus])
+    tearDownChat()
+  }, [authStatus, currentUserId])
 
   if (authStatus === 'loading') return <LoadingScreen />
 
@@ -154,6 +163,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="projects" replace />} />
             <Route path="overview" element={<Overview />} />
+            <Route path="chat" element={<Chat />} />
             <Route path="projects" element={<Projects />} />
             <Route path="projects/:projectId" element={<ProjectLayout />}>
               <Route index element={<Navigate to="about" replace />} />
@@ -203,6 +213,7 @@ export default function App() {
               <Route path="resources" element={<MyResources />} />
             </Route>
 
+            <Route path="chat" element={<Chat />} />
             <Route path="toolbox" element={<Toolbox />} />
             <Route path="guidelines" element={<Guidelines />} />
           </Route>
