@@ -65,6 +65,18 @@ export function TodoBoard({
   } = useProjectStore()
 
   const [newTitle, setNewTitle] = useState('')
+  // Details filled in before the todo exists. Kept together so one reset
+  // clears the whole draft after adding.
+  const emptyDraft = {
+    notes: '',
+    priority: 'medium' as Priority,
+    dueDate: '',
+    doDate: '',
+    links: [] as { itemId?: string; clusterId?: string }[],
+  }
+  const [draftOpen, setDraftOpen] = useState(false)
+  const [draft, setDraft] = useState(emptyDraft)
+  const [draftLinking, setDraftLinking] = useState(false)
   const [showCompleted, setShowCompleted] = useState(true)
   const [sortMode, setSortMode] = useState<SortMode>('manual')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -174,12 +186,40 @@ export function TodoBoard({
 
   const pendingTitles = parseTitles(newTitle)
 
+  // Whether the draft holds anything, so the + button can show it is carrying
+  // details even while collapsed.
+  const hasDraft =
+    draft.notes.trim() !== '' ||
+    draft.priority !== 'medium' ||
+    draft.dueDate !== '' ||
+    draft.doDate !== '' ||
+    draft.links.length > 0
+
   const handleAdd = async () => {
     if (!currentListId || pendingTitles.length === 0) return
+    const details = draftOpen ? draft : emptyDraft
     setNewTitle('')
     for (const title of pendingTitles) {
-      await createTodo(project.id, { title, listId: currentListId }, ownerId)
+      const created = await createTodo(
+        project.id,
+        {
+          title,
+          listId: currentListId,
+          notes: details.notes,
+          priority: details.priority,
+          dueDate: details.dueDate || null,
+          doDate: details.doDate || null,
+        },
+        ownerId,
+      )
+      // Links are a separate table, so they can only be attached once the
+      // todo has an id.
+      if (created && details.links.length > 0) {
+        await setTodoLinks(created.id, details.links)
+      }
     }
+    setDraft(emptyDraft)
+    setDraftOpen(false)
   }
 
   const handleAddList = async () => {
@@ -524,6 +564,18 @@ export function TodoBoard({
             className="flex-1 px-3 py-2.5 rounded-lg bg-surface border border-border text-sm text-text-main resize-none focus:outline-none focus:border-primary disabled:opacity-50"
           />
           <button
+            onClick={() => setDraftOpen((v) => !v)}
+            disabled={!currentListId}
+            title={draftOpen ? 'Hide details' : 'Add details before saving'}
+            className={`flex items-center justify-center w-10 py-2.5 rounded-lg border transition-colors flex-shrink-0 disabled:opacity-40 ${
+              draftOpen || hasDraft
+                ? 'bg-primary-light border-primary/30 text-primary'
+                : 'bg-surface border-border text-text-muted hover:text-text-main hover:border-primary/40'
+            }`}
+          >
+            {draftOpen ? <ChevronUp size={15} /> : <Plus size={15} />}
+          </button>
+          <button
             onClick={handleAdd}
             disabled={pendingTitles.length === 0 || !currentListId}
             className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-primary-dark disabled:opacity-40 transition-colors flex-shrink-0"
@@ -532,6 +584,73 @@ export function TodoBoard({
             {pendingTitles.length > 1 ? `Add ${pendingTitles.length}` : 'Add'}
           </button>
         </div>
+
+        {/* Details, filled in before the todo is created. Applied to every
+            title in the box, so a bulk add shares them. */}
+        {draftOpen && (
+          <div className="mt-2 p-3 rounded-lg bg-surface-2 border border-border space-y-3">
+            <textarea
+              value={draft.notes}
+              onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
+              rows={2}
+              placeholder="Description"
+              className="w-full px-2.5 py-2 rounded-md bg-surface border border-border text-xs text-text-main resize-none focus:outline-none focus:border-primary"
+            />
+
+            <div className="flex flex-wrap gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-text-subtle">Priority</span>
+                <select
+                  value={draft.priority}
+                  onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value as Priority }))}
+                  className="px-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-main focus:outline-none focus:border-primary"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-text-subtle">Do date</span>
+                <input
+                  type="date"
+                  value={draft.doDate}
+                  onChange={(e) => setDraft((d) => ({ ...d, doDate: e.target.value }))}
+                  className="px-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-main focus:outline-none focus:border-primary"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-text-subtle">Due date</span>
+                <input
+                  type="date"
+                  value={draft.dueDate}
+                  onChange={(e) => setDraft((d) => ({ ...d, dueDate: e.target.value }))}
+                  className="px-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-main focus:outline-none focus:border-primary"
+                />
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setDraftLinking(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface border border-border text-xs text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+              >
+                <Link2 size={12} />
+                {draft.links.length > 0 ? `${draft.links.length} attached` : 'Attach resources'}
+              </button>
+              {hasDraft && (
+                <button
+                  onClick={() => setDraft(emptyDraft)}
+                  className="text-[11px] text-text-muted hover:text-text-main transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Preview, so a comma-split is visible before committing to it */}
         {pendingTitles.length > 1 && (
@@ -602,6 +721,20 @@ export function TodoBoard({
             </div>
           )}
         </div>
+      )}
+
+      {/* Same picker, but writing into the draft since there is no todo yet. */}
+      {draftLinking && (
+        <ResourceLinkPicker
+          projectId={project.id}
+          subtitle={pendingTitles[0] ?? 'New todo'}
+          initial={draft.links}
+          onClose={() => setDraftLinking(false)}
+          onSave={async (links) => {
+            setDraft((d) => ({ ...d, links }))
+            setDraftLinking(false)
+          }}
+        />
       )}
 
       {/* Resource link picker, clusters can be selected or opened into. */}
