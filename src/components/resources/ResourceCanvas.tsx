@@ -361,15 +361,6 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     [items, clusters, setViewport]
   )
 
-  const countsFor = useCallback(
-    (clusterId: string) => {
-      const childClusters = clusters.filter((c) => c.parentClusterId === clusterId).length
-      const childItems = items.filter((i) => i.clusterId === clusterId).length
-      return { childClusters, childItems }
-    },
-    [clusters, items]
-  )
-
   // ─── Drag ──────────────────────────────────────────────────────────────────
 
   /**
@@ -977,17 +968,8 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
     }
     if (clashes.length === 0) return files
 
-    const ok = confirm(
-      [
-        `${clashes.length} of these ${clashes.length === 1 ? 'is' : 'are'} already in this project:`,
-        '',
-        ...clashes.map((c) => `- ${c.file.name} (already here as "${c.match}")`),
-        '',
-        'Add anyway as a separate copy?',
-        '',
-        'To update the existing document instead, open it and use "Upload new version".',
-      ].join('\n'),
-    )
+    // Duplicates are added as separate copies rather than asking.
+    const ok = true
     return ok ? files : files.filter((f) => !clashes.some((c) => c.file === f))
   }
 
@@ -1098,9 +1080,6 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
   }
 
   const handleDeleteCluster = async (cluster: ResourceCluster) => {
-    const { childClusters, childItems } = countsFor(cluster.id)
-    const detail = childClusters + childItems > 0 ? ` and everything inside it (${childItems} item(s), ${childClusters} cluster(s))` : ''
-    if (!confirm(`Delete "${cluster.title}"${detail}? This cannot be undone.`)) return
     await deleteCluster(cluster.id)
   }
 

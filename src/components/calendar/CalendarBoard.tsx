@@ -571,9 +571,6 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               <div className="h-px bg-border my-1" />
               <button
                 onClick={act(() => {
-                  const label = bTodo?.title ?? bEntry!.title
-                  const what = bTodo ? 'the todo and its calendar slot' : 'this calendar entry'
-                  if (!confirm(`Delete "${label}"? This removes ${what}, and cannot be undone.`)) return
                   if (bTodo) deleteTodo(bTodo.id)
                   else deleteCalendarEntry(bEntry!.id)
                 })}

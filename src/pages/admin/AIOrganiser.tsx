@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Sparkles, Loader2, Download, AlertCircle, Clock, ChevronDown, ChevronUp, Wand2 } from 'lucide-react'
+import { Sparkles, Loader2, Download, AlertCircle, Clock, ChevronDown, ChevronUp, Wand2, X } from 'lucide-react'
 import { generateTasks } from '../../lib/anthropic'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
@@ -60,6 +60,7 @@ export function AIOrganiser() {
   const [generated, setGenerated] = useState<GeneratedTask[]>([])
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [imported, setImported] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [refinement, setRefinement] = useState('')
   const [refining, setRefining] = useState(false)
 
@@ -165,6 +166,7 @@ export function AIOrganiser() {
     }
 
     let saved = 0
+    setImporting(true)
     try {
     for (const gt of generated) {
       // Each task carries its own people now, so a single batch can be split
@@ -205,16 +207,34 @@ export function AIOrganiser() {
         saved > 0 ? ` (${saved} saved before this)` : ''
       }`)
       return
+    } finally {
+      setImporting(false)
     }
     if (unassigned.length > 0) {
       setError(t('ai_errorSomeUnassigned').replace('{n}', String(unassigned.length)))
     }
+
+    // Importing is the end of the batch. Clearing it returns the panel to an
+    // empty brief, so the same tasks cannot be added a second time.
+    setGenerated([])
+    setExpanded(new Set())
+    setRefinement('')
+    setDescription('')
     setImported(true)
-    setTimeout(() => setImported(false), 3000)
+    setTimeout(() => setImported(false), 4000)
   }
 
   const updateGenerated = (i: number, key: string, value: any) => {
     setGenerated(prev => prev.map((item, idx) => idx === i ? { ...item, [key]: value } : item))
+  }
+
+  /** Back to an empty brief, discarding the batch on screen. */
+  const startOver = () => {
+    setGenerated([])
+    setExpanded(new Set())
+    setRefinement('')
+    setError('')
+    setImported(false)
   }
 
   const priorityLabel = (p: string) => {
@@ -226,8 +246,11 @@ export function AIOrganiser() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 animate-fade-in" style={{ minHeight: '70vh' }}>
-      {/* Left panel */}
+      {/* Left panel: the brief while writing one, the refinement box once a
+          batch exists. Showing both at once left it unclear which one the
+          text you were typing would go to. */}
       <div className="lg:w-2/5 flex-shrink-0 space-y-4">
+        {generated.length === 0 && (
         <div className="bg-surface rounded-xl border border-border p-5">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles size={18} className="text-primary" />
@@ -285,6 +308,7 @@ export function AIOrganiser() {
             )}
           </button>
         </div>
+        )}
 
         {/* Refinement: only useful once there's a batch to revise. */}
         {generated.length > 0 && (
@@ -313,6 +337,14 @@ export function AIOrganiser() {
               ) : (
                 <><Wand2 size={16} /> {t('ai_refineBtn')}</>
               )}
+            </button>
+
+            <button
+              onClick={startOver}
+              disabled={refining || importing}
+              className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium text-text-muted hover:text-danger transition-colors disabled:opacity-60"
+            >
+              <X size={13} /> {t('ai_startOver')}
             </button>
           </div>
         )}
@@ -481,9 +513,14 @@ export function AIOrganiser() {
 
             <button
               onClick={handleImportAll}
-              className="w-full flex items-center justify-center gap-2 bg-primary text-white font-medium py-3 rounded-xl hover:bg-primary-dark transition-colors text-sm mt-2"
+              disabled={importing}
+              className="w-full flex items-center justify-center gap-2 bg-primary text-white font-medium py-3 rounded-xl hover:bg-primary-dark transition-colors text-sm mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <Download size={16} /> {t('ai_importAll')} {generated.length} {t('ai_tasks')}
+              {importing ? (
+                <><Loader2 size={16} className="animate-spin" /> {t('ai_importing')}</>
+              ) : (
+                <><Download size={16} /> {t('ai_importAll')} {generated.length} {t('ai_tasks')}</>
+              )}
             </button>
           </div>
         )}

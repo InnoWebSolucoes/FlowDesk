@@ -139,14 +139,7 @@ export function Projects() {
               <button
                 onClick={async () => {
                   setMenu(null)
-                  const members = employees.filter((e) => e.projectId === target.id).length
-                  const taskCount = tasks.filter((t) => t.projectId === target.id).length
-                  const warning =
-                    `Delete "${target.name}"?\n\n` +
-                    `This permanently removes its resources and todos, and deletes ${taskCount} task(s).\n` +
-                    `${members} employee(s) will be unassigned but their accounts will remain.\n\n` +
-                    `This cannot be undone.`
-                  if (confirm(warning)) await deleteProject(target.id)
+                  await deleteProject(target.id)
                 }}
                 className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
               >

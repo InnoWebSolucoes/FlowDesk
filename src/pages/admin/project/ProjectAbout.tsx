@@ -3,8 +3,6 @@ import { useOutletContext, useNavigate } from 'react-router-dom'
 import { Save, Trash2, Globe, Mail, Phone, MapPin, User, MessageCircle } from 'lucide-react'
 import { Project } from '../../../types'
 import { useProjectStore } from '../../../store/projectStore'
-import { useEmployeeStore } from '../../../store/employeeStore'
-import { useTaskStore } from '../../../store/taskStore'
 import { openWhatsapp, normalisePhoneDigits } from '../../../lib/nativeShare'
 
 interface Ctx { project: Project }
@@ -17,8 +15,6 @@ export function ProjectAbout() {
 
 function ProjectAboutForm({ project }: { project: Project }) {
   const { updateProject, deleteProject } = useProjectStore()
-  const { employees } = useEmployeeStore()
-  const { tasks } = useTaskStore()
   const navigate = useNavigate()
 
   const [form, setForm] = useState(project)
@@ -39,15 +35,6 @@ function ProjectAboutForm({ project }: { project: Project }) {
   }
 
   const handleDelete = async () => {
-    const memberCount = employees.filter((e) => e.projectId === project.id).length
-    const taskCount = tasks.filter((t) => t.projectId === project.id).length
-    const warning =
-      `Delete "${project.name}"?\n\n` +
-      `This permanently removes its resources and todos, and deletes ${taskCount} task(s).\n` +
-      `${memberCount} employee(s) will be unassigned but their accounts will remain.\n\n` +
-      `This cannot be undone.`
-
-    if (!confirm(warning)) return
     await deleteProject(project.id)
     navigate('/admin/projects')
   }
