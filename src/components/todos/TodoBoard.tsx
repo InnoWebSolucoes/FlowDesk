@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ListTodo, Plus, Trash2, Link2, ChevronUp, ChevronDown, Circle, CheckCircle2,
   FolderOpen, Calendar, CalendarClock, Pencil, Check, Copy,
@@ -82,6 +82,9 @@ export function TodoBoard({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [linkingId, setLinkingId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
+  // ?todo=<id> opens that todo directly, so a link from the assistant lands on
+  // the item itself rather than just the board it lives on.
+  const [searchParams, setSearchParams] = useSearchParams()
   // Remembered per project so a reload returns to the list you were on.
   const [activeListId, setActiveListId] = useState<string | null>(() => {
     try {
@@ -426,6 +429,17 @@ export function TodoBoard({
 
   const linkingTodo = linkingId ? todos.find((t) => t.id === linkingId) ?? null : null
   const detailTodo = detailId ? todos.find((t) => t.id === detailId) ?? undefined : undefined
+
+  useEffect(() => {
+    const wanted = searchParams.get('todo')
+    if (!wanted) return
+    if (todos.some((t) => t.id === wanted)) {
+      setDetailId(wanted)
+      // Consume it, or reopening the panel after closing would be impossible.
+      searchParams.delete('todo')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams, todos])
 
   return (
     <div className="max-w-5xl">

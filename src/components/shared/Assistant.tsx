@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Sparkles, X, Send, Check } from 'lucide-react'
 import { supabase } from '../../lib/supabaseClient'
 import { useProjectStore } from '../../store/projectStore'
@@ -15,6 +16,42 @@ interface Question {
 }
 
 /**
+ * Renders an assistant reply, turning [label](/p/...) into links that navigate
+ * inside the app. The model is told to write project paths as `/p/...`; the
+ * real project id is only known here, so it is substituted at render time.
+ * Anything that is not one of those paths is left as plain text — a reply
+ * should never be able to send someone off-site.
+ */
+function ReplyText({ text, projectBase, onNavigate }: {
+  text: string
+  projectBase: string
+  onNavigate: (to: string) => void
+}) {
+  const parts: React.ReactNode[] = []
+  const pattern = /\[([^\]]+)\]\((\/p\/[A-Za-z0-9\-_/?=&.]*)\)/g
+  let last = 0
+  let m: RegExpExecArray | null
+
+  while ((m = pattern.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index))
+    const to = projectBase + m[2].slice('/p'.length)
+    parts.push(
+      <button
+        key={`${m.index}-${m[1]}`}
+        onClick={() => onNavigate(to)}
+        className="text-primary underline underline-offset-2 hover:text-primary-dark text-left"
+      >
+        {m[1]}
+      </button>,
+    )
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+
+  return <>{parts}</>
+}
+
+/**
  * The assistant panel. The conversation the model sees (`apiMessages`) is kept
  * separate from what is rendered, because it also carries tool calls and their
  * results, which are noise to a reader.
@@ -28,6 +65,7 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
   const [question, setQuestion] = useState<Question | null>(null)
   const [picked, setPicked] = useState<string[]>([])
   const endRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
 
   const { loadTodos, loadCalendar, initialize: reloadProjects } = useProjectStore()
 
@@ -141,7 +179,15 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
                   : 'max-w-full text-sm text-text-main whitespace-pre-wrap'
               }
             >
-              {turn.text}
+              {turn.role === 'assistant' ? (
+                <ReplyText
+                  text={turn.text}
+                  projectBase={`/admin/projects/${projectId}`}
+                  onNavigate={(to) => { navigate(to); onClose() }}
+                />
+              ) : (
+                turn.text
+              )}
               {turn.role === 'assistant' && turn.actions && turn.actions.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {turn.actions.map((a, j) => (

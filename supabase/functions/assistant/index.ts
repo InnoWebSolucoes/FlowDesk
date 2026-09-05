@@ -344,6 +344,18 @@ ${
 
 Task categories: ${(categoriesRes.data ?? []).map((c) => c.name).join(', ') || '(none)'}
 
+Linking. When you name something the user can open, make it a markdown link
+so they can click straight to it. The paths, for this project:
+- A document or file: [its title](/p/resources)
+- The todo board: [the board](/p/todos) — a single todo: [its title](/p/todos?todo=<todo id>)
+- The calendar: [the calendar](/p/calendar)
+- Notes: [notes](/p/notes)
+- The team list: [the team](/p/team) — one person: [their name](/p/team/<user id>)
+- Assigned tasks: [tasks](/p/tasks)
+Use the ids given in the context above. Link the thing's own name rather than
+writing "click here", and do not invent a path that is not in this list. When
+you list several things, link each one.
+
 How to behave:
 - Answer counts and status questions from the context above — it is complete
   and current. Never say you cannot see the data, and never claim someone has
