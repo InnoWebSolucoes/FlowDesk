@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { Orbit, FolderTree } from 'lucide-react'
 import { Project, ResourceItem } from '../../../types'
 import { useProjectStore } from '../../../store/projectStore'
@@ -34,6 +34,9 @@ export function ProjectResources() {
   const [openDocId, setOpenDocId] = useState<string | null>(null)
   // A cluster's details, reachable from the folder view by right-clicking it.
   const [detailClusterId, setDetailClusterId] = useState<string | null>(null)
+  // ?item=<id> opens that document, so a link from the assistant lands on the
+  // document itself rather than the folder it happens to sit in.
+  const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
     if (resourcesLoadedFor !== project.id) loadResources(project.id)
@@ -63,6 +66,17 @@ export function ProjectResources() {
     }
     setOpenDocId(item.id)
   }
+
+  useEffect(() => {
+    const wanted = searchParams.get('item')
+    if (!wanted) return
+    if (items.some((i) => i.id === wanted)) {
+      setOpenDocId(wanted)
+      // Consume it, or closing the document could never stick.
+      searchParams.delete('item')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams, items])
 
   const selectedItem = selectedItemId ? items.find((i) => i.id === selectedItemId) ?? null : null
   const openDoc = openDocId ? items.find((i) => i.id === openDocId) ?? null : null

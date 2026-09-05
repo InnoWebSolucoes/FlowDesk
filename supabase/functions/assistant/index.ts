@@ -132,6 +132,177 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'create_employee',
+      description:
+        'Add a new person to this project. Every field is required and none may be guessed — use ask_user for whatever the user has not said. The password is temporary and the user must supply it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Their full name.' },
+          email: { type: 'string', description: 'Their login email.' },
+          password: { type: 'string', description: 'A temporary password, from the user.' },
+          jobTitle: { type: 'string' },
+          department: { type: 'string' },
+        },
+        required: ['name', 'email', 'password', 'jobTitle', 'department'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_employee',
+      description: "Change someone's job title or department.",
+      parameters: {
+        type: 'object',
+        properties: {
+          employee_id: { type: 'string' },
+          job_title: { type: 'string' },
+          department: { type: 'string' },
+        },
+        required: ['employee_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_task',
+      description:
+        'Create a task assigned to one or more employees. This is the recurring work people are given, not the manager\'s own todo list.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          description: { type: 'string' },
+          assignee_ids: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'User ids of the people it goes to.',
+          },
+          priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+          category_name: { type: 'string', description: 'Existing category name, or a new one.' },
+          estimated_minutes: { type: 'number' },
+          deadline: { type: 'string', description: 'Hard due date, YYYY-MM-DD.' },
+          do_date: { type: 'string', description: 'The day it should be done, YYYY-MM-DD.' },
+          frequency_type: {
+            type: 'string',
+            enum: ['daily', 'weekly', 'monthly', 'one-off'],
+            description: 'How often it repeats. Default one-off.',
+          },
+          frequency_days: {
+            type: 'array',
+            items: { type: 'number' },
+            description: 'For weekly: days 0-6 where 1=Mon.',
+          },
+        },
+        required: ['title', 'assignee_ids'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_task',
+      description: 'Change an existing assigned task.',
+      parameters: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+          deadline: { type: 'string' },
+          estimated_minutes: { type: 'number' },
+          is_active: { type: 'boolean', description: 'False retires it without deleting it.' },
+        },
+        required: ['task_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_note',
+      description: "Add a note to the project's notes board.",
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          body: { type: 'string' },
+        },
+        required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_todo_list',
+      description: 'Add a new list to the todo board.',
+      parameters: {
+        type: 'object',
+        properties: { name: { type: 'string' } },
+        required: ['name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_folder',
+      description: 'Add a folder to the resources area.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          parent_id: { type: 'string', description: 'Folder to nest inside. Omit for top level.' },
+        },
+        required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_project',
+      description: 'Change the project itself: its name, company, or industry.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          company_name: { type: 'string' },
+          industry: { type: 'string' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_thing',
+      description:
+        'Permanently delete something. There is no undo. You MUST call ask_user first and get an explicit yes naming what will go; never call this in the same turn the user first mentions deleting.',
+      parameters: {
+        type: 'object',
+        properties: {
+          kind: {
+            type: 'string',
+            enum: ['todo', 'task', 'note', 'calendar_entry', 'todo_list', 'employee'],
+          },
+          id: { type: 'string' },
+          confirmed: {
+            type: 'boolean',
+            description: 'True only after the user has answered yes to an ask_user about this exact deletion.',
+          },
+        },
+        required: ['kind', 'id', 'confirmed'],
+      },
+    },
+  },
 ]
 
 Deno.serve(async (req) => {
@@ -189,10 +360,10 @@ Deno.serve(async (req) => {
     db.from('users').select('id,name,email,role').eq('project_id', projectId),
     db
       .from('resource_items')
-      .select('id,title,file_name,updated_at')
+      .select('id,title,file_name,updated_at,resource_item_clusters(cluster_id)')
       .eq('project_id', projectId)
       .order('updated_at', { ascending: false })
-      .limit(25),
+      .limit(200),
     db
       .from('calendar_entries')
       .select('id,title,kind,starts_on,ends_on,owner_id')
@@ -330,8 +501,8 @@ ${
   ).join('\n') || '(nothing blocked)'
 }
 
-Recent documents:
-${(itemsRes.data ?? []).slice(0, 12).map((i) => `- ${i.title}`).join('\n') || '(none)'}
+Documents (every one in this project):
+${(itemsRes.data ?? []).map((i: any) => `- ${i.title} [${i.id}]${i.file_name && i.file_name !== i.title ? ` (file: ${i.file_name})` : ''}`).join('\n') || '(none)'}
 
 Notes board:
 ${
@@ -344,17 +515,22 @@ ${
 
 Task categories: ${(categoriesRes.data ?? []).map((c) => c.name).join(', ') || '(none)'}
 
-Linking. When you name something the user can open, make it a markdown link
-so they can click straight to it. The paths, for this project:
-- A document or file: [its title](/p/resources)
-- The todo board: [the board](/p/todos) — a single todo: [its title](/p/todos?todo=<todo id>)
+Linking. When you name something the user can open, make it a markdown link to
+that exact thing, never to the section it lives in. The paths, for this project:
+- One document: [its title](/p/resources?item=<document id>)
+- All documents: [resources](/p/resources)
+- One todo: [its title](/p/todos?todo=<todo id>)  -  the board: [todos](/p/todos)
+- One person: [their name](/p/team/<user id>)  -  everyone: [the team](/p/team)
 - The calendar: [the calendar](/p/calendar)
 - Notes: [notes](/p/notes)
-- The team list: [the team](/p/team) — one person: [their name](/p/team/<user id>)
 - Assigned tasks: [tasks](/p/tasks)
-Use the ids given in the context above. Link the thing's own name rather than
-writing "click here", and do not invent a path that is not in this list. When
-you list several things, link each one.
+
+Answering "which of these are X" is your job, not the user's. The context above
+lists every document, todo and person with its id: read the list, decide which
+ones match what was asked, and link each match on its own line. A reply that
+sends the user to the section to look for themselves is a failed answer. If
+nothing matches, say so plainly. Only link ids that appear above - never invent
+one, and never invent a path that is not in this list.
 
 How to behave:
 - Answer counts and status questions from the context above — it is complete
@@ -505,6 +681,208 @@ How to behave:
             if (error) throw error
             performed.push({ tool: 'update_project_description', summary: 'Updated the project description' })
             result = 'Project description updated.'
+            break
+          }
+
+          case 'create_employee': {
+            // Creating a login needs the service role, which lives in the
+            // create-employee function. Forwarding the caller's token keeps
+            // its own admin check in force rather than bypassing it.
+            const res = await fetch(
+              `${Deno.env.get('SUPABASE_URL')}/functions/v1/create-employee`,
+              {
+                method: 'POST',
+                headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: args.name,
+                  email: args.email,
+                  password: args.password,
+                  jobTitle: args.jobTitle,
+                  department: args.department,
+                  projectId,
+                }),
+              },
+            )
+            const body = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(body.error ?? `Could not create the account (${res.status}).`)
+            performed.push({ tool: 'create_employee', summary: `Added ${args.name}` })
+            result = `Created ${args.name} (${args.email}).`
+            break
+          }
+
+          case 'update_employee': {
+            const patch: Record<string, unknown> = {}
+            if (args.job_title !== undefined) patch.job_title = args.job_title
+            if (args.department !== undefined) patch.department = args.department
+            const { data, error } = await db
+              .from('users')
+              .update(patch)
+              .eq('id', args.employee_id)
+              .select('name')
+              .single()
+            if (error) throw error
+            performed.push({ tool: 'update_employee', summary: `Updated ${data.name}` })
+            result = `Updated ${data.name}.`
+            break
+          }
+
+          case 'create_task': {
+            const ids: string[] = Array.isArray(args.assignee_ids) ? args.assignee_ids : []
+            if (ids.length === 0) throw new Error('A task needs at least one assignee.')
+
+            // Categories are named, not chosen from a list, so make one when
+            // the name is new rather than failing.
+            let categoryId: string | null = null
+            const wanted = (args.category_name ?? '').trim()
+            if (wanted) {
+              const { data: found } = await db
+                .from('categories').select('id').ilike('name', wanted).maybeSingle()
+              if (found) categoryId = found.id
+              else {
+                const { data: made } = await db
+                  .from('categories')
+                  .insert({ name: wanted, color: '#1A5C3A' })
+                  .select('id').single()
+                categoryId = made?.id ?? null
+              }
+            }
+
+            const type = args.frequency_type ?? 'one-off'
+            const frequency: Record<string, unknown> = { type }
+            if (type === 'weekly') frequency.days = args.frequency_days ?? [1]
+            if (type === 'one-off' && args.deadline) frequency.date = args.deadline
+
+            const { data: task, error } = await db
+              .from('tasks')
+              .insert({
+                project_id: projectId,
+                title: args.title,
+                description: args.description ?? '',
+                frequency,
+                category_id: categoryId,
+                priority: args.priority ?? 'medium',
+                estimated_minutes: args.estimated_minutes ?? 0,
+                deadline: args.deadline ?? null,
+                created_by: user.id,
+                is_active: true,
+              })
+              .select('id,title')
+              .single()
+            if (error) throw error
+
+            const { error: assignErr } = await db.from('task_assignments').insert(
+              ids.map((employee_id: string) => ({
+                task_id: task.id,
+                employee_id,
+                do_date: args.do_date ?? null,
+              })),
+            )
+            if (assignErr) {
+              throw new Error(`The task was created but could not be assigned: ${assignErr.message}`)
+            }
+
+            performed.push({ tool: 'create_task', summary: `Created task "${task.title}"` })
+            result = `Created task ${task.id}, assigned to ${ids.length} person(s).`
+            break
+          }
+
+          case 'update_task': {
+            const patch: Record<string, unknown> = {}
+            for (const [k, col] of [
+              ['title', 'title'], ['description', 'description'], ['priority', 'priority'],
+              ['deadline', 'deadline'], ['estimated_minutes', 'estimated_minutes'],
+              ['is_active', 'is_active'],
+            ] as const) {
+              if (args[k] !== undefined) patch[col] = args[k]
+            }
+            const { data, error } = await db
+              .from('tasks').update(patch).eq('id', args.task_id).select('id,title').single()
+            if (error) throw error
+            performed.push({ tool: 'update_task', summary: `Updated task "${data.title}"` })
+            result = `Updated task ${data.id}.`
+            break
+          }
+
+          case 'create_note': {
+            const { data, error } = await db
+              .from('project_notes')
+              .insert({
+                project_id: projectId,
+                title: args.title,
+                body: args.body ?? '',
+                created_by: user.id,
+              })
+              .select('id,title')
+              .single()
+            if (error) throw error
+            performed.push({ tool: 'create_note', summary: `Added note "${data.title}"` })
+            result = `Created note ${data.id}.`
+            break
+          }
+
+          case 'create_todo_list': {
+            const { data, error } = await db
+              .from('project_todo_lists')
+              .insert({ project_id: projectId, name: args.name, sort_order: lists.length })
+              .select('id,name')
+              .single()
+            if (error) throw error
+            performed.push({ tool: 'create_todo_list', summary: `Added list "${data.name}"` })
+            result = `Created list ${data.id}.`
+            break
+          }
+
+          case 'create_folder': {
+            const { data, error } = await db
+              .from('resource_clusters')
+              .insert({
+                project_id: projectId,
+                parent_cluster_id: args.parent_id ?? null,
+                title: args.title,
+                created_by: user.id,
+              })
+              .select('id,title')
+              .single()
+            if (error) throw error
+            performed.push({ tool: 'create_folder', summary: `Added folder "${data.title}"` })
+            result = `Created folder ${data.id}.`
+            break
+          }
+
+          case 'update_project': {
+            const patch: Record<string, unknown> = {}
+            if (args.name !== undefined) patch.name = args.name
+            if (args.company_name !== undefined) patch.company_name = args.company_name
+            if (args.industry !== undefined) patch.industry = args.industry
+            if (Object.keys(patch).length === 0) throw new Error('Nothing to change.')
+            const { error } = await db.from('projects').update(patch).eq('id', projectId)
+            if (error) throw error
+            performed.push({ tool: 'update_project', summary: 'Updated the project' })
+            result = 'Project updated.'
+            break
+          }
+
+          case 'delete_thing': {
+            // The model is told to confirm first, but a model can skip an
+            // instruction. Nothing is destroyed unless the flag is set.
+            if (args.confirmed !== true) {
+              result =
+                'Not deleted: ask the user to confirm with ask_user first, then call this again with confirmed true.'
+              break
+            }
+            const table = ({
+              todo: 'project_todos',
+              task: 'tasks',
+              note: 'project_notes',
+              calendar_entry: 'calendar_entries',
+              todo_list: 'project_todo_lists',
+              employee: 'users',
+            } as Record<string, string>)[args.kind]
+            if (!table) throw new Error(`Cannot delete a ${args.kind}.`)
+            const { error } = await db.from(table).delete().eq('id', args.id)
+            if (error) throw error
+            performed.push({ tool: 'delete_thing', summary: `Deleted a ${args.kind}` })
+            result = `Deleted ${args.kind} ${args.id}.`
             break
           }
 
