@@ -326,8 +326,16 @@ Deno.serve(async (req) => {
     { global: { headers: { Authorization: authHeader } } },
   )
 
-  const { data: { user }, error: userErr } = await db.auth.getUser()
-  if (userErr || !user) return json({ error: 'Invalid session' }, 401)
+  // Validate the bearer token explicitly rather than relying on the client
+  // picking it up from its own headers: getUser() with no argument resolves
+  // the *client's* session, which inside a function is nobody, and that read
+  // as "Invalid session" on every message.
+  const token = authHeader.replace(/^Bearer\s+/i, '')
+  const { data: { user }, error: userErr } = await db.auth.getUser(token)
+  if (userErr || !user) {
+    console.error('[assistant] auth rejected:', userErr?.message, userErr?.status)
+    return json({ error: `Invalid session: ${userErr?.message ?? 'no user for this token'}` }, 401)
+  }
 
   let body: {
     projectId?: string

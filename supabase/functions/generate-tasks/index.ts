@@ -48,8 +48,13 @@ Deno.serve(async (req) => {
     { global: { headers: { Authorization: authHeader } } },
   )
 
-  const { data: { user }, error: userErr } = await db.auth.getUser()
-  if (userErr || !user) return json({ error: 'Invalid session' }, 401)
+  // Validate the bearer token explicitly — see the note in assistant/index.ts.
+  const { data: { user }, error: userErr } = await db.auth.getUser(
+    authHeader.replace(/^Bearer\s+/i, ''),
+  )
+  if (userErr || !user) {
+    return json({ error: `Invalid session: ${userErr?.message ?? 'no user for this token'}` }, 401)
+  }
 
   // Generating tasks is a manager action, and it spends API credit.
   const { data: profile } = await db.from('users').select('role').eq('id', user.id).single()
