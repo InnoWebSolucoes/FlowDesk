@@ -181,12 +181,25 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       .select()
       .single()
 
-    if (error || !data) return
+    // Swallowing this made a failed save look like a successful one: the form
+    // closed, nothing appeared, and there was nothing to go on. Throw so the
+    // caller can say what went wrong.
+    if (error || !data) {
+      console.error('[addTask] failed:', error)
+      throw new Error(error?.message ?? 'The task could not be saved.')
+    }
 
     if (task.assignedTo.length > 0) {
-      await supabase
+      const { error: assignError } = await supabase
         .from('task_assignments')
         .insert(task.assignedTo.map((employeeId) => ({ task_id: data.id, employee_id: employeeId })))
+
+      // The task exists but reaches nobody, which looks identical to a task
+      // that was never created. Say so rather than leaving it orphaned.
+      if (assignError) {
+        console.error('[addTask] assignments failed:', assignError)
+        throw new Error(`The task was created but could not be assigned: ${assignError.message}`)
+      }
     }
 
     set((s) => applyTasks(s.scopedProjectId, [
@@ -207,7 +220,11 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     if (updates.isActive !== undefined) patch.is_active = updates.isActive
 
     if (Object.keys(patch).length > 0) {
-      await supabase.from('tasks').update(patch).eq('id', id)
+      const { error } = await supabase.from('tasks').update(patch).eq('id', id)
+      if (error) {
+        console.error('[updateTask] failed:', error)
+        throw new Error(error.message)
+      }
     }
 
     if (updates.assignedTo !== undefined) {

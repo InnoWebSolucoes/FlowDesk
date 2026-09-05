@@ -345,19 +345,25 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
   }
 
   const handleSave = async (data: any) => {
-    if (editing === 'new') {
-      if (!currentUser) return
-      // An employee belongs to exactly one project, so the assignees fix the task's project.
-      const projectId = employees.find(e => e.id === data.assignedTo[0])?.projectId
-      if (!projectId) {
-        alert(t('task_errorNoProject'))
-        return
+    // A save that fails must not close the form: losing what was typed and
+    // showing nothing is how a broken save reads as a silent one.
+    try {
+      if (editing === 'new') {
+        if (!currentUser) return
+        // An employee belongs to exactly one project, so the assignees fix the task's project.
+        const projectId = employees.find(e => e.id === data.assignedTo[0])?.projectId
+        if (!projectId) {
+          alert(t('task_errorNoProject'))
+          return
+        }
+        await addTask({ ...data, projectId, createdBy: currentUser.id })
+      } else if (editing) {
+        await updateTask(editing.id, data)
       }
-      await addTask({ ...data, projectId, createdBy: currentUser.id })
-    } else if (editing) {
-      await updateTask(editing.id, data)
+      setEditing(null)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'The task could not be saved.')
     }
-    setEditing(null)
   }
 
   const handleDelete = async (id: string) => {
