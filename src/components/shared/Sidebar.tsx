@@ -48,6 +48,7 @@ export function Sidebar() {
     { to: '/employee/tasks', label: t('nav_myTasks'), icon: <CheckSquare size={18} /> },
     { to: '/employee/todos', label: t('nav_todos'), icon: <ListTodo size={18} /> },
     { to: '/employee/resources', label: t('nav_resources'), icon: <FolderOpen size={18} /> },
+    { to: '/employee/calendar', label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
     { to: '/employee/notes', label: t('nav_notes'), icon: <StickyNote size={18} /> },
     { to: '/employee/toolbox', label: t('nav_toolbox'), icon: <Wrench size={18} /> },
     { to: '/employee/guidelines', label: t('nav_guidelines'), icon: <BookOpen size={18} /> },

@@ -32,6 +32,7 @@ import { EmployeeWorkspace } from './pages/employee/EmployeeWorkspace'
 import { MyTodos } from './pages/employee/MyTodos'
 import { MyNotes } from './pages/employee/MyNotes'
 import { MyResources } from './pages/employee/MyResources'
+import { MyCalendar } from './pages/employee/MyCalendar'
 
 function LoadingScreen() {
   return (
@@ -184,6 +185,7 @@ export default function App() {
                 resolves it from the URL on the admin side. */}
             <Route element={<EmployeeWorkspace />}>
               <Route path="todos" element={<MyTodos />} />
+              <Route path="calendar" element={<MyCalendar />} />
               <Route path="notes" element={<MyNotes />} />
               <Route path="resources" element={<MyResources />} />
             </Route>
