@@ -346,7 +346,7 @@ Deno.serve(async (req) => {
 
   // ── Context: what the assistant knows before it answers ──────────────────
   const [
-    projectRes, listsRes, todosRes, peopleRes, itemsRes, entriesRes,
+    projectRes, listsRes, todosRes, peopleRes, itemsRes, foldersRes, entriesRes,
     tasksRes, doneRes, progressRes, notesRes, categoriesRes,
   ] = await Promise.all([
     db.from('projects').select('id,name,company_name,description,industry').eq('id', projectId).single(),
@@ -360,9 +360,14 @@ Deno.serve(async (req) => {
     db.from('users').select('id,name,email,role').eq('project_id', projectId),
     db
       .from('resource_items')
-      .select('id,title,file_name,updated_at,resource_item_clusters(cluster_id)')
+      .select('id,title,description,file_name,updated_at,cluster_id,resource_item_clusters(cluster_id)')
       .eq('project_id', projectId)
       .order('updated_at', { ascending: false })
+      .limit(200),
+    db
+      .from('resource_clusters')
+      .select('id,title')
+      .eq('project_id', projectId)
       .limit(200),
     db
       .from('calendar_entries')
@@ -502,7 +507,21 @@ ${
 }
 
 Documents (every one in this project):
-${(itemsRes.data ?? []).map((i: any) => `- ${i.title} [${i.id}]${i.file_name && i.file_name !== i.title ? ` (file: ${i.file_name})` : ''}`).join('\n') || '(none)'}
+${
+  (itemsRes.data ?? []).map((i: any) => {
+    const folderIds = [
+      i.cluster_id,
+      ...((i.resource_item_clusters ?? []).map((c: any) => c.cluster_id)),
+    ].filter(Boolean)
+    const folders = [...new Set(folderIds)]
+      .map((cid) => (foldersRes.data ?? []).find((f: any) => f.id === cid)?.title)
+      .filter(Boolean)
+    return `- ${i.title} [${i.id}]` +
+      (i.file_name && i.file_name !== i.title ? ` | file: ${i.file_name}` : '') +
+      (folders.length ? ` | in: ${folders.join(', ')}` : '') +
+      (i.description ? ` | ${String(i.description).slice(0, 120)}` : '')
+  }).join('\n') || '(none)'
+}
 
 Notes board:
 ${
@@ -528,9 +547,21 @@ that exact thing, never to the section it lives in. The paths, for this project:
 Answering "which of these are X" is your job, not the user's. The context above
 lists every document, todo and person with its id: read the list, decide which
 ones match what was asked, and link each match on its own line. A reply that
-sends the user to the section to look for themselves is a failed answer. If
-nothing matches, say so plainly. Only link ids that appear above - never invent
-one, and never invent a path that is not in this list.
+sends the user to the section to look for themselves is a failed answer. Only
+link ids that appear above - never invent one, and never invent a path that is
+not in this list.
+
+NEVER hand over something that is not what was asked for. When the user names a
+specific thing - "Okulya's contract", "the invoice from March" - the words they
+used must actually appear in that entry's title, file name, folder or
+description. A document is not the one they meant merely because it is the only
+document, or the closest of a bad set, or a contract when they named a person.
+If nothing matches, say exactly that and name what you did search: "I can't see
+anything for Okulya in this project's documents." If several might match, list
+them and let the user choose - do not pick one for them. If one matches only
+partly, link it and say which part matched. Handing over the wrong document
+with no hedge is the worst thing you can do here: it is worse than saying you
+could not find it, because the user acts on it believing you checked.
 
 How to behave:
 - Answer counts and status questions from the context above — it is complete
