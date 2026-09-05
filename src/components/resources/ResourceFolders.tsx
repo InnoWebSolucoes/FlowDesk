@@ -48,6 +48,13 @@ interface Props {
   onNavigate: (clusterId: string | null) => void
   onSelectItem: (item: ResourceItem) => void
   onOpenItem: (item: ResourceItem) => void
+  /**
+   * Which documents this viewer may change. Omitted, everything is editable —
+   * the managers' view. An employee passes a predicate that answers true only
+   * for the documents they uploaded, so they can tidy their own files without
+   * being able to move or delete the project's.
+   */
+  canEditItem?: (item: ResourceItem) => boolean
 }
 
 /**
@@ -55,7 +62,14 @@ interface Props {
  * as nested folders, in a sortable list or an icon grid, with selection and
  * bulk actions.
  */
-export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem, onOpenItem }: Props) {
+export function ResourceFolders({
+  projectId,
+  clusterId,
+  onNavigate,
+  onSelectItem,
+  onOpenItem,
+  canEditItem,
+}: Props) {
   const { clusters, items, moveItem, setItemClusters, deleteItem, duplicateItem, updateItem } = useProjectStore()
   const [mode, setMode] = useState<ViewMode>('list')
   const [sortKey, setSortKey] = useState<SortKey>('name')
@@ -83,6 +97,13 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
     if ((e.ctrlKey || e.metaKey) && nativeShare && item.storagePath) {
       e.preventDefault()
       dragDocumentOut(item.storagePath, item.fileName)
+      return
+    }
+
+    // Moving between folders is an edit; without it a drag would silently do
+    // nothing when RLS refused the write.
+    if (!mayEdit(item)) {
+      e.preventDefault()
       return
     }
 
@@ -203,6 +224,13 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
     () => items.filter((i) => selected.has(i.id)),
     [items, selected]
   )
+
+  const mayEdit = (item: ResourceItem) => (canEditItem ? canEditItem(item) : true)
+
+  // Bulk actions apply to the whole selection, so they are offered only when
+  // every document in it is one this viewer may change. Half-applying a delete
+  // is worse than not offering it.
+  const canEditSelection = selectedItems.length > 0 && selectedItems.every(mayEdit)
 
   const clearSelection = () => setSelected(new Set())
 
@@ -353,6 +381,8 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
             {selected.size} selected
           </span>
           <div className="flex-1" />
+          {canEditSelection && (
+          <>
           <button
             onClick={() => setMovePicker('move')}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:text-text-main hover:bg-surface transition-colors"
@@ -385,6 +415,8 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
           >
             <Trash2 size={13} /> Delete
           </button>
+          </>
+          )}
           <button
             onClick={clearSelection}
             className="text-text-subtle hover:text-text-main p-1 rounded"
@@ -623,28 +655,32 @@ export function ResourceFolders({ projectId, clusterId, onNavigate, onSelectItem
                 )}
               </>
             )}
-            <MenuItem
-              label={menuCount > 1 ? `Move ${menuCount} to…` : 'Move to…'}
-              onClick={() => { setMenu(null); setMovePicker('move') }}
-            />
-            <MenuItem
-              label={menuCount > 1 ? `Add ${menuCount} to…` : 'Add to cluster…'}
-              onClick={() => { setMenu(null); setMovePicker('tag') }}
-            />
-            <MenuItem
-              label={menuCount > 1 ? `Duplicate ${menuCount}` : 'Duplicate'}
-              onClick={() => { setMenu(null); bulkDuplicate() }}
-            />
-            <MenuItem
-              label={clusterId ? 'Remove from this cluster' : 'Remove from the space'}
-              onClick={() => { setMenu(null); bulkRemoveFromCluster() }}
-            />
-            <div className="h-px bg-border my-1" />
-            <MenuItem
-              label={menuCount > 1 ? `Delete ${menuCount} permanently` : 'Delete permanently'}
-              danger
-              onClick={() => { setMenu(null); bulkDelete() }}
-            />
+            {canEditSelection && (
+              <>
+                <MenuItem
+                  label={menuCount > 1 ? `Move ${menuCount} to…` : 'Move to…'}
+                  onClick={() => { setMenu(null); setMovePicker('move') }}
+                />
+                <MenuItem
+                  label={menuCount > 1 ? `Add ${menuCount} to…` : 'Add to cluster…'}
+                  onClick={() => { setMenu(null); setMovePicker('tag') }}
+                />
+                <MenuItem
+                  label={menuCount > 1 ? `Duplicate ${menuCount}` : 'Duplicate'}
+                  onClick={() => { setMenu(null); bulkDuplicate() }}
+                />
+                <MenuItem
+                  label={clusterId ? 'Remove from this cluster' : 'Remove from the space'}
+                  onClick={() => { setMenu(null); bulkRemoveFromCluster() }}
+                />
+                <div className="h-px bg-border my-1" />
+                <MenuItem
+                  label={menuCount > 1 ? `Delete ${menuCount} permanently` : 'Delete permanently'}
+                  danger
+                  onClick={() => { setMenu(null); bulkDelete() }}
+                />
+              </>
+            )}
           </div>
         </>
       )}

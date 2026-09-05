@@ -82,7 +82,8 @@ export function ProjectCalendar() {
   const gridRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (todosLoadedFor !== project.id) loadTodos(project.id)
+    // The marker is keyed by board, so the managers' shared one is ":shared".
+    if (todosLoadedFor !== `${project.id}:shared`) loadTodos(project.id)
     if (calendarLoadedFor !== project.id) loadCalendar(project.id)
   }, [project.id, todosLoadedFor, calendarLoadedFor, loadTodos, loadCalendar])
 

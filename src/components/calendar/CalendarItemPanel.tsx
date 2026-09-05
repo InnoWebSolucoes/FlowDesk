@@ -28,11 +28,17 @@ export function CalendarItemPanel({
   entry,
   projectId,
   onClose,
+  basePath,
 }: {
   todo?: ProjectTodo
   entry?: CalendarEntry
   projectId: string
   onClose: () => void
+  /**
+   * Where this side of the app lives. The panel links out to Resources and
+   * Todos, which sit at different paths for an admin and an employee.
+   */
+  basePath?: string
 }) {
   const {
     updateTodo, deleteTodo, setTodoLinks,
@@ -41,6 +47,8 @@ export function CalendarItemPanel({
   } = useProjectStore()
   const navigate = useNavigate()
   const [picking, setPicking] = useState(false)
+
+  const root = basePath ?? `/admin/projects/${projectId}`
 
   const links = todo?.links ?? entry?.links ?? []
 
@@ -59,7 +67,7 @@ export function CalendarItemPanel({
     const params = new URLSearchParams()
     if (itemId) params.set('item', itemId)
     if (clusterId) params.set('cluster', clusterId)
-    navigate(`/admin/projects/${projectId}/resources?${params.toString()}`)
+    navigate(`${root}/resources?${params.toString()}`)
   }
 
   const saveLinks = async (picked: LinkKey[]) => {
@@ -147,7 +155,7 @@ export function CalendarItemPanel({
           <footer className="px-5 py-3 border-t border-border flex items-center gap-2 flex-shrink-0">
             {todo && (
               <button
-                onClick={() => navigate(`/admin/projects/${projectId}/todos`)}
+                onClick={() => navigate(`${root}/todos`)}
                 className="text-xs text-primary hover:underline flex-1 text-left"
               >
                 Open in Todos →

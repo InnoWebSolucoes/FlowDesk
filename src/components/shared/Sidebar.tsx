@@ -41,8 +41,14 @@ export function Sidebar() {
       ]
     : [{ to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> }]
 
+  // The same tabs the managers get inside a project, plus the employee's own
+  // assigned work. Todos, resources and notes are their side of the project:
+  // their own lists and board, and the project's files.
   const employeeNav = [
     { to: '/employee/tasks', label: t('nav_myTasks'), icon: <CheckSquare size={18} /> },
+    { to: '/employee/todos', label: t('nav_todos'), icon: <ListTodo size={18} /> },
+    { to: '/employee/resources', label: t('nav_resources'), icon: <FolderOpen size={18} /> },
+    { to: '/employee/notes', label: t('nav_notes'), icon: <StickyNote size={18} /> },
     { to: '/employee/toolbox', label: t('nav_toolbox'), icon: <Wrench size={18} /> },
     { to: '/employee/guidelines', label: t('nav_guidelines'), icon: <BookOpen size={18} /> },
   ]

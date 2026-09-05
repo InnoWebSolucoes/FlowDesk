@@ -61,17 +61,22 @@ interface ProjectState {
 
   // Todo lists
   todoLists: ProjectTodoList[]
-  createTodoList: (projectId: string, name: string) => Promise<ProjectTodoList | null>
+  /**
+   * `ownerId` null creates on the shared manager board; a user id creates on
+   * that person's private one. Every todo/note call takes the same argument,
+   * so one store serves the admin workspace and the employee's.
+   */
+  createTodoList: (projectId: string, name: string, ownerId?: string | null) => Promise<ProjectTodoList | null>
   updateTodoList: (id: string, updates: Partial<ProjectTodoList>) => Promise<void>
   deleteTodoList: (id: string) => Promise<void>
   duplicateTodoList: (id: string) => Promise<ProjectTodoList | null>
   moveTodoToList: (todoId: string, listId: string) => Promise<void>
 
-  // Notes: a Keep-style board of sticky notes, manager-only.
+  // Notes: a Keep-style board of sticky notes, per owner.
   notes: ProjectNote[]
   notesLoadedFor: string | null
-  loadNotes: (projectId: string) => Promise<void>
-  createNote: (projectId: string, input?: Partial<ProjectNote>) => Promise<ProjectNote | null>
+  loadNotes: (projectId: string, ownerId?: string | null) => Promise<void>
+  createNote: (projectId: string, input?: Partial<ProjectNote>, ownerId?: string | null) => Promise<ProjectNote | null>
   updateNote: (id: string, updates: Partial<ProjectNote>) => Promise<void>
   deleteNote: (id: string) => Promise<void>
   reorderNotes: (orderedIds: string[]) => Promise<void>
@@ -80,8 +85,8 @@ interface ProjectState {
   toggleNoteItem: (noteId: string, itemId: string) => Promise<void>
 
   // Todos
-  loadTodos: (projectId: string) => Promise<void>
-  createTodo: (projectId: string, input: Partial<ProjectTodo>) => Promise<ProjectTodo | null>
+  loadTodos: (projectId: string, ownerId?: string | null) => Promise<void>
+  createTodo: (projectId: string, input: Partial<ProjectTodo>, ownerId?: string | null) => Promise<ProjectTodo | null>
   updateTodo: (id: string, updates: Partial<ProjectTodo>) => Promise<void>
   toggleTodo: (id: string) => Promise<void>
   deleteTodo: (id: string) => Promise<void>
@@ -189,6 +194,7 @@ function toItem(row: any): ResourceItem {
     clusterId,
     title: row.title,
     description: row.description ?? '',
+    createdBy: row.created_by ?? null,
     storagePath: row.storage_path,
     fileName: row.file_name,
     mimeType: row.mime_type,
@@ -221,6 +227,7 @@ function toTodoList(row: any): ProjectTodoList {
   return {
     id: row.id,
     projectId: row.project_id,
+    ownerId: row.owner_id ?? null,
     name: row.name,
     color: row.color ?? '#6366f1',
     sortOrder: row.sort_order ?? 0,
@@ -242,6 +249,7 @@ function toNote(row: any): ProjectNote {
   return {
     id: row.id,
     projectId: row.project_id,
+    ownerId: row.owner_id ?? null,
     title: row.title ?? '',
     body: row.body ?? '',
     color: row.color ?? '#fef3c7',
@@ -259,6 +267,7 @@ function toTodo(row: any): ProjectTodo {
   return {
     id: row.id,
     projectId: row.project_id,
+    ownerId: row.owner_id ?? null,
     listId: row.list_id ?? null,
     title: row.title,
     notes: row.notes ?? '',
@@ -516,11 +525,17 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   createItem: async (projectId, clusterId, input, file) => {
+    // Stamped rather than left to a default: it is what tells an employee's
+    // own uploads apart from the project's files, and their insert policy
+    // requires it to be them.
+    const { data: auth } = await supabase.auth.getUser()
+
     const { data, error } = await supabase
       .from('resource_items')
       .insert({
         project_id: projectId,
         cluster_id: clusterId,
+        created_by: auth.user?.id ?? null,
         title: input.title ?? file?.name ?? 'Untitled',
         description: input.description ?? '',
         x: input.x ?? 0,
@@ -1027,24 +1042,31 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   // ─── Notes ────────────────────────────────────────────────────────────────
 
-  loadNotes: async (projectId) => {
-    const { data, error } = await supabase
+  loadNotes: async (projectId, ownerId = null) => {
+    // The board belongs to exactly one owner: the shared manager board
+    // (owner_id null) or one person's. Filtering here rather than in the page
+    // keeps someone else's notes out of the store entirely.
+    const query = supabase
       .from('project_notes')
       .select('*, project_note_items(*)')
       .eq('project_id', projectId)
       .order('sort_order', { ascending: true })
 
+    const { data, error } = await (ownerId
+      ? query.eq('owner_id', ownerId)
+      : query.is('owner_id', null))
+
     if (error) {
       // Before the migration runs the table does not exist. Treat that as an
       // empty board rather than letting the tab fail to render.
       console.error('[loadNotes] failed:', error)
-      set({ notes: [], notesLoadedFor: projectId })
+      set({ notes: [], notesLoadedFor: `${projectId}:${ownerId ?? 'shared'}` })
       return
     }
-    set({ notes: (data ?? []).map(toNote), notesLoadedFor: projectId })
+    set({ notes: (data ?? []).map(toNote), notesLoadedFor: `${projectId}:${ownerId ?? 'shared'}` })
   },
 
-  createNote: async (projectId, input = {}) => {
+  createNote: async (projectId, input = {}, ownerId = null) => {
     // New notes go to the top of the board, which is where you look for what
     // you just wrote.
     const minOrder = get().notes.reduce((min, n) => Math.min(min, n.sortOrder), 0)
@@ -1052,6 +1074,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       .from('project_notes')
       .insert({
         project_id: projectId,
+        owner_id: ownerId,
         title: input.title ?? '',
         body: input.body ?? '',
         color: input.color ?? '#fef3c7',
@@ -1152,16 +1175,24 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (error) console.error('[toggleNoteItem] failed:', error)
   },
 
-  loadTodos: async (projectId) => {
+  loadTodos: async (projectId, ownerId = null) => {
+    // Whose lists these are: the shared manager board (owner_id null) or one
+    // person's. RLS enforces it too, but filtering here keeps the store to a
+    // single board so the tabs never show someone else's list.
+    const byOwner = <T extends { eq: any; is: any }>(q: T): T =>
+      (ownerId ? q.eq('owner_id', ownerId) : q.is('owner_id', null)) as T
+
     // The shares join only resolves once the do-dates migration has run. Until
     // then the whole query 400s and the page looks empty even though the todos
     // are fine, so fall back to the columns that have always existed.
     const fetchTodos = async () => {
-      const withShares = await supabase
-        .from('project_todos')
-        .select('*, project_todo_links(*), project_todo_shares(user_id)')
-        .eq('project_id', projectId)
-        .order('sort_order')
+      const withShares = await byOwner(
+        supabase
+          .from('project_todos')
+          .select('*, project_todo_links(*), project_todo_shares(user_id)')
+          .eq('project_id', projectId)
+          .order('sort_order')
+      )
 
       if (!withShares.error) return withShares
 
@@ -1169,40 +1200,50 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         '[loadTodos] falling back to the pre-migration shape:',
         withShares.error.message,
       )
-      return supabase
-        .from('project_todos')
-        .select('*, project_todo_links(*)')
-        .eq('project_id', projectId)
-        .order('sort_order')
+      return byOwner(
+        supabase
+          .from('project_todos')
+          .select('*, project_todo_links(*)')
+          .eq('project_id', projectId)
+          .order('sort_order')
+      )
     }
 
     const [todosRes, listsRes] = await Promise.all([
       fetchTodos(),
-      supabase
-        .from('project_todo_lists')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('sort_order'),
+      byOwner(
+        supabase
+          .from('project_todo_lists')
+          .select('*')
+          .eq('project_id', projectId)
+          .order('sort_order')
+      ),
     ])
 
     if (todosRes.error) console.error('[loadTodos] failed:', todosRes.error)
 
     let lists = (listsRes.data ?? []).map(toTodoList)
 
-    // Every project needs at least one list for todos to live in.
+    // Every board needs at least one list for todos to live in.
     if (lists.length === 0) {
-      const created = await get().createTodoList(projectId, 'To do')
+      const created = await get().createTodoList(projectId, 'To do', ownerId)
       if (created) lists = [created]
     }
 
-    set({ todos: (todosRes.data ?? []).map(toTodo), todoLists: lists, todosLoadedFor: projectId })
+    // Keyed by board, not just project: an admin stepping into an employee's
+    // lists and back must refetch, and both are the same projectId.
+    set({
+      todos: (todosRes.data ?? []).map(toTodo),
+      todoLists: lists,
+      todosLoadedFor: `${projectId}:${ownerId ?? 'shared'}`,
+    })
   },
 
-  createTodoList: async (projectId, name) => {
+  createTodoList: async (projectId, name, ownerId = null) => {
     const maxOrder = get().todoLists.reduce((max, l) => Math.max(max, l.sortOrder), -1)
     const { data, error } = await supabase
       .from('project_todo_lists')
-      .insert({ project_id: projectId, name, sort_order: maxOrder + 1 })
+      .insert({ project_id: projectId, owner_id: ownerId, name, sort_order: maxOrder + 1 })
       .select()
       .single()
 
@@ -1237,7 +1278,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const source = get().todoLists.find((l) => l.id === id)
     if (!source) return null
 
-    const list = await get().createTodoList(source.projectId, `${source.name} (copy)`)
+    // The copy stays on the same board as the list it came from.
+    const list = await get().createTodoList(source.projectId, `${source.name} (copy)`, source.ownerId)
     if (!list) return null
 
     const sourceTodos = get().todos
@@ -1251,7 +1293,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         notes: todo.notes,
         priority: todo.priority,
         dueDate: todo.dueDate,
-      })
+      }, source.ownerId)
       if (copy && todo.links.length > 0) {
         await get().setTodoLinks(
           copy.id,
@@ -1268,7 +1310,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set((s) => ({ todos: s.todos.map((t) => (t.id === todoId ? { ...t, listId } : t)) }))
   },
 
-  createTodo: async (projectId, input) => {
+  createTodo: async (projectId, input, ownerId = null) => {
     // Order is per-list, so only siblings in the target list matter.
     const maxOrder = get().todos.reduce(
       (max, t) => (t.listId === (input.listId ?? null) ? Math.max(max, t.sortOrder) : max),
@@ -1276,6 +1318,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     )
     const base = {
       project_id: projectId,
+      // A todo belongs to whoever owns the list it lands in; RLS checks the
+      // two agree, so this must match the list being written into.
+      owner_id: ownerId,
       list_id: input.listId ?? null,
       title: input.title ?? 'New todo',
       notes: input.notes ?? '',

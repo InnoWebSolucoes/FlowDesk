@@ -65,9 +65,21 @@ interface Props {
   dropRef?: React.MutableRefObject<HTMLElement | null>
   /** True while a dragged document is held over the panel. */
   dropActive?: boolean
+  /**
+   * Show the document without any way to change it. An employee opening a
+   * file somebody else uploaded reads it, downloads it, and nothing more —
+   * the access rules and version history are the managers' to run.
+   */
+  readOnly?: boolean
 }
 
-export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }: Props) {
+export function ResourceItemPanel({
+  item,
+  onClose,
+  dropRef,
+  dropActive = false,
+  readOnly = false,
+}: Props) {
   const {
     updateItem, removeItemFile, deleteItem, setItemLinks, getFileUrl,
     addItemVersion, makeVersionCurrent, deleteItemVersion,
@@ -196,20 +208,40 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
     <section>
       <div className="flex items-center justify-between mb-2">
         <label className="text-xs font-medium text-text-muted">{isLinkFirst ? 'Address' : 'Links'}</label>
-        <button
-          onClick={() => setLinks([...links, { label: '', url: '' }])}
-          className="text-xs text-primary hover:underline flex items-center gap-1"
-        >
-          <Plus size={12} /> Add link
-        </button>
+        {!readOnly && (
+          <button
+            onClick={() => setLinks([...links, { label: '', url: '' }])}
+            className="text-xs text-primary hover:underline flex items-center gap-1"
+          >
+            <Plus size={12} /> Add link
+          </button>
+        )}
       </div>
 
-      {links.length === 0 && (
+      {links.length === 0 && !readOnly && (
         <p className="text-xs text-text-subtle italic">
           e.g. the Google Docs URL for an uploaded contract.
         </p>
       )}
 
+      {/* Read-only still lists them: a link is often the document itself, and
+          following it is not an edit. */}
+      {readOnly ? (
+        <div className="space-y-1.5">
+          {links.map((link, idx) => (
+            <a
+              key={link.id ?? idx}
+              href={link.url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-border hover:border-primary transition-colors"
+            >
+              <ExternalLink size={13} className="text-text-subtle flex-shrink-0" />
+              <span className="text-xs text-text-main truncate">{link.label || link.url}</span>
+            </a>
+          ))}
+        </div>
+      ) : (
       <div className="space-y-2">
         {links.map((link, idx) => (
           <div key={link.id ?? idx} className="flex gap-1.5 items-start">
@@ -258,6 +290,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
           </div>
         ))}
       </div>
+      )}
     </section>
   )
 
@@ -310,6 +343,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
         </p>
       )}
 
+      {!readOnly && (
       <div className="flex gap-2 mt-2">
         <label className="flex-1 cursor-pointer">
           <span className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-medium text-text-muted hover:bg-surface-2 transition-colors">
@@ -328,7 +362,8 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
           </button>
         )}
       </div>
-      {item.storagePath && (
+      )}
+      {!readOnly && item.storagePath && (
         <p className="text-[11px] text-text-subtle mt-1.5">
           The current file is archived below, and the title, description and links are kept.
         </p>
@@ -394,6 +429,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
                     </p>
                   </div>
                   <VersionActions
+                    readOnly={readOnly}
                     onOpen={async () => {
                       const url = await getFileUrl(v.storagePath)
                       if (url) window.open(url, '_blank', 'noopener,noreferrer')
@@ -411,7 +447,9 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
           </section>
         )}
 
-        {/* Who can see it */}
+        {/* Who can see it. Never offered read-only: an employee must not be
+            able to change who can open a document. */}
+        {!readOnly && (
         <Collapsible
           icon={<Shield size={13} />}
           label="Who can see this"
@@ -480,8 +518,10 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
             from the people responsible for it.
           </p>
         </Collapsible>
+        )}
 
-        {/* Cluster tags */}
+        {/* Cluster tags: where the document appears. Also a manager's call. */}
+        {!readOnly && (
         <Collapsible
           icon={<FolderOpen size={13} />}
           label="Appears in"
@@ -542,6 +582,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
             })}
           </div>
         </Collapsible>
+        )}
 
         {/* Metadata */}
         <section className="space-y-3">
@@ -550,7 +591,8 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary"
+              readOnly={readOnly}
+              className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary read-only:opacity-70"
             />
           </div>
           <div>
@@ -559,8 +601,9 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
-              placeholder="What is this, and what is it for?"
-              className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main resize-y focus:outline-none focus:border-primary"
+              readOnly={readOnly}
+              placeholder={readOnly ? 'No description.' : 'What is this, and what is it for?'}
+              className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main resize-y focus:outline-none focus:border-primary read-only:opacity-70"
             />
           </div>
         </section>
@@ -570,6 +613,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
         {isLinkFirst ? fileSection : linksSection}
       </div>
 
+      {!readOnly && (
       <footer className="border-t border-border p-3 flex items-center gap-2 flex-shrink-0">
         <button
           onClick={handleSave}
@@ -593,6 +637,7 @@ export function ResourceItemPanel({ item, onClose, dropRef, dropActive = false }
           <Trash2 size={15} />
         </button>
       </footer>
+      )}
     </aside>
   )
 }
@@ -602,16 +647,20 @@ function VersionActions({
   onOpen,
   onRestore,
   onDelete,
+  readOnly = false,
 }: {
   onOpen: () => void
   onRestore: () => void
   onDelete: () => void
+  readOnly?: boolean
 }) {
   return (
     <div className="flex items-center gap-0.5 flex-shrink-0">
       <button onClick={onOpen} className="text-text-subtle hover:text-primary p-1 rounded" title="Open this version">
         <ExternalLink size={12} />
       </button>
+      {readOnly ? null : (
+      <>
       <button
         onClick={onRestore}
         className="text-text-subtle hover:text-success p-1 rounded"
@@ -622,6 +671,8 @@ function VersionActions({
       <button onClick={onDelete} className="text-text-subtle hover:text-danger p-1 rounded" title="Delete this version">
         <Trash2 size={12} />
       </button>
+      </>
+      )}
     </div>
   )
 }

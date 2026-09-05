@@ -7,6 +7,8 @@ export interface User {
   role: Role
   avatarInitials: string
   joinDate: string
+  /** The project this user belongs to. Always null for admins, who see all. */
+  projectId?: string | null
 }
 
 export interface Employee extends User {
@@ -88,6 +90,8 @@ export interface ResourceItem {
   x: number
   y: number
   createdAt: string
+  /** Who uploaded it. Null on documents that predate this being recorded. */
+  createdBy: string | null
   updatedAt: string
   links: ResourceItemLink[]
   /** Past iterations of the file, newest first. The current file is separate. */
@@ -131,12 +135,17 @@ export interface ProjectNoteItem {
 }
 
 /**
- * A sticky note on a project's board. Manager-only, like the todo lists.
- * A note is free text, or a checklist when it has items.
+ * A sticky note on a board. A note is free text, or a checklist when it has
+ * items.
+ *
+ * `ownerId` decides whose board it is: null is the project's shared manager
+ * board, a user id is that person's private one. Same split as
+ * {@link ProjectTodoList}.
  */
 export interface ProjectNote {
   id: string
   projectId: string
+  ownerId: string | null
   title: string
   body: string
   color: string
@@ -148,23 +157,33 @@ export interface ProjectNote {
   items: ProjectNoteItem[]
 }
 
-/** A named todo list within a project, e.g. "Onboarding". */
+/**
+ * A named todo list within a project, e.g. "Onboarding".
+ *
+ * `ownerId` null is the project's shared manager list, the one every admin
+ * sees. A user id makes it that person's private list — which is how an
+ * employee gets the same tabbed to-do list the managers have, without either
+ * side being able to edit the other's.
+ */
 export interface ProjectTodoList {
   id: string
   projectId: string
+  ownerId: string | null
   name: string
   color: string
   sortOrder: number
   createdAt: string
 }
 
-/** Manager-only todo. Never visible to employees. */
 /** Who may see a calendar item, overriding the role default. */
 export type Visibility = 'private' | 'team' | 'everyone'
 
+/** A todo on someone's list. Inherits its list's owner. */
 export interface ProjectTodo {
   id: string
   projectId: string
+  /** Whose list this sits on. Null is the shared manager board. */
+  ownerId: string | null
   listId: string | null
   title: string
   notes: string

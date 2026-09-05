@@ -28,6 +28,10 @@ import { ProjectTeamLayout } from './pages/admin/project/ProjectTeamLayout'
 import { MyTasks } from './pages/employee/MyTasks'
 import { Toolbox } from './pages/employee/Toolbox'
 import { Guidelines } from './pages/employee/Guidelines'
+import { EmployeeWorkspace } from './pages/employee/EmployeeWorkspace'
+import { MyTodos } from './pages/employee/MyTodos'
+import { MyNotes } from './pages/employee/MyNotes'
+import { MyResources } from './pages/employee/MyResources'
 
 function LoadingScreen() {
   return (
@@ -173,6 +177,17 @@ export default function App() {
           >
             <Route index element={<Navigate to="tasks" replace />} />
             <Route path="tasks" element={<MyTasks />} />
+
+            {/* The employee's side of their project: the same todos, notes and
+                files the managers have, scoped to them. EmployeeWorkspace
+                resolves the project from their profile, the way ProjectLayout
+                resolves it from the URL on the admin side. */}
+            <Route element={<EmployeeWorkspace />}>
+              <Route path="todos" element={<MyTodos />} />
+              <Route path="notes" element={<MyNotes />} />
+              <Route path="resources" element={<MyResources />} />
+            </Route>
+
             <Route path="toolbox" element={<Toolbox />} />
             <Route path="guidelines" element={<Guidelines />} />
           </Route>

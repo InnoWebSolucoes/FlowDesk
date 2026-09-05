@@ -15,9 +15,12 @@ interface AuthState {
 }
 
 async function fetchProfile(userId: string): Promise<User | null> {
+  // project_id comes along because an employee's whole workspace — their
+  // todos, notes and resources — is scoped to the one project they belong to,
+  // and there is no project picker on their side to get it from.
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, name, role, avatar_initials, join_date')
+    .select('id, email, name, role, avatar_initials, join_date, project_id')
     .eq('id', userId)
     .single()
 
@@ -30,6 +33,7 @@ async function fetchProfile(userId: string): Promise<User | null> {
     role: data.role,
     avatarInitials: data.avatar_initials,
     joinDate: data.join_date,
+    projectId: data.project_id ?? null,
   }
 }
 

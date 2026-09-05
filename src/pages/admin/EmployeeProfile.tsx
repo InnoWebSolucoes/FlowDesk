@@ -7,13 +7,16 @@ import { useAuthStore } from '../../store/authStore'
 import { TaskManager } from './TaskManager'
 import { Analytics } from './Analytics'
 import { EmptyState } from '../../components/shared/EmptyState'
+import { TodoBoard } from '../../components/todos/TodoBoard'
+import { NoteBoard } from '../../components/notes/NoteBoard'
+import { useProjectStore } from '../../store/projectStore'
 import { format, parseISO } from 'date-fns'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Bold, Italic, List, ListOrdered, Heading2 } from 'lucide-react'
 import { useT } from '../../i18n/useT'
 
-const TABS = ['tasks', 'analytics', 'toolbox', 'guidelines'] as const
+const TABS = ['tasks', 'analytics', 'todos', 'notes', 'toolbox', 'guidelines'] as const
 type Tab = typeof TABS[number]
 
 export function EmployeeProfile() {
@@ -24,6 +27,7 @@ export function EmployeeProfile() {
   const { allEmployees } = useEmployeeStore()
   const { websites, getGuidelines, saveGuidelines } = useToolStore()
   const { currentUser } = useAuthStore()
+  const getProject = useProjectStore((s) => s.getProject)
   const { t, dateLocale } = useT()
 
   const [tab, setTab] = useState<Tab>('tasks')
@@ -62,9 +66,15 @@ export function EmployeeProfile() {
   const tabLabels: Record<Tab, string> = {
     tasks: t('profile_tabTasks'),
     analytics: t('profile_tabAnalytics'),
+    todos: t('nav_todos'),
+    notes: t('nav_notes'),
     toolbox: t('profile_tabToolbox'),
     guidelines: t('profile_tabGuidelines'),
   }
+
+  // Their own lists and board, read-only: an owner can see how their team is
+  // organising itself without being able to reorganise it for them.
+  const empProject = emp.projectId ? getProject(emp.projectId) : undefined
 
   const tabCls = (tab_: Tab) =>
     `px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
@@ -110,6 +120,24 @@ export function EmployeeProfile() {
 
       {tab === 'analytics' && (
         <Analytics forEmployeeId={emp.id} />
+      )}
+
+      {(tab === 'todos' || tab === 'notes') && (
+        !empProject ? (
+          <p className="text-text-muted text-sm py-8">
+            {emp.name} is not on a project yet, so there is nothing here.
+          </p>
+        ) : tab === 'todos' ? (
+          <TodoBoard
+            project={empProject}
+            ownerId={emp.id}
+            basePath={`/admin/projects/${empProject.id}`}
+            readOnly
+            emptyDescription={`${emp.name} has not added anything to this list.`}
+          />
+        ) : (
+          <NoteBoard project={empProject} ownerId={emp.id} readOnly />
+        )
       )}
 
       {tab === 'toolbox' && (
