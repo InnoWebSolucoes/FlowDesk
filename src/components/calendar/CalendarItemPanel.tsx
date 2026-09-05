@@ -248,26 +248,6 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
         </Field>
       </div>
 
-      {todo.doDate && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Start time">
-            <input
-              type="time"
-              value={todo.doStart ?? ''}
-              onChange={(e) => updateTodo(todo.id, { doStart: e.target.value || null })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="End time">
-            <input
-              type="time"
-              value={todo.doEnd ?? ''}
-              onChange={(e) => updateTodo(todo.id, { doEnd: e.target.value || null })}
-              className={inputClass}
-            />
-          </Field>
-        </div>
-      )}
 
       {todo.dueDate && todo.doDate && todo.doDate > todo.dueDate && (
         <p className="text-[11px] text-danger">
@@ -307,17 +287,20 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
 
 function EntryBody({ entry }: { entry: CalendarEntry }) {
   const { updateCalendarEntry } = useProjectStore()
-  const start = new Date(entry.startsAt)
-  const end = new Date(entry.endsAt)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const dateVal = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
-  const timeVal = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`
 
-  const reschedule = (day: string, from: string, to: string) => {
-    const s = new Date(`${day}T${from}`)
-    const e = new Date(`${day}T${to}`)
-    if (e <= s) return
-    updateCalendarEntry(entry.id, { startsAt: s.toISOString(), endsAt: e.toISOString() })
+  // An entry occupies whole days. Moving the first day past the last drags
+  // the last with it, so the range can never invert.
+  const setFirstDay = (day: string) => {
+    if (!day) return
+    updateCalendarEntry(entry.id, {
+      startsOn: day,
+      endsOn: entry.endsOn < day ? day : entry.endsOn,
+    })
+  }
+
+  const setLastDay = (day: string) => {
+    if (!day) return
+    updateCalendarEntry(entry.id, { endsOn: day < entry.startsOn ? entry.startsOn : day })
   }
 
   return (
@@ -355,45 +338,24 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
         />
       </Field>
 
-      <Field label="Day">
-        <input
-          type="date"
-          value={dateVal}
-          onChange={(e) => e.target.value && reschedule(e.target.value, timeVal(start), timeVal(end))}
-          className={inputClass}
-        />
-      </Field>
-
-      {!entry.allDay && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="From">
-            <input
-              type="time"
-              value={timeVal(start)}
-              onChange={(e) => e.target.value && reschedule(dateVal, e.target.value, timeVal(end))}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="To">
-            <input
-              type="time"
-              value={timeVal(end)}
-              onChange={(e) => e.target.value && reschedule(dateVal, timeVal(start), e.target.value)}
-              className={inputClass}
-            />
-          </Field>
-        </div>
-      )}
-
-      <label className="flex items-center gap-2 text-xs text-text-muted">
-        <input
-          type="checkbox"
-          checked={entry.allDay}
-          onChange={(e) => updateCalendarEntry(entry.id, { allDay: e.target.checked })}
-          className="w-4 h-4 accent-primary"
-        />
-        All day
-      </label>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="First day">
+          <input
+            type="date"
+            value={entry.startsOn}
+            onChange={(e) => setFirstDay(e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Last day">
+          <input
+            type="date"
+            value={entry.endsOn}
+            onChange={(e) => setLastDay(e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+      </div>
 
       <Field label="Who can see it">
         <select

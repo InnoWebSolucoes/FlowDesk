@@ -1,4 +1,4 @@
-import { CalendarEntryKind, ProjectTodo, CalendarEntry } from '../../types'
+import { CalendarEntryKind, CalendarEntry } from '../../types'
 
 export const KIND_STYLE: Record<CalendarEntryKind, { label: string; color: string }> = {
   busy: { label: 'Busy', color: '#dc2626' },
@@ -20,110 +20,35 @@ export const LAYERS: { key: Layer; label: string; color: string; outlined?: bool
   })),
 ]
 
-/** Working day shown in the day/week grids. */
-export const DAY_START_HOUR = 7
-export const DAY_END_HOUR = 21
-export const HOUR_HEIGHT = 56
-
 export const pad = (n: number) => String(n).padStart(2, '0')
 
-/** Local YYYY-MM-DD. A do date is a calendar day, not an instant. */
+/** Local YYYY-MM-DD. Everything on this calendar is a day, not an instant. */
 export function dayKey(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-/** "HH:MM" from a Date, in local time. */
-export function timeKey(d: Date) {
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-/** Builds a local Date from a YYYY-MM-DD day and an HH:MM time. */
-export function atTime(day: string, time: string) {
+/** A local Date at midnight on a YYYY-MM-DD day. */
+export function dayDate(day: string) {
   const [y, m, d] = day.split('-').map(Number)
-  const [hh, mm] = time.split(':').map(Number)
-  return new Date(y, m - 1, d, hh, mm, 0, 0)
+  return new Date(y, m - 1, d, 0, 0, 0, 0)
 }
 
-/** Minutes since midnight → offset in px inside the day grid. */
-export function minutesToOffset(minutes: number) {
-  return ((minutes - DAY_START_HOUR * 60) / 60) * HOUR_HEIGHT
+/** Whether an entry covers a given day. Both ends are inclusive. */
+export function entryCoversDay(entry: CalendarEntry, day: string) {
+  return entry.startsOn <= day && entry.endsOn >= day
 }
 
-export function offsetToMinutes(px: number) {
-  return DAY_START_HOUR * 60 + (px / HOUR_HEIGHT) * 60
-}
-
-/** Rounds to the nearest quarter hour, which is what dragging should snap to. */
-export function snap15(minutes: number) {
-  return Math.round(minutes / 15) * 15
-}
-
-export function minutesToTime(minutes: number) {
-  const clamped = Math.max(0, Math.min(24 * 60 - 1, Math.round(minutes)))
-  return `${pad(Math.floor(clamped / 60))}:${pad(clamped % 60)}`
-}
-
-/** A todo shown on the calendar behaves like a timed or all-day block. */
-export function todoMinutes(todo: ProjectTodo) {
-  if (!todo.doStart) return null
-  const [h, m] = todo.doStart.split(':').map(Number)
-  const start = h * 60 + m
-  if (todo.doEnd) {
-    const [eh, em] = todo.doEnd.split(':').map(Number)
-    const end = eh * 60 + em
-    if (end > start) return { start, end }
+/** The days an entry spans, inclusive, as YYYY-MM-DD keys. */
+export function entryDays(entry: CalendarEntry): string[] {
+  const out: string[] = []
+  const end = dayDate(entry.endsOn)
+  for (let d = dayDate(entry.startsOn); d <= end; d = new Date(d.getTime() + 864e5)) {
+    out.push(dayKey(d))
   }
-  return { start, end: start + 60 }
-}
-
-export function entryMinutes(entry: CalendarEntry, day: string) {
-  const s = new Date(entry.startsAt)
-  const e = new Date(entry.endsAt)
-  const dayStart = atTime(day, '00:00')
-  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
-  // Clamp multi-day entries to the day being rendered.
-  const from = s < dayStart ? dayStart : s
-  const to = e > dayEnd ? dayEnd : e
-  return {
-    start: from.getHours() * 60 + from.getMinutes(),
-    end: Math.max(to.getHours() * 60 + to.getMinutes() || 24 * 60, from.getHours() * 60 + from.getMinutes() + 15),
-  }
-}
-
-/**
- * Lays overlapping blocks side by side. Returns a column index and total column
- * count per block, so each can be positioned without covering its neighbours.
- */
-export function layoutColumns<T extends { start: number; end: number }>(blocks: T[]) {
-  const sorted = [...blocks].sort((a, b) => a.start - b.start || a.end - b.end)
-  const out = new Map<T, { col: number; cols: number }>()
-  let cluster: T[] = []
-  let clusterEnd = -1
-
-  const flush = () => {
-    if (cluster.length === 0) return
-    const cols: T[][] = []
-    for (const b of cluster) {
-      let placed = false
-      for (const col of cols) {
-        if (col[col.length - 1].end <= b.start) {
-          col.push(b)
-          placed = true
-          break
-        }
-      }
-      if (!placed) cols.push([b])
-    }
-    cols.forEach((col, i) => col.forEach((b) => out.set(b, { col: i, cols: cols.length })))
-    cluster = []
-    clusterEnd = -1
-  }
-
-  for (const b of sorted) {
-    if (cluster.length > 0 && b.start >= clusterEnd) flush()
-    cluster.push(b)
-    clusterEnd = Math.max(clusterEnd, b.end)
-  }
-  flush()
   return out
+}
+
+/** True when an entry covers more than the one day. */
+export function isMultiDay(entry: CalendarEntry) {
+  return entry.endsOn > entry.startsOn
 }

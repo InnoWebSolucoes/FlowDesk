@@ -113,7 +113,7 @@ interface ProjectState {
   calendarEntries: CalendarEntry[]
   calendarLoadedFor: string | null
   loadCalendar: (projectId: string | null) => Promise<void>
-  createCalendarEntry: (input: Partial<CalendarEntry> & { startsAt: string; endsAt: string }) => Promise<CalendarEntry | null>
+  createCalendarEntry: (input: Partial<CalendarEntry> & { startsOn: string; endsOn: string }) => Promise<CalendarEntry | null>
   updateCalendarEntry: (id: string, updates: Partial<CalendarEntry>) => Promise<void>
   deleteCalendarEntry: (id: string) => Promise<void>
   setCalendarEntryLinks: (entryId: string, links: { itemId?: string; clusterId?: string }[]) => Promise<void>
@@ -291,8 +291,6 @@ function toTodo(row: any): ProjectTodo {
     completedAt: row.completed_at,
     dueDate: row.due_date,
     doDate: row.do_date ?? null,
-    doStart: row.do_start ?? null,
-    doEnd: row.do_end ?? null,
     assigneeId: row.assignee_id ?? null,
     visibility: row.visibility ?? null,
     sharedWith: (row.project_todo_shares ?? []).map((s: any) => s.user_id),
@@ -310,9 +308,8 @@ function toCalendarEntry(row: any): CalendarEntry {
     title: row.title,
     notes: row.notes ?? '',
     kind: row.kind,
-    startsAt: row.starts_at,
-    endsAt: row.ends_at,
-    allDay: row.all_day ?? false,
+    startsOn: row.starts_on,
+    endsOn: row.ends_on,
     visibility: row.visibility ?? null,
     sharedWith: (row.calendar_entry_shares ?? []).map((s: any) => s.user_id),
     links: (row.calendar_entry_links ?? []).map((l: any) => ({
@@ -1401,8 +1398,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // Columns the do-dates migration adds. Dropped on retry if it hasn't run.
     const scheduling = {
       do_date: input.doDate ?? null,
-      do_start: input.doStart ?? null,
-      do_end: input.doEnd ?? null,
       assignee_id: input.assigneeId ?? null,
       visibility: input.visibility ?? null,
     }
@@ -1438,8 +1433,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (updates.priority !== undefined) patch.priority = updates.priority
     if (updates.dueDate !== undefined) patch.due_date = updates.dueDate || null
     if (updates.doDate !== undefined) patch.do_date = updates.doDate || null
-    if (updates.doStart !== undefined) patch.do_start = updates.doStart || null
-    if (updates.doEnd !== undefined) patch.do_end = updates.doEnd || null
     if (updates.assigneeId !== undefined) patch.assignee_id = updates.assigneeId || null
     if (updates.visibility !== undefined) patch.visibility = updates.visibility || null
     if (updates.isCompleted !== undefined) {
@@ -1452,7 +1445,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (error) {
       // Before the do-dates migration these columns don't exist; keep the rest
       // of the edit rather than losing the whole change.
-      const SCHEDULING = ['do_date', 'do_start', 'do_end', 'assignee_id', 'visibility']
+      const SCHEDULING = ['do_date', 'assignee_id', 'visibility']
       const legacy = Object.fromEntries(
         Object.entries(patch).filter(([k]) => !SCHEDULING.includes(k)),
       )
@@ -1534,7 +1527,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
    */
   loadCalendar: async (projectId) => {
     const run = (select: string) => {
-      const q = supabase.from('calendar_entries').select(select).order('starts_at')
+      const q = supabase.from('calendar_entries').select(select).order('starts_on')
       return projectId
         ? q.or(`project_id.eq.${projectId},project_id.is.null`)
         : q.is('project_id', null)
@@ -1568,9 +1561,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       title: input.title ?? 'Busy',
       notes: input.notes ?? '',
       kind: input.kind ?? 'busy',
-      starts_at: input.startsAt,
-      ends_at: input.endsAt,
-      all_day: input.allDay ?? false,
+      starts_on: input.startsOn,
+      ends_on: input.endsOn,
       visibility: input.visibility ?? null,
     }
 
@@ -1599,9 +1591,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (updates.title !== undefined) patch.title = updates.title
     if (updates.notes !== undefined) patch.notes = updates.notes
     if (updates.kind !== undefined) patch.kind = updates.kind
-    if (updates.startsAt !== undefined) patch.starts_at = updates.startsAt
-    if (updates.endsAt !== undefined) patch.ends_at = updates.endsAt
-    if (updates.allDay !== undefined) patch.all_day = updates.allDay
+    if (updates.startsOn !== undefined) patch.starts_on = updates.startsOn
+    if (updates.endsOn !== undefined) patch.ends_on = updates.endsOn
     if (updates.visibility !== undefined) patch.visibility = updates.visibility || null
     if (Object.keys(patch).length === 0) return
 

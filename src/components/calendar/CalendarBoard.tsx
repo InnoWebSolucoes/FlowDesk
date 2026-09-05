@@ -14,9 +14,7 @@ import { useEmployeeStore } from '../../store/employeeStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import {
-  KIND_STYLE, LAYERS, Layer, DAY_START_HOUR, DAY_END_HOUR, HOUR_HEIGHT,
-  dayKey, atTime, minutesToOffset, offsetToMinutes, snap15, minutesToTime,
-  todoMinutes, entryMinutes, layoutColumns,
+  KIND_STYLE, LAYERS, Layer, dayKey, dayDate, entryCoversDay,
 } from './calendarShared'
 
 type View = 'day' | 'week' | 'month'
@@ -31,23 +29,15 @@ function menuPos(x: number, y: number, rows: number, width = 192) {
 }
 
 /** What is being dragged, and what the drop should do. */
+// Dragging moves an item from one day to another; there is nothing finer to
+// drag to now that the calendar is day-based.
 type DragState =
-  | { kind: 'todo'; id: string; grabMinutes: number; durationMinutes: number | null }
-  | { kind: 'entry'; id: string; grabMinutes: number; durationMinutes: number }
+  | { kind: 'todo'; id: string }
+  | { kind: 'entry'; id: string }
   | { kind: 'unscheduled'; id: string }
-  // Dragging an edge changes the duration instead of moving the block.
-  | {
-      kind: 'resize'
-      target: 'todo' | 'entry'
-      id: string
-      edge: 'start' | 'end'
-      otherEdgeMinutes: number
-    }
 
 interface Block {
   key: string
-  start: number
-  end: number
   label: string
   color: string
   outlined?: boolean
@@ -57,7 +47,6 @@ interface Block {
   task?: Task
   /** Whose block this is, when other people's calendars are overlaid. */
   ownerName?: string
-  allDay?: boolean
 }
 
 interface CalendarBoardProps {
@@ -102,7 +91,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   const [openTodo, setOpenTodo] = useState<string | null>(null)
   const [openEntry, setOpenEntry] = useState<string | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
-  const [hoverSlot, setHoverSlot] = useState<{ day: string; minutes: number } | null>(null)
+  const [hoverSlot, setHoverSlot] = useState<string | null>(null)
   // Set when a drag ends, so the click event that follows the pointerup does
   // not also fire "create an entry here".
   const justDragged = useRef(false)
@@ -149,26 +138,21 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   }
 
   // ── Blocks per day ───────────────────────────────────────────────────────
+  // The calendar is organised by day: everything on a day is one flat list,
+  // in the order it was added to it.
   const blocksFor = useCallback(
-    (day: string): { timed: Block[]; allDay: Block[] } => {
-      const timed: Block[] = []
-      const allDay: Block[] = []
+    (day: string): Block[] => {
+      const blocks: Block[] = []
 
       if (visible('do')) {
         for (const t of todos) {
           if (t.doDate !== day) continue
-          const mins = todoMinutes(t)
-          const block: Block = {
+          blocks.push({
             key: `todo-${t.id}`,
-            start: mins?.start ?? 0,
-            end: mins?.end ?? 0,
             label: t.title,
             color: '#1A5C3A',
             todo: t,
-            allDay: !mins,
-          }
-          if (mins) timed.push(block)
-          else allDay.push(block)
+          })
         }
       }
 
@@ -190,24 +174,14 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           if (!showsToday) continue
           if (planned === day ? !visible('do') : !visible('due')) continue
 
-          const hasWindow = !!(sched?.doStart && sched?.doEnd)
-          const toMin = (v: string) => {
-            const [h, m] = v.split(':').map(Number)
-            return h * 60 + (m || 0)
-          }
-          const block: Block = {
+          blocks.push({
             key: `task-${task.id}-${empIdForCal}`,
-            start: hasWindow ? toMin(sched!.doStart!) : 0,
-            end: hasWindow ? toMin(sched!.doEnd!) : 0,
             label: task.title,
             color: '#6366f1',
             outlined: !planned,
             task,
             ownerName: canOverlay ? who?.name : undefined,
-            allDay: !hasWindow,
-          }
-          if (hasWindow) timed.push(block)
-          else allDay.push(block)
+          })
         }
       }
 
@@ -215,64 +189,39 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
         for (const t of todos) {
           if (t.dueDate !== day || t.isCompleted) continue
           if (t.doDate === day) continue // already shown as a do-date block
-          allDay.push({
+          blocks.push({
             key: `due-${t.id}`,
-            start: 0,
-            end: 0,
             label: `Due: ${t.title}`,
             color: '#dc2626',
             outlined: true,
             todo: t,
-            allDay: true,
           })
         }
       }
 
       for (const e of calendarEntries) {
         if (!visible(e.kind)) continue
-        const s = new Date(e.startsAt)
-        const en = new Date(e.endsAt)
-        const dayStart = atTime(day, '00:00')
-        const dayEnd = new Date(dayStart.getTime() + 864e5)
-        if (en <= dayStart || s >= dayEnd) continue
-
-        const block: Block = {
+        if (!entryCoversDay(e, day)) continue
+        blocks.push({
           key: `entry-${e.id}`,
-          start: 0,
-          end: 0,
           label: e.title,
           color: KIND_STYLE[e.kind].color,
           entry: e,
-          allDay: e.allDay,
-        }
-        if (e.allDay) {
-          allDay.push(block)
-        } else {
-          const m = entryMinutes(e, day)
-          timed.push({ ...block, start: m.start, end: m.end })
-        }
+        })
       }
 
-      return { timed, allDay }
+      return blocks
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [todos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
-  /** Screen point → the day column and minute it falls in. */
-  const slotAt = useCallback(
-    (clientX: number, clientY: number): { day: string; minutes: number } | null => {
-      const el = document.elementFromPoint(clientX, clientY)?.closest('[data-day]') as HTMLElement | null
-      if (!el) return null
-      const day = el.dataset.day!
-      if (view === 'month') return { day, minutes: -1 }
-      const rect = el.getBoundingClientRect()
-      const minutes = snap15(offsetToMinutes(clientY - rect.top))
-      return { day, minutes: Math.max(DAY_START_HOUR * 60, Math.min(DAY_END_HOUR * 60 - 15, minutes)) }
-    },
-    [view],
-  )
+  /** Screen point → the day column it falls in. */
+  const slotAt = useCallback((clientX: number, clientY: number): string | null => {
+    const el = document.elementFromPoint(clientX, clientY)?.closest('[data-day]') as HTMLElement | null
+    return el?.dataset.day ?? null
+  }, [])
 
   useEffect(() => {
     if (!drag) return
@@ -280,70 +229,29 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     const onMove = (e: PointerEvent) => setHoverSlot(slotAt(e.clientX, e.clientY))
 
     const onUp = async (e: PointerEvent) => {
-      const slot = slotAt(e.clientX, e.clientY)
+      const day = slotAt(e.clientX, e.clientY)
       setDrag(null)
       setHoverSlot(null)
       justDragged.current = true
       // Cleared after the click that this pointerup generates has passed.
       setTimeout(() => { justDragged.current = false }, 0)
-      if (!slot) return
-
-      const timed = slot.minutes >= 0
-
-      if (drag.kind === 'resize') {
-        if (!timed) return
-        // Keep at least 15 minutes, and let the dragged edge cross the other.
-        const dragged = snap15(slot.minutes)
-        const from = Math.min(dragged, drag.otherEdgeMinutes)
-        const to = Math.max(dragged, drag.otherEdgeMinutes)
-        const start = drag.edge === 'start' ? Math.min(from, drag.otherEdgeMinutes - 15) : from
-        const end = drag.edge === 'end' ? Math.max(to, drag.otherEdgeMinutes + 15) : to
-
-        if (drag.target === 'todo') {
-          await updateTodo(drag.id, {
-            doStart: minutesToTime(Math.max(0, start)),
-            doEnd: minutesToTime(end),
-          })
-        } else {
-          const e2 = calendarEntries.find((x) => x.id === drag.id)
-          if (!e2) return
-          const day = slot.day
-          await updateCalendarEntry(drag.id, {
-            startsAt: atTime(day, minutesToTime(Math.max(0, start))).toISOString(),
-            endsAt: atTime(day, minutesToTime(end)).toISOString(),
-          })
-        }
-        return
-      }
+      if (!day) return
 
       if (drag.kind === 'unscheduled' || drag.kind === 'todo') {
-        const patch: Partial<ProjectTodo> = { doDate: slot.day }
-        if (timed && view !== 'month') {
-          const start = drag.kind === 'todo' ? slot.minutes - drag.grabMinutes : slot.minutes
-          const snapped = snap15(Math.max(DAY_START_HOUR * 60, start))
-          const duration = drag.kind === 'todo' ? drag.durationMinutes ?? 60 : 60
-          patch.doStart = minutesToTime(snapped)
-          patch.doEnd = minutesToTime(snapped + duration)
-        }
-        await updateTodo(drag.id, patch)
+        await updateTodo(drag.id, { doDate: day })
         return
       }
 
       if (drag.kind === 'entry') {
         const entry = calendarEntries.find((x) => x.id === drag.id)
         if (!entry) return
-        if (!timed || view === 'month') {
-          // Month view moves the day but keeps the time of day.
-          const s = new Date(entry.startsAt)
-          const ns = atTime(slot.day, `${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}`)
-          const ne = new Date(ns.getTime() + drag.durationMinutes * 60000)
-          await updateCalendarEntry(entry.id, { startsAt: ns.toISOString(), endsAt: ne.toISOString() })
-          return
-        }
-        const startMin = snap15(Math.max(DAY_START_HOUR * 60, slot.minutes - drag.grabMinutes))
-        const ns = atTime(slot.day, minutesToTime(startMin))
-        const ne = new Date(ns.getTime() + drag.durationMinutes * 60000)
-        await updateCalendarEntry(entry.id, { startsAt: ns.toISOString(), endsAt: ne.toISOString() })
+        // Dragging moves the whole entry, so a multi-day block keeps its
+        // length and lands with its first day where it was dropped.
+        const span = Math.round(
+          (dayDate(entry.endsOn).getTime() - dayDate(entry.startsOn).getTime()) / 864e5,
+        )
+        const newEnd = new Date(dayDate(day).getTime() + span * 864e5)
+        await updateCalendarEntry(entry.id, { startsOn: day, endsOn: dayKey(newEnd) })
       }
     }
 
@@ -359,20 +267,16 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [drag, slotAt, view, updateTodo, updateCalendarEntry, calendarEntries])
+  }, [drag, slotAt, updateTodo, updateCalendarEntry, calendarEntries])
 
-  /** Click on empty space in a day column → new entry there. */
-  const createAt = async (day: string, minutes: number) => {
-    const start = minutes >= 0 ? minutesToTime(snap15(minutes)) : '09:00'
-    const startDate = atTime(day, start)
-    const endDate = new Date(startDate.getTime() + 60 * 60000)
+  /** Click on empty space in a day → a new entry on that day. */
+  const createAt = async (day: string) => {
     const created = await createCalendarEntry({
       projectId: project.id,
       title: 'Busy',
       kind: 'busy',
-      startsAt: startDate.toISOString(),
-      endsAt: endDate.toISOString(),
-      allDay: minutes < 0,
+      startsOn: day,
+      endsOn: day,
     })
     if (created) setOpenEntry(created.id)
   }
@@ -382,7 +286,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
    * unscheduled list — the todo itself is untouched. A calendar entry has no
    * life outside the calendar, so it is only ever deleted.
    */
-  const unscheduleTodo = (id: string) => updateTodo(id, { doDate: null, doStart: null, doEnd: null })
+  const unscheduleTodo = (id: string) => updateTodo(id, { doDate: null })
 
   const todo = openTodo ? todos.find((t) => t.id === openTodo) : undefined
   const entry = openEntry ? calendarEntries.find((e) => e.id === openEntry) : undefined
@@ -533,22 +437,15 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               dragging={!!drag}
               onOpenTodo={setOpenTodo}
               onOpenEntry={setOpenEntry}
-              onCreate={(day) => createAt(day, -1)}
+              onCreate={createAt}
               justDragged={justDragged}
               onToggleDone={toggleTodo}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
-              onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, grabMinutes: 0, durationMinutes: null })}
-              onDragEntry={(e) =>
-                setDrag({
-                  kind: 'entry',
-                  id: e.id,
-                  grabMinutes: 0,
-                  durationMinutes: Math.max(15, (new Date(e.endsAt).getTime() - new Date(e.startsAt).getTime()) / 60000),
-                })
-              }
+              onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id })}
+              onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id })}
             />
           ) : (
-            <TimeGrid
+            <DayGrid
               days={days}
               today={today}
               blocksFor={blocksFor}
@@ -560,28 +457,8 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               justDragged={justDragged}
               onToggleDone={toggleTodo}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
-              onResize={(target, id, edge, otherEdgeMinutes) =>
-                setDrag({ kind: 'resize', target, id, edge, otherEdgeMinutes })
-              }
-              onDragTodo={(t, grab) =>
-                setDrag({
-                  kind: 'todo',
-                  id: t.id,
-                  grabMinutes: grab,
-                  durationMinutes: (() => {
-                    const m = todoMinutes(t)
-                    return m ? m.end - m.start : 60
-                  })(),
-                })
-              }
-              onDragEntry={(e, grab) =>
-                setDrag({
-                  kind: 'entry',
-                  id: e.id,
-                  grabMinutes: grab,
-                  durationMinutes: Math.max(15, (new Date(e.endsAt).getTime() - new Date(e.startsAt).getTime()) / 60000),
-                })
-              }
+              onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id })}
+              onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id })}
             />
           )}
         </div>
@@ -680,7 +557,11 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
 }
 
 /** Day and week share this: an hour ruler with absolutely positioned blocks. */
-function TimeGrid({
+/**
+ * Day and week views: one column per day, each holding that day's items in a
+ * plain list. There is no hour grid — the calendar organises by day only.
+ */
+function DayGrid({
   days,
   today,
   blocksFor,
@@ -692,202 +573,77 @@ function TimeGrid({
   justDragged,
   onToggleDone,
   onBlockContext,
-  onResize,
   onDragTodo,
   onDragEntry,
 }: {
   days: Date[]
   today: string
-  blocksFor: (day: string) => { timed: Block[]; allDay: Block[] }
-  hoverSlot: { day: string; minutes: number } | null
+  blocksFor: (day: string) => Block[]
+  hoverSlot: string | null
   dragging: boolean
   onOpenTodo: (id: string) => void
   onOpenEntry: (id: string) => void
-  onCreate: (day: string, minutes: number) => void
+  onCreate: (day: string) => void
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
-  onResize: (target: 'todo' | 'entry', id: string, edge: 'start' | 'end', otherEdgeMinutes: number) => void
-  onDragTodo: (todo: ProjectTodo, grabMinutes: number) => void
-  onDragEntry: (entry: CalendarEntry, grabMinutes: number) => void
+  onDragTodo: (todo: ProjectTodo) => void
+  onDragEntry: (entry: CalendarEntry) => void
 }) {
-  const hours = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, i) => DAY_START_HOUR + i)
-  const gridHeight = (DAY_END_HOUR - DAY_START_HOUR) * HOUR_HEIGHT
-
   return (
-    <div className="rounded-xl border border-border bg-surface overflow-hidden">
-      {/* Day headers */}
-      <div className="flex border-b border-border">
-        <div className="w-16 flex-shrink-0" />
-        {days.map((d) => {
-          const key = dayKey(d)
-          const isToday = key === today
-          return (
-            <div key={key} className="flex-1 min-w-0 px-2 py-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wide text-text-subtle">{format(d, 'EEE')}</p>
-              <p
-                className={`text-lg font-medium mt-0.5 mx-auto w-8 h-8 flex items-center justify-center rounded-full ${
-                  isToday ? 'bg-primary text-white' : 'text-text-main'
-                }`}
-              >
-                {format(d, 'd')}
-              </p>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* All-day strip */}
-      <div className="flex border-b border-border min-h-[2rem]">
-        <div className="w-16 flex-shrink-0 px-2 py-1.5 text-[10px] text-text-subtle text-right">all-day</div>
-        {days.map((d) => {
-          const key = dayKey(d)
-          const { allDay } = blocksFor(key)
-          return (
-            <div
-              key={key}
-              data-day={key}
-              onClick={() => { if (!justDragged.current) onCreate(key, -1) }}
-              className="flex-1 min-w-0 border-l border-border/50 p-1 space-y-1 cursor-pointer hover:bg-surface-2/40 transition-colors"
+    <div
+      className="grid gap-px bg-border rounded-xl overflow-hidden border border-border"
+      style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+    >
+      {days.map((day) => {
+        const key = dayKey(day)
+        return (
+          <div key={`h-${key}`} className="bg-surface-2 px-2 py-2 text-center">
+            <p className="text-[11px] text-text-muted">{format(day, 'EEE')}</p>
+            <p
+              className={`text-sm font-medium mt-0.5 w-6 h-6 mx-auto flex items-center justify-center rounded-full ${
+                key === today ? 'bg-primary text-white' : 'text-text-main'
+              }`}
             >
-              {allDay.map((b) => (
+              {format(day, 'd')}
+            </p>
+          </div>
+        )
+      })}
+
+      {days.map((day) => {
+        const key = dayKey(day)
+        const blocks = blocksFor(key)
+
+        return (
+          <div
+            key={key}
+            data-day={key}
+            onClick={() => { if (!justDragged.current) onCreate(key) }}
+            className={`bg-surface min-h-[320px] p-2 cursor-pointer transition-colors hover:bg-surface-2/40 ${
+              dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''
+            }`}
+          >
+            <div className="space-y-1">
+              {blocks.map((b) => (
                 <BlockChip
                   key={b.key}
                   block={b}
                   onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
-                  onDragStart={() =>
-                    b.todo ? onDragTodo(b.todo, 0) : b.entry && onDragEntry(b.entry, 0)
-                  }
+                  onDragStart={() => (b.todo ? onDragTodo(b.todo) : b.entry && onDragEntry(b.entry))}
                   onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
                   onContext={(x, y) =>
                     onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
                   }
                 />
               ))}
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Hour grid.
-          One set of horizontal rules is drawn behind every column rather than
-          bordering each cell, and columns are separated by a single hairline
-          instead of a box. That is the difference between a calendar and a
-          spreadsheet. */}
-      <div className="flex relative" style={{ height: gridHeight }}>
-        <div className="w-16 flex-shrink-0 relative">
-          {hours.map((h, i) => (
-            <div
-              key={h}
-              className="absolute right-3 text-[11px] text-text-subtle -translate-y-1/2"
-              style={{ top: i * HOUR_HEIGHT }}
-            >
-              {i === 0 ? '' : `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'am' : 'pm'}`}
-            </div>
-          ))}
-        </div>
-
-        {/* The rules themselves, spanning the whole width behind the columns. */}
-        <div className="absolute inset-y-0 left-16 right-0 pointer-events-none">
-          {hours.map((h, i) => (
-            <div
-              key={h}
-              className="absolute left-0 right-0 border-t border-border/50"
-              style={{ top: i * HOUR_HEIGHT }}
-            />
-          ))}
-        </div>
-
-        {days.map((d, di) => {
-          const key = dayKey(d)
-          const { timed } = blocksFor(key)
-          const cols = layoutColumns(timed)
-          const isToday = key === today
-          const nowMinutes = isToday ? new Date().getHours() * 60 + new Date().getMinutes() : null
-
-          return (
-            <div
-              key={key}
-              data-day={key}
-              className={`flex-1 min-w-0 relative ${di > 0 ? 'border-l border-border/40' : ''} ${
-                isToday ? 'bg-primary/[0.025]' : ''
-              }`}
-              onClick={(e) => {
-                // Only empty space creates; blocks stop propagation themselves,
-                // and a click that merely ends a drag is ignored.
-                if (justDragged.current) return
-                const rect = e.currentTarget.getBoundingClientRect()
-                onCreate(key, offsetToMinutes(e.clientY - rect.top))
-              }}
-            >
-              {timed.map((b) => {
-                const pos = cols.get(b) ?? { col: 0, cols: 1 }
-                const top = minutesToOffset(b.start)
-                const height = Math.max(20, ((b.end - b.start) / 60) * HOUR_HEIGHT - 3)
-                return (
-                  <div
-                    key={b.key}
-                    className="absolute z-[5]"
-                    style={{
-                      top,
-                      height,
-                      left: `calc(${(pos.col / pos.cols) * 100}% + 3px)`,
-                      width: `calc(${(1 / pos.cols) * 100}% - 6px)`,
-                    }}
-                  >
-                    <BlockChip
-                      block={b}
-                      filled
-                      onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
-                      onDragStart={(grabMinutes) =>
-                        b.todo ? onDragTodo(b.todo, grabMinutes) : b.entry && onDragEntry(b.entry, grabMinutes)
-                      }
-                      onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
-                      onContext={(x, y) =>
-                        onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
-                      }
-                      onResizeStart={(edge, otherEdgeMinutes) =>
-                        onResize(
-                          b.todo ? 'todo' : 'entry',
-                          b.todo?.id ?? b.entry!.id,
-                          edge,
-                          otherEdgeMinutes,
-                        )
-                      }
-                      blockStart={b.start}
-                      blockEnd={b.end}
-                    />
-                  </div>
-                )
-              })}
-
-              {/* Where the current time falls, on today only. */}
-              {nowMinutes != null &&
-                nowMinutes >= DAY_START_HOUR * 60 &&
-                nowMinutes <= DAY_END_HOUR * 60 && (
-                  <div
-                    className="absolute left-0 right-0 pointer-events-none z-10"
-                    style={{ top: minutesToOffset(nowMinutes) }}
-                  >
-                    <div className="h-px bg-danger" />
-                    <div className="absolute -left-1 -top-[3px] w-[7px] h-[7px] rounded-full bg-danger" />
-                  </div>
-                )}
-
-              {dragging && hoverSlot?.day === key && hoverSlot.minutes >= 0 && (
-                <div
-                  className="absolute left-0 right-0 h-0.5 bg-primary pointer-events-none z-20"
-                  style={{ top: minutesToOffset(hoverSlot.minutes) }}
-                >
-                  <span className="absolute -top-4 left-1 text-[10px] font-medium text-primary bg-surface px-1 rounded">
-                    {minutesToTime(hoverSlot.minutes)}
-                  </span>
-                </div>
+              {blocks.length === 0 && (
+                <p className="text-[11px] text-text-subtle text-center pt-4">Nothing planned</p>
               )}
             </div>
-          )
-        })}
-      </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -911,8 +667,8 @@ function MonthGrid({
   days: Date[]
   cursor: Date
   today: string
-  blocksFor: (day: string) => { timed: Block[]; allDay: Block[] }
-  hoverSlot: { day: string; minutes: number } | null
+  blocksFor: (day: string) => Block[]
+  hoverSlot: string | null
   dragging: boolean
   onOpenTodo: (id: string) => void
   onOpenEntry: (id: string) => void
@@ -933,8 +689,7 @@ function MonthGrid({
 
       {days.map((day) => {
         const key = dayKey(day)
-        const { timed, allDay } = blocksFor(key)
-        const all = [...allDay, ...timed.sort((a, b) => a.start - b.start)]
+        const all = blocksFor(key)
         const outside = !isSameMonth(day, cursor)
 
         return (
@@ -944,7 +699,7 @@ function MonthGrid({
             onClick={() => { if (!justDragged.current) onCreate(key) }}
             className={`bg-surface min-h-[112px] p-1.5 cursor-pointer transition-colors hover:bg-surface-2/40 ${
               outside ? 'opacity-40' : ''
-            } ${dragging && hoverSlot?.day === key ? 'ring-2 ring-primary ring-inset' : ''}`}
+            } ${dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''}`}
           >
             <div className="flex items-center justify-between mb-1">
               <span
@@ -991,22 +746,16 @@ function BlockChip({
   compact,
   onOpen,
   onDragStart,
-  onResizeStart,
   onToggleDone,
   onContext,
-  blockStart,
-  blockEnd,
 }: {
   block: Block
   filled?: boolean
   compact?: boolean
   onOpen: () => void
-  onDragStart: (grabMinutes: number) => void
-  onResizeStart?: (edge: 'start' | 'end', otherEdgeMinutes: number) => void
+  onDragStart: () => void
   onToggleDone?: () => void
   onContext?: (x: number, y: number) => void
-  blockStart?: number
-  blockEnd?: number
 }) {
   const moved = useRef(false)
 
@@ -1025,11 +774,7 @@ function BlockChip({
           if (moved.current) return
           if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 4) {
             moved.current = true
-            // Where inside the block the grab happened, so it doesn't jump.
-            const rect = (e.currentTarget as HTMLElement)?.getBoundingClientRect?.()
-            const grabMinutes =
-              blockStart != null && rect ? offsetToMinutes(startY - rect.top) - DAY_START_HOUR * 60 : 0
-            onDragStart(Math.max(0, grabMinutes))
+            onDragStart()
             window.removeEventListener('pointermove', onMove)
           }
         }
@@ -1078,42 +823,12 @@ function BlockChip({
           {block.todo?.isCompleted ? <CheckCircle2 size={11} /> : <Circle size={11} />}
         </button>
       )}
-      {blockStart != null && !compact && (
-        <span className="opacity-70">{minutesToTime(blockStart)} </span>
-      )}
       {block.label}
       {/* Whose it is, when the team's calendars are overlaid on yours. */}
       {block.ownerName && (
         <span className="opacity-60"> · {block.ownerName}</span>
       )}
 
-      {/* Drag either edge to change the duration, as in Google Calendar. */}
-      {onResizeStart && blockStart != null && blockEnd != null && !compact && (
-        <>
-          <div
-            onPointerDown={(e) => {
-              if (e.button !== 0) return
-              e.stopPropagation()
-              e.preventDefault()
-              moved.current = true
-              onResizeStart('start', blockEnd)
-            }}
-            className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize"
-            title="Drag to change the start time"
-          />
-          <div
-            onPointerDown={(e) => {
-              if (e.button !== 0) return
-              e.stopPropagation()
-              e.preventDefault()
-              moved.current = true
-              onResizeStart('end', blockStart)
-            }}
-            className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize"
-            title="Drag to change the end time"
-          />
-        </>
-      )}
     </div>
   )
 }

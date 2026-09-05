@@ -41,8 +41,6 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
             type: 'string',
             description: 'The day the work will actually be done, YYYY-MM-DD. This is what appears on the calendar.',
           },
-          do_start: { type: 'string', description: 'Optional start time on the do date, HH:MM.' },
-          do_end: { type: 'string', description: 'Optional end time on the do date, HH:MM.' },
           assignee_id: { type: 'string', description: 'User id of the person who will do it.' },
         },
         required: ['title'],
@@ -63,8 +61,6 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           priority: { type: 'string', enum: ['low', 'medium', 'high'] },
           due_date: { type: 'string' },
           do_date: { type: 'string' },
-          do_start: { type: 'string' },
-          do_end: { type: 'string' },
           assignee_id: { type: 'string' },
           is_completed: { type: 'boolean' },
         },
@@ -77,19 +73,18 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: 'create_calendar_entry',
       description:
-        'Block time on the calendar: busy, working hours, a meeting, or time off. Times are ISO 8601 with a timezone offset.',
+        'Block out days on the calendar: busy, working, a meeting, or time off. The calendar is organised by day — there are no times.',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string' },
           notes: { type: 'string' },
           kind: { type: 'string', enum: ['busy', 'working', 'meeting', 'timeoff'] },
-          starts_at: { type: 'string', description: 'ISO 8601 instant.' },
-          ends_at: { type: 'string', description: 'ISO 8601 instant, after starts_at.' },
-          all_day: { type: 'boolean' },
+          starts_on: { type: 'string', description: 'First day it covers, YYYY-MM-DD.' },
+          ends_on: { type: 'string', description: 'Last day it covers, inclusive. Same as starts_on for one day.' },
           visibility: { type: 'string', enum: ['private', 'team', 'everyone'] },
         },
-        required: ['starts_at', 'ends_at'],
+        required: ['starts_on', 'ends_on'],
       },
     },
   },
@@ -200,10 +195,10 @@ Deno.serve(async (req) => {
       .limit(25),
     db
       .from('calendar_entries')
-      .select('id,title,kind,starts_at,ends_at,owner_id')
+      .select('id,title,kind,starts_on,ends_on,owner_id')
       .eq('project_id', projectId)
-      .gte('ends_at', new Date(Date.now() - 7 * 864e5).toISOString())
-      .order('starts_at')
+      .gte('ends_on', new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10))
+      .order('starts_on')
       .limit(80),
 
     // The assigned work. This was missing entirely, which is why the assistant
@@ -305,7 +300,7 @@ Today is ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('en-GB', { 
 
 DO DATE vs DUE DATE — this distinction matters and users rely on it:
 - due_date is the hard deadline, the last acceptable moment.
-- do_date is the day the person actually plans to do the work. The calendar shows do dates. When someone asks when to fit something in, you are choosing a do_date, and it must land on or before the due_date.
+- do_date is the day the person actually plans to do the work. The calendar shows do dates. When someone asks when to fit something in, you are choosing a do_date, and it must land on or before the due_date. The calendar is organised by day only — there are no times on it.
 
 Current project description:
 ${project.description || '(empty)'}
@@ -331,7 +326,7 @@ ${
 Calendar around now:
 ${
   (entriesRes.data ?? []).map((e) =>
-    `- ${e.title} (${e.kind}) ${e.starts_at.slice(0, 16).replace('T', ' ')} → ${e.ends_at.slice(11, 16)}`
+    `- ${e.title} (${e.kind}) ${e.starts_on}${e.ends_on !== e.starts_on ? ` → ${e.ends_on}` : ''}`
   ).join('\n') || '(nothing blocked)'
 }
 
@@ -434,8 +429,6 @@ How to behave:
                 priority: args.priority ?? 'medium',
                 due_date: args.due_date ?? null,
                 do_date: args.do_date ?? null,
-                do_start: args.do_start ?? null,
-                do_end: args.do_end ?? null,
                 assignee_id: args.assignee_id ?? null,
               })
               .select('id,title')
@@ -451,7 +444,6 @@ How to behave:
             for (const [k, col] of [
               ['title', 'title'], ['notes', 'notes'], ['priority', 'priority'],
               ['due_date', 'due_date'], ['do_date', 'do_date'],
-              ['do_start', 'do_start'], ['do_end', 'do_end'],
               ['assignee_id', 'assignee_id'],
             ] as const) {
               if (args[k] !== undefined) patch[col] = args[k]
@@ -481,9 +473,8 @@ How to behave:
                 title: args.title ?? 'Busy',
                 notes: args.notes ?? '',
                 kind: args.kind ?? 'busy',
-                starts_at: args.starts_at,
-                ends_at: args.ends_at,
-                all_day: args.all_day ?? false,
+                starts_on: args.starts_on,
+                ends_on: args.ends_on ?? args.starts_on,
                 visibility: args.visibility ?? null,
               })
               .select('id,title')

@@ -32,7 +32,7 @@ interface TaskState {
   setTaskDoDate: (
     taskId: string,
     employeeId: string,
-    schedule: { doDate: string | null; doStart?: string | null; doEnd?: string | null },
+    schedule: { doDate: string | null },
   ) => Promise<void>
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>
   deleteTask: (id: string) => Promise<void>
@@ -73,8 +73,6 @@ function toTask(row: any): Task {
     schedules: (row.task_assignments ?? []).map((a: any) => ({
       employeeId: a.employee_id,
       doDate: a.do_date ?? null,
-      doStart: a.do_start ?? null,
-      doEnd: a.do_end ?? null,
     })),
     frequency: row.frequency,
     categoryId: row.category_id,
@@ -195,7 +193,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     const fetchTasks = async () => {
       const withDates = await supabase
         .from('tasks')
-        .select('*, task_assignments(employee_id, do_date, do_start, do_end)')
+        .select('*, task_assignments(employee_id, do_date)')
 
       if (!withDates.error) return withDates
 
@@ -344,8 +342,6 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   setTaskDoDate: async (taskId, employeeId, schedule) => {
     const patch = {
       do_date: schedule.doDate || null,
-      do_start: schedule.doStart ?? null,
-      do_end: schedule.doEnd ?? null,
     }
     const { error } = await supabase
       .from('task_assignments')
@@ -363,13 +359,11 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       const schedules = t.schedules.some((x) => x.employeeId === employeeId)
         ? t.schedules.map((x) =>
             x.employeeId === employeeId
-              ? { ...x, doDate: schedule.doDate, doStart: schedule.doStart ?? null, doEnd: schedule.doEnd ?? null }
+              ? { ...x, doDate: schedule.doDate }
               : x)
         : [...t.schedules, {
             employeeId,
             doDate: schedule.doDate,
-            doStart: schedule.doStart ?? null,
-            doEnd: schedule.doEnd ?? null,
           }]
       return { ...t, schedules }
     })))

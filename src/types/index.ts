@@ -200,9 +200,6 @@ export interface ProjectTodo {
   dueDate: string | null
   /** When you plan to actually do it — this is what the calendar shows. */
   doDate: string | null
-  /** Optional time window on the do date; null start means all-day. */
-  doStart: string | null
-  doEnd: string | null
   assigneeId: string | null
   visibility: Visibility | null
   /** Individual people this todo is shared with, beyond the visibility rule. */
@@ -222,9 +219,10 @@ export interface CalendarEntry {
   title: string
   notes: string
   kind: CalendarEntryKind
-  startsAt: string
-  endsAt: string
-  allDay: boolean
+  /** The first day this entry covers, YYYY-MM-DD. */
+  startsOn: string
+  /** The last day it covers, inclusive. Same as startsOn for a single day. */
+  endsOn: string
   visibility: Visibility | null
   sharedWith: string[]
   /** Documents and clusters attached to this entry. */
@@ -262,9 +260,6 @@ export interface TaskSchedule {
   employeeId: string
   /** The day they intend to do it. This is what their calendar shows. */
   doDate: string | null
-  /** Optional window on that day; null start means all-day. */
-  doStart: string | null
-  doEnd: string | null
 }
 
 export interface Task {
