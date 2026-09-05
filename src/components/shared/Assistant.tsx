@@ -55,7 +55,17 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
         },
       })
 
-      if (fnErr) throw fnErr
+      // supabase-js discards the response body on a non-2xx and reports only
+      // "Edge Function returned a non-2xx status code". The function does say
+      // what went wrong, so read it off the response before falling back.
+      if (fnErr) {
+        const res = (fnErr as { context?: Response }).context
+        if (res && typeof res.json === 'function') {
+          const errBody = await res.json().catch(() => null)
+          if (errBody?.error) throw new Error(errBody.error)
+        }
+        throw fnErr
+      }
       if (data?.error) throw new Error(data.error)
 
       setApiMessages(data.messages ?? outgoing)

@@ -1,19 +1,19 @@
 // The FlowDesk assistant.
 //
-// Runs the Claude tool-use loop server-side so the API key never reaches the
+// Runs the tool-use loop server-side so the API key never reaches the
 // browser. The caller's own Supabase session is forwarded to every database
 // call, so the assistant can only ever read or write what that person could
 // do by hand — RLS stays in force.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import Anthropic from 'npm:@anthropic-ai/sdk@0.79.0'
+import OpenAI from 'npm:openai@4.77.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const MODEL = 'claude-opus-5'
+const MODEL = 'gpt-4o'
 const MAX_STEPS = 8
 
 const json = (body: unknown, status = 200) =>
@@ -22,104 +22,119 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 
-const tools: Anthropic.Tool[] = [
+const tools: OpenAI.Chat.ChatCompletionTool[] = [
   {
-    name: 'create_todo',
-    description:
-      'Add a todo to one of the project\'s lists. Use ask_user first if it is not obvious which list it belongs to, or who should do it.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', description: 'Short imperative title.' },
-        notes: { type: 'string', description: 'Optional detail.' },
-        list_id: { type: 'string', description: 'Which todo list. Omit for the first list.' },
-        priority: { type: 'string', enum: ['low', 'medium', 'high'] },
-        due_date: { type: 'string', description: 'Hard deadline, YYYY-MM-DD.' },
-        do_date: {
-          type: 'string',
-          description: 'The day the work will actually be done, YYYY-MM-DD. This is what appears on the calendar.',
-        },
-        do_start: { type: 'string', description: 'Optional start time on the do date, HH:MM.' },
-        do_end: { type: 'string', description: 'Optional end time on the do date, HH:MM.' },
-        assignee_id: { type: 'string', description: 'User id of the person who will do it.' },
-      },
-      required: ['title'],
-    },
-  },
-  {
-    name: 'update_todo',
-    description: 'Change an existing todo: reschedule it, reassign it, complete it, or edit its text.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        todo_id: { type: 'string' },
-        title: { type: 'string' },
-        notes: { type: 'string' },
-        priority: { type: 'string', enum: ['low', 'medium', 'high'] },
-        due_date: { type: 'string' },
-        do_date: { type: 'string' },
-        do_start: { type: 'string' },
-        do_end: { type: 'string' },
-        assignee_id: { type: 'string' },
-        is_completed: { type: 'boolean' },
-      },
-      required: ['todo_id'],
-    },
-  },
-  {
-    name: 'create_calendar_entry',
-    description:
-      'Block time on the calendar: busy, working hours, a meeting, or time off. Times are ISO 8601 with a timezone offset.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        notes: { type: 'string' },
-        kind: { type: 'string', enum: ['busy', 'working', 'meeting', 'timeoff'] },
-        starts_at: { type: 'string', description: 'ISO 8601 instant.' },
-        ends_at: { type: 'string', description: 'ISO 8601 instant, after starts_at.' },
-        all_day: { type: 'boolean' },
-        visibility: { type: 'string', enum: ['private', 'team', 'everyone'] },
-      },
-      required: ['starts_at', 'ends_at'],
-    },
-  },
-  {
-    name: 'update_project_description',
-    description:
-      'Rewrite the project description to reflect what is actually happening now. Use when the user reports news that makes the stored description stale.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        description: { type: 'string', description: 'The complete new description, not a diff.' },
-      },
-      required: ['description'],
-    },
-  },
-  {
-    name: 'ask_user',
-    description:
-      'Ask the user a question with a few concrete options, exactly when you genuinely need their decision (which list, which person, which day). Do not use it for things you can infer. Stop after calling this — the answer arrives as the next user message.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        question: { type: 'string' },
-        options: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              label: { type: 'string' },
-              description: { type: 'string' },
-            },
-            required: ['label'],
+    type: 'function',
+    function: {
+      name: 'create_todo',
+      description:
+        'Add a todo to one of the project\'s lists. Use ask_user first if it is not obvious which list it belongs to, or who should do it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Short imperative title.' },
+          notes: { type: 'string', description: 'Optional detail.' },
+          list_id: { type: 'string', description: 'Which todo list. Omit for the first list.' },
+          priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+          due_date: { type: 'string', description: 'Hard deadline, YYYY-MM-DD.' },
+          do_date: {
+            type: 'string',
+            description: 'The day the work will actually be done, YYYY-MM-DD. This is what appears on the calendar.',
           },
-          minItems: 2,
-          maxItems: 4,
+          do_start: { type: 'string', description: 'Optional start time on the do date, HH:MM.' },
+          do_end: { type: 'string', description: 'Optional end time on the do date, HH:MM.' },
+          assignee_id: { type: 'string', description: 'User id of the person who will do it.' },
         },
-        allow_multiple: { type: 'boolean' },
+        required: ['title'],
       },
-      required: ['question', 'options'],
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_todo',
+      description: 'Change an existing todo: reschedule it, reassign it, complete it, or edit its text.',
+      parameters: {
+        type: 'object',
+        properties: {
+          todo_id: { type: 'string' },
+          title: { type: 'string' },
+          notes: { type: 'string' },
+          priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+          due_date: { type: 'string' },
+          do_date: { type: 'string' },
+          do_start: { type: 'string' },
+          do_end: { type: 'string' },
+          assignee_id: { type: 'string' },
+          is_completed: { type: 'boolean' },
+        },
+        required: ['todo_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_calendar_entry',
+      description:
+        'Block time on the calendar: busy, working hours, a meeting, or time off. Times are ISO 8601 with a timezone offset.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          notes: { type: 'string' },
+          kind: { type: 'string', enum: ['busy', 'working', 'meeting', 'timeoff'] },
+          starts_at: { type: 'string', description: 'ISO 8601 instant.' },
+          ends_at: { type: 'string', description: 'ISO 8601 instant, after starts_at.' },
+          all_day: { type: 'boolean' },
+          visibility: { type: 'string', enum: ['private', 'team', 'everyone'] },
+        },
+        required: ['starts_at', 'ends_at'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_project_description',
+      description:
+        'Rewrite the project description to reflect what is actually happening now. Use when the user reports news that makes the stored description stale.',
+      parameters: {
+        type: 'object',
+        properties: {
+          description: { type: 'string', description: 'The complete new description, not a diff.' },
+        },
+        required: ['description'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'ask_user',
+      description:
+        'Ask the user a question with a few concrete options, exactly when you genuinely need their decision (which list, which person, which day). Do not use it for things you can infer. Stop after calling this — the answer arrives as the next user message.',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string' },
+          options: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                label: { type: 'string' },
+                description: { type: 'string' },
+              },
+              required: ['label'],
+            },
+            minItems: 2,
+            maxItems: 4,
+          },
+          allow_multiple: { type: 'boolean' },
+        },
+        required: ['question', 'options'],
+      },
     },
   },
 ]
@@ -127,10 +142,10 @@ const tools: Anthropic.Tool[] = [
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
+  const apiKey = Deno.env.get('OPENAI_API_KEY')
   if (!apiKey) {
     return json(
-      { error: 'The assistant is not configured yet: ANTHROPIC_API_KEY is not set on this project.' },
+      { error: 'The assistant is not configured yet: OPENAI_API_KEY is not set on this project.' },
       503,
     )
   }
@@ -150,7 +165,7 @@ Deno.serve(async (req) => {
 
   let body: {
     projectId?: string
-    messages?: Anthropic.MessageParam[]
+    messages?: OpenAI.Chat.ChatCompletionMessageParam[]
     timezone?: string
   }
   try {
@@ -239,52 +254,56 @@ How to behave:
 - If the user tells you something that makes the project description out of date (a new client, a change of scope, a finished phase), call update_project_description with a full rewritten description. Keep it factual and concise; never invent detail.
 - Keep replies short and plain. No preamble, no restating the question.`
 
-  const client = new Anthropic({ apiKey })
-  const convo: Anthropic.MessageParam[] = [...messages]
+  const client = new OpenAI({ apiKey })
+  // The system prompt is a message here rather than a separate field, and is
+  // kept out of `convo` so it isn't echoed back to the client each turn.
+  const convo: OpenAI.Chat.ChatCompletionMessageParam[] = [...messages]
   const performed: { tool: string; summary: string }[] = []
   let pendingQuestion: unknown = null
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    let response: Anthropic.Message
+    let completion: OpenAI.Chat.ChatCompletion
     try {
-      response = await client.messages.create({
+      completion = await client.chat.completions.create({
         model: MODEL,
         max_tokens: 4096,
-        system,
         tools,
-        messages: convo,
+        messages: [{ role: 'system', content: system }, ...convo],
       })
     } catch (e) {
-      console.error('[assistant] Anthropic call failed:', e)
+      console.error('[assistant] OpenAI call failed:', e)
       return json({ error: `The assistant could not be reached: ${(e as Error).message}` }, 502)
     }
 
-    if (response.stop_reason === 'refusal') {
-      return json({ reply: 'I was not able to help with that request.', actions: performed })
+    const message = completion.choices[0]?.message
+    if (!message) {
+      return json({ error: 'The assistant returned an empty response.' }, 502)
     }
 
-    convo.push({ role: 'assistant', content: response.content })
+    convo.push(message)
 
-    const toolUses = response.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-    )
+    const toolUses = message.tool_calls ?? []
     if (toolUses.length === 0) {
-      const reply = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n')
-        .trim()
-      return json({ reply, actions: performed, messages: convo })
+      return json({ reply: (message.content ?? '').trim(), actions: performed, messages: convo })
     }
 
-    const results: Anthropic.ToolResultBlockParam[] = []
+    const results: OpenAI.Chat.ChatCompletionToolMessageParam[] = []
 
     for (const use of toolUses) {
-      const args = use.input as Record<string, any>
+      // Arguments arrive as a JSON string, and a malformed one must not take
+      // down the turn — hand it back to the model as a tool failure instead.
+      let args: Record<string, any> = {}
+      let parseError: string | null = null
+      try {
+        args = JSON.parse(use.function.arguments || '{}')
+      } catch {
+        parseError = 'Arguments were not valid JSON. Call the tool again with valid JSON.'
+      }
       let result: string
 
       try {
-        switch (use.name) {
+        if (parseError) throw new Error(parseError)
+        switch (use.function.name) {
           case 'ask_user': {
             pendingQuestion = {
               question: args.question,
@@ -379,7 +398,7 @@ How to behave:
           }
 
           default:
-            result = `Unknown tool ${use.name}.`
+            result = `Unknown tool ${use.function.name}.`
         }
       } catch (e) {
         // Hand the failure back to the model so it can explain or retry,
@@ -387,19 +406,21 @@ How to behave:
         result = `Failed: ${(e as Error).message ?? String(e)}`
       }
 
-      results.push({ type: 'tool_result', tool_use_id: use.id, content: result })
+      results.push({ role: 'tool', tool_call_id: use.id, content: result })
     }
 
-    convo.push({ role: 'user', content: results })
+    // Each tool result is its own message, and every call in the batch must
+    // get one back before the next request or the API rejects the thread.
+    convo.push(...results)
 
     // A question needs a human answer; stop the loop and hand it to the UI.
     if (pendingQuestion) {
-      const reply = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n')
-        .trim()
-      return json({ reply, question: pendingQuestion, actions: performed, messages: convo })
+      return json({
+        reply: (message.content ?? '').trim(),
+        question: pendingQuestion,
+        actions: performed,
+        messages: convo,
+      })
     }
   }
 
