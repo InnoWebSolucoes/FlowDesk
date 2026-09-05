@@ -3,6 +3,7 @@ import {
   Bell, X, CheckCircle2, AlertTriangle, MessageSquare, Clock, Calendar,
   PlayCircle, RotateCcw, Paperclip,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useNotificationStore } from '../../store/notificationStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
@@ -38,6 +39,7 @@ export function NotificationBell() {
 
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
 
   const userId = currentUser?.id ?? ''
   const role = currentUser?.role ?? 'employee'
@@ -150,6 +152,36 @@ export function NotificationBell() {
     dismiss(id)
   }
 
+  /**
+   * Take the reader to whatever the notification is about. Everything raised
+   * today concerns a task, and where a task lives differs by role: an admin
+   * manages it inside its project, an employee sees it in My Tasks.
+   */
+  const openNotification = (notif: AppNotification) => {
+    setOpen(false)
+    if (!notif.taskId) {
+      // Workload and inactivity alerts are about people, not one task.
+      if (notif.type === 'workload_alert' || notif.type === 'inactivity_alert') {
+        navigate(role === 'admin' ? '/admin/projects' : '/employee/tasks')
+      }
+      return
+    }
+
+    if (role !== 'admin') {
+      navigate('/employee/tasks')
+      return
+    }
+
+    // The task carries its project, which is the only way to build the admin
+    // route to it. Without it there is nowhere specific to go.
+    const task = tasks.find(x => x.id === notif.taskId)
+    navigate(
+      task?.projectId
+        ? `/admin/projects/${task.projectId}/employees/tasks`
+        : '/admin/projects'
+    )
+  }
+
   return (
     <div className="relative" ref={panelRef}>
       <button
@@ -198,7 +230,10 @@ export function NotificationBell() {
                 {userNotifs.map(notif => (
                   <div
                     key={notif.id}
-                    onClick={() => handleMarkRead(notif.id)}
+                    onClick={() => {
+                      handleMarkRead(notif.id)
+                      openNotification(notif)
+                    }}
                     className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-surface-2 transition-colors ${!notif.isRead ? 'bg-primary/5' : ''}`}
                   >
                     <div className="flex-shrink-0 mt-0.5">

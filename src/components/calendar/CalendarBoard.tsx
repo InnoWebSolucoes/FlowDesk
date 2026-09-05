@@ -5,10 +5,13 @@ import {
 } from 'lucide-react'
 import {
   addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, isSameMonth,
-  startOfMonth, startOfWeek,
+  startOfMonth, startOfWeek, parseISO,
 } from 'date-fns'
-import { Project, ProjectTodo, CalendarEntry } from '../../types'
+import { Project, ProjectTodo, CalendarEntry, Task } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
+import { useTaskStore } from '../../store/taskStore'
+import { useEmployeeStore } from '../../store/employeeStore'
+import { isTaskDueOnDate } from '../../utils/taskScheduler'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import {
   KIND_STYLE, LAYERS, Layer, DAY_START_HOUR, DAY_END_HOUR, HOUR_HEIGHT,
@@ -50,6 +53,10 @@ interface Block {
   outlined?: boolean
   todo?: ProjectTodo
   entry?: CalendarEntry
+  /** An assigned task shown on the day it is planned for, or its deadline. */
+  task?: Task
+  /** Whose block this is, when other people's calendars are overlaid. */
+  ownerName?: string
   allDay?: boolean
 }
 
@@ -79,6 +86,14 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     calendarEntries, calendarLoadedFor, loadCalendar,
     createCalendarEntry, updateCalendarEntry, deleteCalendarEntry,
   } = useProjectStore()
+
+  const { tasks, setTaskDoDate } = useTaskStore()
+  const { employees } = useEmployeeStore()
+
+  // Whose calendars to overlay, beyond your own. Admin-only: a manager needs
+  // to see the team's week to plan against it. Empty means just this board.
+  const [overlaid, setOverlaid] = useState<Set<string>>(new Set())
+  const canOverlay = ownerId === null
 
   const [view, setView] = useState<View>('week')
   const [cursor, setCursor] = useState(() => new Date())
@@ -157,6 +172,45 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
         }
       }
 
+      // Assigned work belongs on the calendar too, otherwise an employee has
+      // to hold two lists in their head. Shown on the day they planned it; if
+      // they have not planned it, on its deadline so it is not invisible.
+      const scheduleOwners = canOverlay ? [...overlaid] : [ownerId!]
+      for (const empIdForCal of scheduleOwners) {
+        const who = employees.find((e) => e.id === empIdForCal)
+        for (const task of tasks) {
+          if (!task.isActive || !task.assignedTo.includes(empIdForCal)) continue
+
+          const sched = task.schedules.find((x) => x.employeeId === empIdForCal)
+          const planned = sched?.doDate
+          const showsToday =
+            planned === day ||
+            (!planned && task.deadline === day) ||
+            (!planned && !task.deadline && isTaskDueOnDate(task, empIdForCal, parseISO(day)))
+          if (!showsToday) continue
+          if (planned === day ? !visible('do') : !visible('due')) continue
+
+          const hasWindow = !!(sched?.doStart && sched?.doEnd)
+          const toMin = (v: string) => {
+            const [h, m] = v.split(':').map(Number)
+            return h * 60 + (m || 0)
+          }
+          const block: Block = {
+            key: `task-${task.id}-${empIdForCal}`,
+            start: hasWindow ? toMin(sched!.doStart!) : 0,
+            end: hasWindow ? toMin(sched!.doEnd!) : 0,
+            label: task.title,
+            color: '#6366f1',
+            outlined: !planned,
+            task,
+            ownerName: canOverlay ? who?.name : undefined,
+            allDay: !hasWindow,
+          }
+          if (hasWindow) timed.push(block)
+          else allDay.push(block)
+        }
+      }
+
       if (visible('due')) {
         for (const t of todos) {
           if (t.dueDate !== day || t.isCompleted) continue
@@ -201,7 +255,8 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
 
       return { timed, allDay }
     },
-    [todos, calendarEntries, hidden],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -411,6 +466,46 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
                       {visible(l.key) && <Check size={13} className="text-primary" />}
                     </button>
                   ))}
+                  {/* Whose calendars to show alongside your own. A manager
+                      plans against the team's week, so the team has to be
+                      visible in it. */}
+                  {canOverlay && employees.length > 0 && (
+                    <>
+                      <div className="h-px bg-border my-1.5" />
+                      <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-subtle">
+                        Employees
+                      </p>
+                      <div className="max-h-44 overflow-y-auto">
+                        {employees.map((emp) => (
+                          <button
+                            key={emp.id}
+                            onClick={() =>
+                              setOverlaid((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(emp.id)) next.delete(emp.id)
+                                else next.add(emp.id)
+                                return next
+                              })
+                            }
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-main hover:bg-surface-2"
+                          >
+                            <span className="w-3 h-3 rounded-full bg-primary/70 flex-shrink-0" />
+                            <span className="flex-1 text-left truncate">{emp.name}</span>
+                            {overlaid.has(emp.id) && <Check size={13} className="text-primary" />}
+                          </button>
+                        ))}
+                      </div>
+                      {overlaid.size > 0 && (
+                        <button
+                          onClick={() => setOverlaid(new Set())}
+                          className="w-full px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface-2"
+                        >
+                          Clear employees
+                        </button>
+                      )}
+                      <div className="h-px bg-border my-1.5" />
+                    </>
+                  )}
                   {hidden.size > 0 && (
                     <button
                       onClick={() => setHidden(new Set())}
@@ -955,7 +1050,7 @@ function BlockChip({
         e.stopPropagation()
         onContext(e.clientX, e.clientY)
       }}
-      title={block.label}
+      title={block.ownerName ? `${block.label} — ${block.ownerName}` : block.label}
       className={`relative rounded-md text-[11px] leading-tight truncate cursor-grab active:cursor-grabbing select-none shadow-sm ${
         compact ? 'px-1.5 py-1' : 'px-2 py-1 h-full overflow-hidden'
       } ${block.todo?.isCompleted ? 'line-through opacity-60' : ''}`}
@@ -987,6 +1082,10 @@ function BlockChip({
         <span className="opacity-70">{minutesToTime(blockStart)} </span>
       )}
       {block.label}
+      {/* Whose it is, when the team's calendars are overlaid on yours. */}
+      {block.ownerName && (
+        <span className="opacity-60"> · {block.ownerName}</span>
+      )}
 
       {/* Drag either edge to change the duration, as in Google Calendar. */}
       {onResizeStart && blockStart != null && blockEnd != null && !compact && (
