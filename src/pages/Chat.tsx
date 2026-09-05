@@ -7,7 +7,6 @@ import {
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
 import { useAuthStore } from '../store/authStore'
 import { useChatStore } from '../store/chatStore'
-import { useEmployeeStore } from '../store/employeeStore'
 import { useTaskStore } from '../store/taskStore'
 import { useProjectStore } from '../store/projectStore'
 import { ResourceLinkPicker, LinkKey } from '../components/shared/ResourceLinkPicker'
@@ -40,11 +39,11 @@ export function Chat() {
   const { t } = useT()
   const navigate = useNavigate()
   const { currentUser } = useAuthStore()
-  const { allEmployees } = useEmployeeStore()
   const { allTasks } = useTaskStore()
   const {
     conversations, messages, loadMessages, sendMessage, deleteMessage,
     openDirect, openTaskRoom, ensureCluster, markRead, unreadCount, loadedRooms,
+    people, error, clearError,
   } = useChatStore()
   const {
     items, createItem, setItemClusters, loadResources, resourcesLoadedFor, getFileUrl,
@@ -119,8 +118,8 @@ export function Chat() {
     if (active.taskId) return allTasks.find((x) => x.id === active.taskId)?.projectId ?? null
     // A direct room has no project of its own; use the people in it.
     const other = active.memberIds.find((id) => id !== me)
-    return allEmployees.find((e) => e.id === other)?.projectId ?? currentUser?.projectId ?? null
-  }, [active, allTasks, allEmployees, me, currentUser])
+    return people.find((p) => p.id === other)?.projectId ?? currentUser?.projectId ?? null
+  }, [active, allTasks, people, me, currentUser])
 
   useEffect(() => {
     if (activeProjectId && resourcesLoadedFor !== activeProjectId) loadResources(activeProjectId)
@@ -137,7 +136,7 @@ export function Chat() {
 
   const nameOf = (userId: string) => {
     if (userId === me) return currentUser?.name ?? 'You'
-    return allEmployees.find((e) => e.id === userId)?.name ?? 'Someone'
+    return people.find((p) => p.id === userId)?.name ?? 'Someone'
   }
 
   /** What a room is called in the list: the other person, or the task. */
@@ -167,11 +166,14 @@ export function Chat() {
     const already = new Set(
       conversations.filter((c) => c.kind === 'direct').flatMap((c) => c.memberIds)
     )
-    return allEmployees
-      .filter((e) => e.id !== me && !already.has(e.id))
-      .filter((e) => isAdmin || e.projectId === currentUser?.projectId)
-      .filter((e) => !q || e.name.toLowerCase().includes(q))
-  }, [allEmployees, conversations, me, isAdmin, currentUser, q])
+    return people
+      .filter((p) => p.id !== me && !already.has(p.id))
+      // A manager reaches everyone. An employee reaches their own project —
+      // and every manager, who belong to no single project and would otherwise
+      // be unreachable by the people they manage.
+      .filter((p) => isAdmin || p.role === 'admin' || p.projectId === currentUser?.projectId)
+      .filter((p) => !q || p.name.toLowerCase().includes(q))
+  }, [people, conversations, me, isAdmin, currentUser, q])
 
   // ─── Sending ──────────────────────────────────────────────────────────────
 
@@ -316,7 +318,18 @@ export function Chat() {
   )
 
   return (
-    <div className="flex h-[calc(100vh-8.5rem)] -m-6 bg-bg">
+    <div className="flex h-[calc(100vh-8.5rem)] -m-6 bg-bg relative">
+      {/* Chat failing quietly reads as chat being broken, so whatever went
+          wrong says so here rather than only in the console. */}
+      {error && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-danger text-white text-sm px-4 py-2.5 rounded-lg shadow-lg max-w-lg">
+          <span className="flex-1">{error}</span>
+          <button onClick={clearError} className="flex-shrink-0 hover:opacity-70">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* ─── Rooms ─────────────────────────────────────────────────────── */}
       <div className="w-72 border-r border-border bg-surface flex flex-col flex-shrink-0">
         <div className="p-3 border-b border-border">
@@ -346,18 +359,20 @@ export function Chat() {
 
           {startable.length > 0 && (
             <Section label={t('chat_startChat')}>
-              {startable.map((e) => (
+              {startable.map((p) => (
                 <button
-                  key={e.id}
-                  onClick={() => openDirect(e.id).then((c) => c && setActiveId(c.id))}
+                  key={p.id}
+                  onClick={() => openDirect(p.id).then((c) => c && setActiveId(c.id))}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left hover:bg-surface-2 transition-colors"
                 >
                   <div className="w-8 h-8 rounded-full bg-surface-2 border border-border flex items-center justify-center flex-shrink-0">
-                    <span className="text-text-muted text-[10px] font-bold">{initials(e.name)}</span>
+                    <span className="text-text-muted text-[10px] font-bold">{initials(p.name)}</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-text-main truncate">{e.name}</p>
-                    <p className="text-[11px] text-text-subtle truncate">{e.jobTitle || t('chat_direct')}</p>
+                    <p className="text-sm text-text-main truncate">{p.name}</p>
+                    <p className="text-[11px] text-text-subtle truncate">
+                      {p.role === 'admin' ? t('chat_manager') : p.jobTitle || t('chat_direct')}
+                    </p>
                   </div>
                   <ArrowRight size={13} className="text-text-subtle flex-shrink-0" />
                 </button>

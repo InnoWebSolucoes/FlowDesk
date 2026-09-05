@@ -2,16 +2,39 @@ import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import { ChatMessage, Conversation } from '../types'
 
+/** Someone you can message. Everyone, managers included. */
+export interface ChatPerson {
+  id: string
+  name: string
+  role: 'admin' | 'employee'
+  jobTitle: string
+  projectId: string | null
+}
+
 interface ChatState {
   conversations: Conversation[]
+  /**
+   * Everyone in the directory, managers included. The employee store filters
+   * to role = 'employee', so it can never name a manager — which left staff
+   * with nobody to message and every task room's author unnamed.
+   */
+  people: ChatPerson[]
   /** Messages of every room that has been opened this session, oldest first. */
   messages: Record<string, ChatMessage[]>
   loading: boolean
   /** Rooms whose messages have been fetched, so reopening one is free. */
   loadedRooms: string[]
+  /**
+   * What went wrong, for the banner. Chat failing silently is indistinguishable
+   * from chat being broken, so every failed write puts its reason here.
+   */
+  error: string | null
+  clearError: () => void
 
   initialize: (userId: string) => Promise<void>
   teardown: () => void
+  /** Load the directory. Cheap, and needed to name anyone in a room. */
+  loadPeople: () => Promise<void>
 
   loadMessages: (conversationId: string) => Promise<void>
   sendMessage: (conversationId: string, body: string, itemIds: string[]) => Promise<void>
@@ -67,25 +90,76 @@ function pairKey(a: string, b: string) {
  * state, and must survive re-renders.
  */
 let channel: ReturnType<typeof supabase.channel> | null = null
-/** Whose session the rooms below belong to. */
-let currentUserId: string | null = null
+
+/**
+ * Whose rooms these are.
+ *
+ * Read from the Supabase session rather than held in a module variable set by
+ * initialize(): the app tears these stores down while auth is still resolving,
+ * so a cached id was null exactly when the first messages were being sent —
+ * and every write below guards on it, so they returned silently and chat did
+ * nothing at all. The session is the one source that is already correct by the
+ * time a click can happen.
+ */
+async function me(): Promise<string | null> {
+  // getSession, not getUser: the session is already in memory, so this cannot
+  // fail on a slow or dropped connection the way a network round-trip can —
+  // and a send must not be lost because the identity lookup timed out.
+  const { data } = await supabase.auth.getSession()
+  return data.session?.user?.id ?? null
+}
+
+/**
+ * The last known id, for the synchronous paths — the realtime handler and the
+ * unread count, which cannot await. Kept in step with the session by
+ * initialize(), and only ever an optimisation: nothing that writes relies on it.
+ */
+let cachedUserId: string | null = null
 
 export const useChatStore = create<ChatState>()((set, get) => ({
   conversations: [],
+  people: [],
   messages: {},
   loading: false,
   loadedRooms: [],
+  error: null,
+
+  clearError: () => set({ error: null }),
+
+  loadPeople: async () => {
+    const { data } = await supabase
+      .from('users')
+      .select('id, name, role, job_title, project_id')
+      .order('name')
+
+    set({
+      people: (data ?? []).map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        role: r.role,
+        jobTitle: r.job_title ?? '',
+        projectId: r.project_id ?? null,
+      })),
+    })
+  },
 
   initialize: async (userId) => {
-    currentUserId = userId
+    cachedUserId = userId
     set({ loading: true })
+
+    get().loadPeople()
 
     // RLS decides what comes back: your direct rooms, and the task rooms for
     // tasks you are on — every task room, for a manager.
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('conversations')
       .select('*, conversation_members(user_id, last_read_at)')
       .order('last_message_at', { ascending: false })
+
+    if (error) {
+      console.error('[chat] could not load conversations:', error.message)
+      set({ error: error.message, loading: false })
+    }
 
     const conversations = (data ?? []).map((row: any) => {
       const conv = toConversation(row)
@@ -133,8 +207,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
           // A message can be the first sign of a room that did not exist when
           // this client loaded — someone starting a chat with you.
-          if (!get().conversations.some((c) => c.id === row.conversation_id) && currentUserId) {
-            await get().initialize(currentUserId)
+          if (!get().conversations.some((c) => c.id === row.conversation_id)) {
+            const uid = cachedUserId ?? (await me())
+            if (uid) await get().initialize(uid)
           }
 
           // Documents arrive as their own rows, so the payload alone cannot say
@@ -167,7 +242,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                         // Your own message is not news to you; markRead clears
                         // the count again the moment the room is on screen.
                         unread:
-                          message.authorId === currentUserId ? c.unread : (c.unread ?? 0) + 1,
+                          message.authorId === cachedUserId ? c.unread : (c.unread ?? 0) + 1,
                       }
                     : c
                 )
@@ -195,8 +270,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   teardown: () => {
-    currentUserId = null
-    set({ conversations: [], messages: {}, loadedRooms: [] })
+    cachedUserId = null
+    set({ conversations: [], people: [], messages: {}, loadedRooms: [], error: null })
     if (!channel) return
     supabase.removeChannel(channel)
     channel = null
@@ -218,16 +293,24 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   sendMessage: async (conversationId, body, itemIds) => {
-    if (!currentUserId) return
     if (!body.trim() && itemIds.length === 0) return
+    const userId = await me()
+    if (!userId) return
 
     const { data, error } = await supabase
       .from('chat_messages')
-      .insert({ conversation_id: conversationId, author_id: currentUserId, body: body.trim() })
+      .insert({ conversation_id: conversationId, author_id: userId, body: body.trim() })
       .select()
       .single()
 
-    if (error || !data) return
+    if (error || !data) {
+      // Silence here is the worst outcome: the composer clears and the message
+      // is simply gone. Surface it so a policy or connection problem is
+      // visible rather than looking like the app ignoring you.
+      console.error('[chat] send failed:', error?.message ?? 'no row returned')
+      set({ error: error?.message ?? 'Message could not be sent.' })
+      return
+    }
 
     if (itemIds.length > 0) {
       await supabase
@@ -261,8 +344,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   openDirect: async (otherUserId) => {
-    if (!currentUserId) return null
-    const key = pairKey(currentUserId, otherUserId)
+    const userId = await me()
+    if (!userId) return null
+    const key = pairKey(userId, otherUserId)
 
     const existing = get().conversations.find(
       (c) => c.kind === 'direct' && c.memberIds.includes(otherUserId)
@@ -271,7 +355,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     const { data, error } = await supabase
       .from('conversations')
-      .insert({ kind: 'direct', pair_key: key, created_by: currentUserId })
+      .insert({ kind: 'direct', pair_key: key, created_by: userId })
       .select()
       .single()
 
@@ -283,27 +367,32 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         .select('*, conversation_members(user_id, last_read_at)')
         .eq('pair_key', key)
         .maybeSingle()
-      if (!theirs) return null
+      if (!theirs) {
+        console.error('[chat] could not open a direct chat:', error?.message)
+        set({ error: error?.message ?? 'Could not open that chat.' })
+        return null
+      }
       const conv = toConversation(theirs)
       set((s) => ({ conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)] }))
       return conv
     }
 
     await supabase.from('conversation_members').insert([
-      { conversation_id: data.id, user_id: currentUserId },
+      { conversation_id: data.id, user_id: userId },
       { conversation_id: data.id, user_id: otherUserId },
     ])
 
     const conv: Conversation = {
       ...toConversation(data),
-      memberIds: [currentUserId, otherUserId],
+      memberIds: [userId, otherUserId],
     }
     set((s) => ({ conversations: [conv, ...s.conversations] }))
     return conv
   },
 
   openTaskRoom: async (taskId, projectId) => {
-    if (!currentUserId) return null
+    const userId = await me()
+    if (!userId) return null
 
     const existing = get().conversations.find((c) => c.taskId === taskId)
     if (existing) return existing
@@ -324,7 +413,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     const { data, error } = await supabase
       .from('conversations')
-      .insert({ kind: 'task', task_id: taskId, project_id: projectId, created_by: currentUserId })
+      .insert({ kind: 'task', task_id: taskId, project_id: projectId, created_by: userId })
       .select()
       .single()
 
@@ -335,7 +424,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         .select('*, conversation_members(user_id, last_read_at)')
         .eq('task_id', taskId)
         .maybeSingle()
-      if (!theirs) return null
+      if (!theirs) {
+        console.error('[chat] could not open the task room:', error?.message)
+        set({ error: error?.message ?? 'Could not open that discussion.' })
+        return null
+      }
       const conv = toConversation(theirs)
       set((s) => ({ conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)] }))
       return conv
@@ -357,7 +450,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       folder_title: title,
     })
 
-    if (error || !data) return null
+    if (error || !data) {
+      console.error('[chat] could not create the room folder:', error?.message)
+      set({ error: 'Could not file the document in this chat’s folder.' })
+      return null
+    }
     set((s) => ({
       conversations: s.conversations.map((c) =>
         c.id === conversationId ? { ...c, clusterId: data as string } : c
@@ -367,7 +464,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   markRead: async (conversationId) => {
-    if (!currentUserId) return
+    const userId = await me()
+    if (!userId) return
     const now = new Date().toISOString()
 
     set((s) => ({
@@ -381,7 +479,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     await supabase
       .from('conversation_members')
       .upsert(
-        { conversation_id: conversationId, user_id: currentUserId, last_read_at: now },
+        { conversation_id: conversationId, user_id: userId, last_read_at: now },
         { onConflict: 'conversation_id,user_id' }
       )
   },

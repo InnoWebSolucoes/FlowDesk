@@ -129,6 +129,12 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
       return
     }
 
+    // Only a real sign-out tears down. 'loading' is the phase before the stored
+    // session has been read back, and treating it as signed-out wiped chat's
+    // state on every single load — including the id its writes guard on, which
+    // is why sending a message silently did nothing.
+    if (authStatus !== 'unauthenticated') return
+
     // Signing out has to close the live channels too. They are subscribed with
     // the old session's credentials, so leaving them open means the next user
     // inherits someone else's subscriptions.
