@@ -32,6 +32,7 @@ function TaskForm({
   categories,
   employees,
   onAddCategory,
+  defaultAssignee,
 }: {
   initial?: Task
   onSave: (data: any) => void
@@ -39,6 +40,8 @@ function TaskForm({
   categories: Category[]
   employees: import('../../types').Employee[]
   onAddCategory: (cat: Omit<Category, 'id'>) => Promise<Category>
+  /** Whose profile this was opened from, so the task starts assigned to them. */
+  defaultAssignee?: string
 }) {
   const { t } = useT()
   const DAY_NAMES = [t('task_sun'), t('task_mon'), t('task_tue'), t('task_wed'), t('task_thu'), t('task_fri'), t('task_sat')]
@@ -46,7 +49,14 @@ function TaskForm({
   const [form, setForm] = useState<any>(
     initial
       ? { ...initial }
-      : { ...defaultTask(), categoryId: categories[0]?.id ?? '' }
+      // Opened from an employee's profile, the task starts assigned to them.
+      // The assignees decide the task's project, so leaving this empty is what
+      // made "New Task" there fail with no project.
+      : {
+          ...defaultTask(),
+          categoryId: categories[0]?.id ?? '',
+          assignedTo: defaultAssignee ? [defaultAssignee] : [],
+        }
   )
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [newCatName, setNewCatName] = useState('')
@@ -195,20 +205,29 @@ function TaskForm({
       <div>
         <label className={lbl}>{t('task_assignTo')}</label>
         <div className="flex flex-wrap gap-2">
-          {employees.map(emp => (
-            <button
-              key={emp.id}
-              type="button"
-              onClick={() => toggleEmployee(emp.id)}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-                form.assignedTo.includes(emp.id)
-                  ? 'bg-primary text-white border-primary'
-                  : 'bg-surface text-text-muted border-border hover:border-primary/50'
-              }`}
-            >
-              {emp.name}
-            </button>
-          ))}
+          {employees.map(emp => {
+            // A task's project comes from its assignees, so someone with no
+            // project cannot carry one. Saying so here beats failing on save.
+            const noProject = !emp.projectId
+            return (
+              <button
+                key={emp.id}
+                type="button"
+                disabled={noProject}
+                title={noProject ? `${emp.name} is not on a project yet` : undefined}
+                onClick={() => toggleEmployee(emp.id)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                  noProject
+                    ? 'bg-surface-2 text-text-subtle border-border cursor-not-allowed opacity-60'
+                    : form.assignedTo.includes(emp.id)
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-surface text-text-muted border-border hover:border-primary/50'
+                }`}
+              >
+                {emp.name}{noProject && ' · no project'}
+              </button>
+            )
+          })}
         </div>
         {err('assignedTo')}
       </div>
@@ -296,7 +315,7 @@ function TaskForm({
 }
 
 export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: string }) {
-  const { tasks, categories, addTask, updateTask, deleteTask, addCategory } = useTaskStore()
+  const { tasks, categories, addTask, updateTask, deleteTask, addCategory, scopedProjectId } = useTaskStore()
   const { employees } = useEmployeeStore()
   const { currentUser } = useAuthStore()
   const { t } = useT()
@@ -351,12 +370,40 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
       if (editing === 'new') {
         if (!currentUser) return
         // An employee belongs to exactly one project, so the assignees fix the task's project.
-        const projectId = employees.find(e => e.id === data.assignedTo[0])?.projectId
+        const assignee = employees.find(e => e.id === data.assignedTo[0])
+        const projectId = assignee?.projectId
         if (!projectId) {
-          alert(t('task_errorNoProject'))
+          // Naming the person makes this actionable: the fix is to put them on
+          // a project, and without the name there is no way to know who.
+          alert(
+            assignee
+              ? `${assignee.name} is not assigned to a project yet, so this task has nowhere to live. Add them to a project first.`
+              : t('task_errorNoProject')
+          )
           return
         }
+        // Only the first assignee's project is used, so anyone from another
+        // project would be attached to a task their project never shows.
+        const strays = data.assignedTo
+          .map((id: string) => employees.find(e => e.id === id))
+          .filter((e: any) => e && e.projectId !== projectId)
+        if (strays.length > 0) {
+          alert(
+            `${strays.map((e: any) => e.name).join(', ')} ${strays.length === 1 ? 'is' : 'are'} on a different project, and a task can only belong to one. Create a separate task for them.`
+          )
+          return
+        }
+
         await addTask({ ...data, projectId, createdBy: currentUser.id })
+
+        // The list on screen is filtered to the project being viewed. A task
+        // for someone on a different project saves fine and then vanishes,
+        // which reads exactly like a failed save — so say where it went.
+        if (scopedProjectId && projectId !== scopedProjectId) {
+          alert(
+            `Task saved. It belongs to ${assignee.name}'s project, not the one you are viewing, so it will not appear in this list.`
+          )
+        }
       } else if (editing) {
         await updateTask(editing.id, data)
       }
@@ -548,6 +595,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
             onCancel={() => setEditing(null)}
             categories={categories}
             employees={employees}
+            defaultAssignee={preselectedEmployee}
             onAddCategory={addCategory}
           />
         </div>
