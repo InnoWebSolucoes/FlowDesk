@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import {
   X, Trash2, Copy, FolderOpen, Shield, Globe, Users, UserCog, UserCheck,
-  ChevronDown, ArrowRight, Layers,
+  ArrowRight, Layers,
 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ResourceCluster, ResourceAccess } from '../../types'
@@ -69,7 +69,6 @@ export function ClusterPanel({
   const { allEmployees } = useEmployeeStore()
 
   const [title, setTitle] = useState(cluster.title)
-  const [accessOpen, setAccessOpen] = useState(false)
 
   const named = cluster.accessUserIds ?? []
   const namesAPerson = cluster.access === 'specific' || cluster.access === 'relative'
@@ -125,10 +124,7 @@ export function ClusterPanel({
 
   const chooseAccess = (value: ResourceAccess) => {
     setClusterAccess(cluster.id, value, named)
-    setAccessOpen(true)
   }
-
-  const current = ACCESS_OPTIONS.find((o) => o.value === cluster.access) ?? ACCESS_OPTIONS[0]
 
   return (
     <aside
