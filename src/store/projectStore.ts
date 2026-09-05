@@ -252,6 +252,7 @@ function toNote(row: any): ProjectNote {
     ownerId: row.owner_id ?? null,
     title: row.title ?? '',
     body: row.body ?? '',
+    content: row.content ?? '',
     color: row.color ?? '#fef3c7',
     isPinned: row.is_pinned ?? false,
     isArchived: row.is_archived ?? false,
@@ -1077,6 +1078,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         owner_id: ownerId,
         title: input.title ?? '',
         body: input.body ?? '',
+        content: input.content ?? '',
         color: input.color ?? '#fef3c7',
         is_pinned: input.isPinned ?? false,
         sort_order: minOrder - 1,
@@ -1097,6 +1099,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const patch: Record<string, unknown> = {}
     if (updates.title !== undefined) patch.title = updates.title
     if (updates.body !== undefined) patch.body = updates.body
+    if (updates.content !== undefined) patch.content = updates.content
     if (updates.color !== undefined) patch.color = updates.color
     if (updates.isPinned !== undefined) patch.is_pinned = updates.isPinned
     if (updates.isArchived !== undefined) patch.is_archived = updates.isArchived

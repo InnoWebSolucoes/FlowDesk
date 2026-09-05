@@ -147,7 +147,10 @@ export interface ProjectNote {
   projectId: string
   ownerId: string | null
   title: string
+  /** Plain text mirror, kept for search and the board preview. */
   body: string
+  /** Rich HTML from the note editor. The real content. */
+  content: string
   color: string
   isPinned: boolean
   isArchived: boolean

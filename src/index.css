@@ -87,3 +87,97 @@ body {
 
 /* Recharts tooltip */
 .recharts-tooltip-wrapper { z-index: 100; }
+
+/* ─── Note editor ──────────────────────────────────────────────────────────
+   The notes body is rich content, so everything it can contain needs styling
+   here — the editor renders plain semantic HTML and inherits nothing from
+   Tailwind's reset otherwise. Colours are fixed dark rather than themed: a
+   note is drawn on its own coloured paper, which is always light. */
+
+.note-prose { color: #27272a; font-size: 0.9rem; line-height: 1.6; }
+.note-prose > * + * { margin-top: 0.6em; }
+.note-prose h1 { font-size: 1.5rem; font-weight: 700; line-height: 1.25; }
+.note-prose h2 { font-size: 1.25rem; font-weight: 600; line-height: 1.3; }
+.note-prose h3 { font-size: 1.05rem; font-weight: 600; }
+.note-prose strong { font-weight: 700; }
+.note-prose em { font-style: italic; }
+.note-prose u { text-decoration: underline; }
+.note-prose s { text-decoration: line-through; }
+.note-prose mark { background: #fde68a; padding: 0 0.15em; border-radius: 0.15em; }
+.note-prose a { color: #4f46e5; text-decoration: underline; }
+.note-prose ul { list-style: disc; padding-left: 1.4em; }
+.note-prose ol { list-style: decimal; padding-left: 1.4em; }
+.note-prose li > p { margin: 0; }
+.note-prose blockquote {
+  border-left: 3px solid #d4d4d8;
+  padding-left: 0.85em;
+  color: #52525b;
+  font-style: italic;
+}
+.note-prose pre {
+  background: #18181b;
+  color: #fafafa;
+  padding: 0.75em 1em;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+.note-prose code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.note-prose :not(pre) > code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1em 0.35em;
+  border-radius: 0.25em;
+  font-size: 0.85em;
+}
+.note-prose hr { border: none; border-top: 1px solid #d4d4d8; margin: 1.2em 0; }
+.note-prose img { max-width: 100%; height: auto; border-radius: 0.5rem; }
+
+/* Checklists */
+.note-prose ul[data-type='taskList'] { list-style: none; padding-left: 0.2em; }
+.note-prose ul[data-type='taskList'] li { display: flex; align-items: flex-start; gap: 0.5em; }
+.note-prose ul[data-type='taskList'] li > label { margin-top: 0.15em; }
+.note-prose ul[data-type='taskList'] input[type='checkbox'] { accent-color: #4f46e5; cursor: pointer; }
+.note-prose ul[data-type='taskList'] li[data-checked='true'] > div { text-decoration: line-through; opacity: 0.6; }
+
+/* Tables. Wide ones scroll rather than pushing the page sideways. */
+.note-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+  overflow: hidden;
+  margin: 0.5em 0;
+}
+.note-prose th,
+.note-prose td {
+  border: 1px solid #d4d4d8;
+  padding: 0.4em 0.6em;
+  vertical-align: top;
+  position: relative;
+  min-width: 3em;
+}
+.note-prose th { background: rgba(0, 0, 0, 0.05); font-weight: 600; text-align: left; }
+.note-prose .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(79, 70, 229, 0.12);
+  pointer-events: none;
+}
+.note-prose .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #4f46e5;
+  cursor: col-resize;
+}
+
+/* The empty-document hint, which ProseMirror needs told about. */
+.note-prose p.is-editor-empty:first-child::before {
+  content: 'Start writing…';
+  color: #a1a1aa;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

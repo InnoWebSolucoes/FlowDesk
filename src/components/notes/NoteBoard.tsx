@@ -1,25 +1,24 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
-  Pin, PinOff, Trash2, Archive, ArchiveRestore, CheckSquare, Palette, Plus, Search,
+  Pin, PinOff, Trash2, Archive, ArchiveRestore, Palette, Plus, Search, X, FileText,
 } from 'lucide-react'
+import { format, parseISO } from 'date-fns'
 import { Project, ProjectNote } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
+import { NoteEditor } from './NoteEditor'
 
 interface NoteBoardProps {
   project: Project
   /**
    * Whose board this is. Null is the project's shared manager board; a user id
-   * is that person's private one, which is what an employee gets.
+   * is that person's private one.
    */
   ownerId: string | null
-  /**
-   * Read-only drops the compose box and every card action — how an admin looks
-   * in on an employee's board without being able to change it.
-   */
+  /** Read-only opens notes without an editor — how a manager looks in. */
   readOnly?: boolean
 }
 
-/** Keep's palette, muted to sit inside FlowDesk's own surfaces. */
+/** Paper colours, muted to sit inside FlowDesk's own surfaces. */
 const COLORS = [
   { name: 'Yellow', value: '#fef3c7' },
   { name: 'Green', value: '#d1fae5' },
@@ -28,19 +27,36 @@ const COLORS = [
   { name: 'Pink', value: '#fce7f3' },
   { name: 'Orange', value: '#ffedd5' },
   { name: 'Grey', value: '#e5e7eb' },
+  { name: 'White', value: '#ffffff' },
 ]
 
+/** Strip the HTML down to a line of text for the list preview and search. */
+function plainText(html: string): string {
+  if (!html) return ''
+  const el = document.createElement('div')
+  el.innerHTML = html
+  return (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+}
+
 /**
- * A Keep-style board of sticky notes. One component serves the managers'
- * shared board and each employee's private one — the same tool either way.
+ * The notes board: a list of notes down the side, the one you picked open
+ * beside it.
+ *
+ * This replaced a Keep-style grid of sticky cards. A sticky note is fine for a
+ * line of text but not for something you come back to and keep working on,
+ * which is what was actually wanted — so a note is now a document with real
+ * formatting, tables, checklists and drawings, and the board is a way to move
+ * between them.
  */
 export function NoteBoard({ project, ownerId, readOnly = false }: NoteBoardProps) {
-  const { notes, notesLoadedFor, loadNotes, createNote } = useProjectStore()
+  const {
+    notes, notesLoadedFor, loadNotes, createNote, updateNote, deleteNote,
+  } = useProjectStore()
+
   const [query, setQuery] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  const [openId, setOpenId] = useState<string | null>(null)
 
-  // The store holds one board at a time, so a change of owner has to refetch
-  // even when the project has not changed.
   const boardKey = `${project.id}:${ownerId ?? 'shared'}`
 
   useEffect(() => {
@@ -52,393 +68,244 @@ export function NoteBoard({ project, ownerId, readOnly = false }: NoteBoardProps
     return notes
       .filter((n) => n.projectId === project.id && (n.ownerId ?? null) === ownerId)
       .filter((n) => n.isArchived === showArchived)
-      .filter((n) =>
-        !q ||
-        n.title.toLowerCase().includes(q) ||
-        n.body.toLowerCase().includes(q) ||
-        n.items.some((i) => i.text.toLowerCase().includes(q))
-      )
-      // Pinned first, then the board's own order.
+      .filter((n) => {
+        if (!q) return true
+        return (
+          n.title.toLowerCase().includes(q) ||
+          plainText(n.content || n.body).toLowerCase().includes(q)
+        )
+      })
       .sort((a, b) =>
-        a.isPinned === b.isPinned ? a.sortOrder - b.sortOrder : a.isPinned ? -1 : 1
+        a.isPinned === b.isPinned
+          ? (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')
+          : a.isPinned
+            ? -1
+            : 1
       )
   }, [notes, project.id, ownerId, query, showArchived])
 
-  const pinned = visible.filter((n) => n.isPinned)
-  const others = visible.filter((n) => !n.isPinned)
+  // Keep a valid selection: the note you were reading may be deleted, archived
+  // or filtered out from under you.
+  const open = visible.find((n) => n.id === openId) ?? null
 
-  return (
-    <div className="space-y-5">
-      {/* Compose + search */}
-      <div className="flex flex-wrap items-center gap-3">
-        {!readOnly && (
-          <NewNote projectId={project.id} ownerId={ownerId} onCreate={createNote} />
-        )}
-        <div className="relative flex-1 min-w-[12rem] max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-subtle" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search notes"
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary"
-          />
-        </div>
-        <button
-          onClick={() => setShowArchived((v) => !v)}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border transition-colors ${
-            showArchived
-              ? 'bg-primary text-white border-primary'
-              : 'bg-surface-2 border-border text-text-muted hover:text-text-main'
-          }`}
-        >
-          <Archive size={14} />
-          {showArchived ? 'Archived' : 'Archive'}
-        </button>
-      </div>
-
-      {visible.length === 0 && (
-        <div className="text-center py-16">
-          <p className="text-text-muted text-sm">
-            {showArchived
-              ? 'Nothing archived.'
-              : query
-                ? 'No notes match that search.'
-                : readOnly
-                ? 'Nothing on this board yet.'
-                : 'No notes yet, write the first one above.'}
-          </p>
-        </div>
-      )}
-
-      {pinned.length > 0 && (
-        <section>
-          <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle mb-2">
-            Pinned
-          </h3>
-          <NoteGrid notes={pinned} readOnly={readOnly} />
-        </section>
-      )}
-
-      {others.length > 0 && (
-        <section>
-          {pinned.length > 0 && (
-            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle mb-2">
-              Others
-            </h3>
-          )}
-          <NoteGrid notes={others} readOnly={readOnly} />
-        </section>
-      )}
-    </div>
-  )
-}
-
-/** Masonry-ish columns, so notes of different heights pack without gaps. */
-function NoteGrid({ notes, readOnly }: { notes: ProjectNote[]; readOnly?: boolean }) {
-  return (
-    <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-3 [column-fill:_balance]">
-      {notes.map((note) => (
-        <div key={note.id} className="break-inside-avoid mb-3">
-          <NoteCard note={note} readOnly={readOnly} />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/** The collapsed "Take a note…" box that expands into a full editor. */
-function NewNote({
-  projectId,
-  ownerId,
-  onCreate,
-}: {
-  projectId: string
-  ownerId: string | null
-  onCreate: (
-    projectId: string,
-    input?: Partial<ProjectNote>,
-    ownerId?: string | null,
-  ) => Promise<ProjectNote | null>
-}) {
-  const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [color, setColor] = useState(COLORS[0].value)
-  const bodyRef = useRef<HTMLTextAreaElement>(null)
-
-  const close = async () => {
-    // An empty note is a no-op rather than a blank card on the board.
-    if (title.trim() || body.trim()) {
-      await onCreate(projectId, { title: title.trim(), body: body.trim(), color }, ownerId)
+  const handleNew = async () => {
+    const created = await createNote(project.id, { title: '', content: '' }, ownerId)
+    if (created) {
+      setOpenId(created.id)
+      setShowArchived(false)
     }
-    setTitle('')
-    setBody('')
-    setColor(COLORS[0].value)
-    setOpen(false)
   }
 
-  if (!open) {
-    return (
-      <button
-        onClick={() => {
-          setOpen(true)
-          setTimeout(() => bodyRef.current?.focus(), 0)
-        }}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
-      >
-        <Plus size={15} />
-        Take a note…
-      </button>
-    )
+  const handleDelete = async (note: ProjectNote) => {
+    if (openId === note.id) setOpenId(null)
+    await deleteNote(note.id)
   }
 
   return (
-    <div
-      className="w-full rounded-xl border border-border p-3 shadow-sm"
-      style={{ backgroundColor: color }}
-    >
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Title"
-        className="w-full bg-transparent text-sm font-semibold text-zinc-900 placeholder-zinc-500 focus:outline-none mb-1.5"
-      />
-      <textarea
-        ref={bodyRef}
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        placeholder="Take a note…"
-        rows={3}
-        // Ctrl+Enter saves, matching the rest of the app's quick-entry boxes.
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) close()
-          if (e.key === 'Escape') close()
-        }}
-        className="w-full bg-transparent text-sm text-zinc-800 placeholder-zinc-500 focus:outline-none resize-y"
-      />
-      <div className="flex items-center justify-between mt-2">
-        <ColorPicker value={color} onChange={setColor} />
-        <button
-          onClick={close}
-          className="px-3 py-1 rounded-md text-xs font-medium text-zinc-700 hover:bg-black/10 transition-colors"
-        >
-          Done
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        title="Colour"
-        className="p-1.5 rounded-md text-zinc-600 hover:bg-black/10 transition-colors"
-      >
-        <Palette size={15} />
-      </button>
-      {open && (
-        <div className="absolute left-0 bottom-full mb-1 z-20 flex gap-1 p-1.5 rounded-lg bg-surface border border-border shadow-lg">
-          {COLORS.map((c) => (
+    <div className="flex gap-4 h-[calc(100vh-14rem)] min-h-[28rem]">
+      {/* ── The list ──────────────────────────────────────────────────────── */}
+      <aside className="w-64 flex-shrink-0 flex flex-col bg-surface border border-border rounded-xl overflow-hidden">
+        <div className="p-2.5 border-b border-border space-y-2">
+          {!readOnly && (
             <button
-              key={c.value}
-              title={c.name}
-              onClick={() => {
-                onChange(c.value)
-                setOpen(false)
-              }}
-              className={`w-5 h-5 rounded-full border transition-transform hover:scale-110 ${
-                value === c.value ? 'border-zinc-900' : 'border-black/15'
-              }`}
-              style={{ backgroundColor: c.value }}
+              onClick={handleNew}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-dark transition-colors"
+            >
+              <Plus size={15} /> New note
+            </button>
+          )}
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-subtle" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search"
+              className="w-full pl-7 pr-2 py-1.5 rounded-lg bg-surface-2 border border-border text-xs text-text-main focus:outline-none focus:border-primary"
             />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function NoteCard({ note, readOnly }: { note: ProjectNote; readOnly?: boolean }) {
-  const { updateNote, deleteNote, setNoteItems, toggleNoteItem } = useProjectStore()
-  const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState(note.title)
-  const [body, setBody] = useState(note.body)
-
-  // Keep the draft in step when the note changes underneath (another manager,
-  // or the checklist conversion below).
-  useEffect(() => {
-    if (!editing) {
-      setTitle(note.title)
-      setBody(note.body)
-    }
-  }, [note.title, note.body, editing])
-
-  const commit = () => {
-    setEditing(false)
-    const patch: Partial<ProjectNote> = {}
-    if (title !== note.title) patch.title = title
-    if (body !== note.body) patch.body = body
-    if (Object.keys(patch).length) updateNote(note.id, patch)
-  }
-
-  const isChecklist = note.items.length > 0
-
-  /** Turns the body's lines into checklist items, and back again. */
-  const toggleChecklist = () => {
-    if (isChecklist) {
-      const text = note.items.map((i) => (i.isChecked ? `✓ ${i.text}` : i.text)).join('\n')
-      setNoteItems(note.id, [])
-      updateNote(note.id, { body: [note.body, text].filter(Boolean).join('\n') })
-    } else {
-      const lines = body.split('\n').map((l) => l.trim()).filter(Boolean)
-      if (!lines.length) return
-      setNoteItems(note.id, lines.map((text) => ({ text, isChecked: false })))
-      updateNote(note.id, { body: '' })
-    }
-  }
-
-  return (
-    <div
-      className="group rounded-xl border border-black/10 p-3 shadow-sm hover:shadow-md transition-shadow"
-      style={{ backgroundColor: note.color }}
-    >
-      {editing ? (
-        <>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Title"
-            className="w-full bg-transparent text-sm font-semibold text-zinc-900 placeholder-zinc-500 focus:outline-none mb-1"
-          />
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={Math.max(3, body.split('\n').length)}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commit()
-              if (e.key === 'Escape') {
-                setTitle(note.title)
-                setBody(note.body)
-                setEditing(false)
-              }
-            }}
-            className="w-full bg-transparent text-sm text-zinc-800 focus:outline-none resize-y"
-          />
+          </div>
           <button
-            onClick={commit}
-            className="mt-1 px-3 py-1 rounded-md text-xs font-medium text-zinc-700 hover:bg-black/10 transition-colors"
+            onClick={() => setShowArchived((v) => !v)}
+            className={`w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors ${
+              showArchived
+                ? 'bg-primary text-white border-primary'
+                : 'bg-surface-2 border-border text-text-muted hover:text-text-main'
+            }`}
           >
-            Done
+            <Archive size={13} />
+            {showArchived ? 'Showing archive' : 'Archive'}
           </button>
-        </>
-      ) : (
-        <div
-          onClick={() => !isChecklist && !readOnly && setEditing(true)}
-          className={isChecklist || readOnly ? '' : 'cursor-text'}
-        >
-          {note.title && (
-            <h4 className="text-sm font-semibold text-zinc-900 mb-1 break-words">{note.title}</h4>
-          )}
+        </div>
 
-          {isChecklist ? (
-            <ul className="space-y-1">
-              {note.items.map((item) => (
-                <li key={item.id} className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={item.isChecked}
-                    onChange={() => toggleNoteItem(note.id, item.id)}
-                    disabled={readOnly}
-                    className="mt-0.5 accent-zinc-700 cursor-pointer disabled:cursor-default"
-                  />
-                  <span
-                    className={`text-sm break-words ${
-                      item.isChecked ? 'line-through text-zinc-500' : 'text-zinc-800'
-                    }`}
-                  >
-                    {item.text}
-                  </span>
-                </li>
-              ))}
-            </ul>
+        <div className="flex-1 overflow-y-auto">
+          {visible.length === 0 ? (
+            <p className="text-text-subtle text-xs text-center px-3 py-8">
+              {showArchived
+                ? 'Nothing archived.'
+                : query
+                  ? 'No notes match.'
+                  : readOnly
+                    ? 'No notes yet.'
+                    : 'No notes yet. Create the first one.'}
+            </p>
           ) : (
-            note.body && (
-              <p className="text-sm text-zinc-800 whitespace-pre-wrap break-words">{note.body}</p>
-            )
-          )}
-
-          {!note.title && !note.body && !isChecklist && (
-            <p className="text-sm text-zinc-500 italic">Empty note</p>
+            visible.map((note) => {
+              const preview = plainText(note.content || note.body)
+              return (
+                <button
+                  key={note.id}
+                  onClick={() => setOpenId(note.id)}
+                  className={`w-full text-left px-3 py-2.5 border-b border-border transition-colors ${
+                    open?.id === note.id ? 'bg-primary-light' : 'hover:bg-surface-2'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0 border border-black/10"
+                      style={{ backgroundColor: note.color }}
+                    />
+                    <span className="text-xs font-medium text-text-main truncate flex-1">
+                      {note.title || 'Untitled'}
+                    </span>
+                    {note.isPinned && <Pin size={11} className="text-primary flex-shrink-0" />}
+                  </div>
+                  <p className="text-[11px] text-text-subtle truncate mt-0.5">
+                    {preview || 'Empty note'}
+                  </p>
+                  <p className="text-[10px] text-text-subtle mt-0.5">
+                    {note.updatedAt ? format(parseISO(note.updatedAt), 'd MMM HH:mm') : ''}
+                  </p>
+                </button>
+              )
+            })
           )}
         </div>
-      )}
+      </aside>
 
-      {/* Actions appear on hover, as in Keep, so the board stays calm. */}
-      {!readOnly && (
-      <div className="flex items-center gap-0.5 mt-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-        <IconBtn
-          title={note.isPinned ? 'Unpin' : 'Pin'}
-          onClick={() => updateNote(note.id, { isPinned: !note.isPinned })}
-        >
-          {note.isPinned ? <PinOff size={14} /> : <Pin size={14} />}
-        </IconBtn>
-
-        <IconBtn title={isChecklist ? 'Convert to text' : 'Convert to checklist'} onClick={toggleChecklist}>
-          <CheckSquare size={14} />
-        </IconBtn>
-
-        <ColorPicker value={note.color} onChange={(c) => updateNote(note.id, { color: c })} />
-
-        <IconBtn
-          title={note.isArchived ? 'Restore' : 'Archive'}
-          onClick={() => updateNote(note.id, { isArchived: !note.isArchived })}
-        >
-          {note.isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-        </IconBtn>
-
-        <IconBtn
-          title="Delete"
-          danger
-          onClick={() => {
-            deleteNote(note.id)
-          }}
-        >
-          <Trash2 size={14} />
-        </IconBtn>
-      </div>
-      )}
+      {/* ── The note ──────────────────────────────────────────────────────── */}
+      <section className="flex-1 min-w-0 flex flex-col bg-surface border border-border rounded-xl overflow-hidden">
+        {!open ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6">
+            <FileText size={30} className="text-text-subtle" />
+            <p className="text-text-muted text-sm font-medium">No note open</p>
+            <p className="text-text-subtle text-xs">
+              {readOnly
+                ? 'Pick a note from the list to read it.'
+                : 'Pick one from the list, or create a new note.'}
+            </p>
+          </div>
+        ) : (
+          <NoteView
+            key={open.id}
+            note={open}
+            readOnly={readOnly}
+            onChange={(patch) => updateNote(open.id, patch)}
+            onDelete={() => handleDelete(open)}
+            onClose={() => setOpenId(null)}
+          />
+        )}
+      </section>
     </div>
   )
 }
 
-function IconBtn({
-  children,
-  title,
-  onClick,
-  danger,
+function NoteView({
+  note,
+  readOnly,
+  onChange,
+  onDelete,
+  onClose,
 }: {
-  children: React.ReactNode
-  title: string
-  onClick: () => void
-  danger?: boolean
+  note: ProjectNote
+  readOnly: boolean
+  onChange: (patch: Partial<ProjectNote>) => void
+  onDelete: () => void
+  onClose: () => void
 }) {
+  const [title, setTitle] = useState(note.title)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  useEffect(() => setTitle(note.title), [note.id, note.title])
+
   return (
-    <button
-      title={title}
-      onClick={(e) => {
-        e.stopPropagation()
-        onClick()
-      }}
-      className={`p-1.5 rounded-md transition-colors ${
-        danger ? 'text-zinc-600 hover:bg-red-500/20 hover:text-red-700' : 'text-zinc-600 hover:bg-black/10'
-      }`}
-    >
-      {children}
-    </button>
+    <div className="flex flex-col h-full min-h-0" style={{ backgroundColor: note.color }}>
+      <header className="flex items-center gap-2 px-4 py-2.5 border-b border-black/10">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={() => title !== note.title && onChange({ title })}
+          readOnly={readOnly}
+          placeholder="Title"
+          className="flex-1 bg-transparent text-base font-semibold text-zinc-900 placeholder-zinc-500 focus:outline-none"
+        />
+
+        <button
+          onClick={() => onChange({ isPinned: !note.isPinned })}
+          title={note.isPinned ? 'Unpin' : 'Pin'}
+          disabled={readOnly}
+          className="p-1.5 rounded text-zinc-600 hover:bg-black/10 disabled:opacity-40 transition-colors"
+        >
+          {note.isPinned ? <PinOff size={15} /> : <Pin size={15} />}
+        </button>
+
+        <div className="relative">
+          <button
+            onClick={() => setPaletteOpen((v) => !v)}
+            title="Colour"
+            disabled={readOnly}
+            className="p-1.5 rounded text-zinc-600 hover:bg-black/10 disabled:opacity-40 transition-colors"
+          >
+            <Palette size={15} />
+          </button>
+          {paletteOpen && (
+            <div className="absolute right-0 top-full mt-1 z-20 flex gap-1 p-1.5 rounded-lg bg-surface border border-border shadow-lg">
+              {COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  title={c.name}
+                  onClick={() => {
+                    onChange({ color: c.value })
+                    setPaletteOpen(false)
+                  }}
+                  className={`w-5 h-5 rounded-full border transition-transform hover:scale-110 ${
+                    note.color === c.value ? 'border-zinc-900' : 'border-black/15'
+                  }`}
+                  style={{ backgroundColor: c.value }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => onChange({ isArchived: !note.isArchived })}
+          title={note.isArchived ? 'Restore from archive' : 'Archive'}
+          disabled={readOnly}
+          className="p-1.5 rounded text-zinc-600 hover:bg-black/10 disabled:opacity-40 transition-colors"
+        >
+          {note.isArchived ? <ArchiveRestore size={15} /> : <Archive size={15} />}
+        </button>
+
+        <button
+          onClick={onDelete}
+          title="Delete"
+          disabled={readOnly}
+          className="p-1.5 rounded text-zinc-600 hover:bg-red-500/20 hover:text-red-700 disabled:opacity-40 transition-colors"
+        >
+          <Trash2 size={15} />
+        </button>
+
+        <button onClick={onClose} title="Close" className="p-1.5 rounded text-zinc-600 hover:bg-black/10">
+          <X size={15} />
+        </button>
+      </header>
+
+      <div className="flex-1 min-h-0 bg-white/60">
+        <NoteEditor
+          content={note.content || (note.body ? `<p>${note.body}</p>` : '')}
+          readOnly={readOnly}
+          onChange={(html) => onChange({ content: html })}
+        />
+      </div>
+    </div>
   )
 }
