@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
 import {
   ChevronRight, Home, Folder, LayoutGrid, List as ListIcon,
-  ArrowUp, ArrowDown, ExternalLink, Link2, CheckSquare, Square, X,
+  ArrowUp, ArrowDown, ExternalLink, Link2, CheckSquare, Square, X, Search,
   FolderInput, Copy, Trash2, Tag,
 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
@@ -79,6 +79,7 @@ export function ResourceFolders({
 }: Props) {
   const { clusters, items, moveItem, setItemClusters, deleteItem, duplicateItem, updateItem } = useProjectStore()
   const [mode, setMode] = useState<ViewMode>('list')
+  const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
 
@@ -132,19 +133,30 @@ export function ResourceFolders({
     if (ids.length > 1) clearSelection()
   }
 
+  const q = query.trim().toLowerCase()
+
   const folders = useMemo(
     () =>
       clusters
         .filter((c) => c.projectId === projectId && c.parentClusterId === clusterId)
+        .filter((c) => !q || c.title.toLowerCase().includes(q))
         .sort((a, b) => a.title.localeCompare(b.title)),
-    [clusters, projectId, clusterId]
+    [clusters, projectId, clusterId, q]
   )
 
   const files = useMemo(() => {
-    const here = items.filter((i) =>
-      i.projectId === projectId &&
-      (clusterId ? i.clusterIds.includes(clusterId) : i.showAtTopLevel)
-    )
+    const here = items
+      .filter((i) =>
+        i.projectId === projectId &&
+        (clusterId ? i.clusterIds.includes(clusterId) : i.showAtTopLevel)
+      )
+      // Match the file name too — people remember what a file was called on
+      // disk as often as what it was titled here.
+      .filter((i) =>
+        !q ||
+        i.title.toLowerCase().includes(q) ||
+        (i.fileName ?? '').toLowerCase().includes(q)
+      )
 
     const dir = sortAsc ? 1 : -1
     return [...here].sort((a, b) => {
@@ -159,7 +171,7 @@ export function ResourceFolders({
           return dir * a.title.localeCompare(b.title)
       }
     })
-  }, [items, projectId, clusterId, sortKey, sortAsc])
+  }, [items, projectId, clusterId, sortKey, sortAsc, q])
 
   const handleMarquee = useCallback((ids: string[], additive: boolean) => {
     setSelected((prev) => (additive ? new Set([...prev, ...ids]) : new Set(ids)))
@@ -348,6 +360,29 @@ export function ResourceFolders({
         </nav>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="relative">
+            <Search
+              size={13}
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none"
+            />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search this folder"
+              className="w-40 sm:w-52 pl-7 pr-7 py-1.5 rounded-md bg-surface-2 border border-transparent text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary focus:bg-surface transition-colors"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted hover:text-text-main transition-colors"
+                title="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
           {files.length > 0 && (
             <button
               onClick={() =>
@@ -450,7 +485,9 @@ export function ResourceFolders({
 
         {folders.length === 0 && files.length === 0 ? (
           <p className="text-text-subtle text-sm text-center py-16">
-            {clusterId ? 'This cluster is empty.' : 'No resources yet.'}
+            {q
+              ? `Nothing here matches "${query.trim()}".`
+              : clusterId ? 'This cluster is empty.' : 'No resources yet.'}
           </p>
         ) : mode === 'list' ? (
           <div>

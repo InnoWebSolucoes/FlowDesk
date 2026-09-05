@@ -181,7 +181,7 @@ Deno.serve(async (req) => {
   // ── Context: what the assistant knows before it answers ──────────────────
   const [
     projectRes, listsRes, todosRes, peopleRes, itemsRes, entriesRes,
-    tasksRes, doneRes, progressRes,
+    tasksRes, doneRes, progressRes, notesRes, categoriesRes,
   ] = await Promise.all([
     db.from('projects').select('id,name,company_name,description,industry').eq('id', projectId).single(),
     db.from('project_todo_lists').select('id,name').eq('project_id', projectId).order('sort_order'),
@@ -220,6 +220,19 @@ Deno.serve(async (req) => {
       .gte('due_date', new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10))
       .limit(400),
     db.from('task_statuses').select('task_id,employee_id,due_date').limit(200),
+    // The notes board. owner_id null is the shared manager board; a set
+    // owner_id is that person's private board, which RLS already hides from
+    // everyone else, so this returns only what the caller may read.
+    db
+      .from('project_notes')
+      .select('id,title,body,is_pinned,owner_id,updated_at')
+      .eq('project_id', projectId)
+      .eq('is_archived', false)
+      .order('updated_at', { ascending: false })
+      .limit(40),
+    // Categories name the kind of work a task is, which is how people
+    // describe it out loud ("the social media stuff").
+    db.from('categories').select('id,name').limit(60),
   ])
 
   if (projectRes.error || !projectRes.data) {
@@ -324,6 +337,17 @@ ${
 
 Recent documents:
 ${(itemsRes.data ?? []).slice(0, 12).map((i) => `- ${i.title}`).join('\n') || '(none)'}
+
+Notes board:
+${
+  (notesRes.data ?? []).slice(0, 20).map((n) => {
+    const who = n.owner_id ? `${nameOf(n.owner_id)}'s note` : 'shared'
+    const preview = (n.body ?? '').replace(/\s+/g, ' ').slice(0, 120)
+    return `- ${n.title || '(untitled)'} [${n.id}] (${who})${n.is_pinned ? ' PINNED' : ''}${preview ? `: ${preview}` : ''}`
+  }).join('\n') || '(none)'
+}
+
+Task categories: ${(categoriesRes.data ?? []).map((c) => c.name).join(', ') || '(none)'}
 
 How to behave:
 - Answer counts and status questions from the context above — it is complete
