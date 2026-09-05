@@ -188,12 +188,26 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   refresh: async () => {
     set({ loading: true })
 
-    const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes] = await Promise.all([
-      // The scheduling columns come from the assignment, since two people can
-      // plan the same task for different days.
-      supabase
+    // The scheduling columns arrive with the task-dates migration. Asking for
+    // them before it has run makes PostgREST reject the whole query, which
+    // emptied the task list entirely and looked exactly like every task having
+    // been deleted. Fall back to the shape that has always existed instead.
+    const fetchTasks = async () => {
+      const withDates = await supabase
         .from('tasks')
-        .select('*, task_assignments(employee_id, do_date, do_start, do_end)'),
+        .select('*, task_assignments(employee_id, do_date, do_start, do_end)')
+
+      if (!withDates.error) return withDates
+
+      console.warn(
+        '[tasks] scheduling columns missing, falling back — run the task-dates migration:',
+        withDates.error.message,
+      )
+      return supabase.from('tasks').select('*, task_assignments(employee_id)')
+    }
+
+    const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes] = await Promise.all([
+      fetchTasks(),
       supabase.from('categories').select('*'),
       supabase.from('completion_logs').select('*'),
       supabase.from('task_statuses').select('*'),
@@ -204,6 +218,14 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     const taskStatuses: Record<string, 'in_progress'> = {}
     for (const row of statusesRes.data ?? []) {
       taskStatuses[`${row.task_id}:${row.employee_id}:${row.due_date}`] = 'in_progress'
+    }
+
+    // A failed fetch must not be mistaken for "there are no tasks": blanking
+    // the list on error is what made a missing column look like data loss.
+    if (tasksRes.error) {
+      console.error('[tasks] load failed:', tasksRes.error)
+      set({ loading: false })
+      return
     }
 
     set({
@@ -218,23 +240,31 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   },
 
   addTask: async (task) => {
-    const { data, error } = await supabase
+    const base = {
+      project_id: task.projectId,
+      title: task.title,
+      description: task.description,
+      frequency: task.frequency,
+      category_id: task.categoryId,
+      priority: task.priority,
+      associated_tool: task.associatedTool ?? null,
+      estimated_minutes: task.estimatedMinutes,
+      created_by: task.createdBy,
+      is_active: task.isActive,
+    }
+
+    // deadline arrives with the task-dates migration. Retry without it rather
+    // than refusing to create the task at all when that has not run yet.
+    let { data, error } = await supabase
       .from('tasks')
-      .insert({
-        project_id: task.projectId,
-        title: task.title,
-        description: task.description,
-        frequency: task.frequency,
-        category_id: task.categoryId,
-        priority: task.priority,
-        associated_tool: task.associatedTool ?? null,
-        estimated_minutes: task.estimatedMinutes,
-        deadline: task.deadline || null,
-        created_by: task.createdBy,
-        is_active: task.isActive,
-      })
+      .insert({ ...base, deadline: task.deadline || null })
       .select()
       .single()
+
+    if (error) {
+      console.warn('[addTask] retrying without deadline — run the task-dates migration:', error.message)
+      ;({ data, error } = await supabase.from('tasks').insert(base).select().single())
+    }
 
     // Swallowing this made a failed save look like a successful one: the form
     // closed, nothing appeared, and there was nothing to go on. Throw so the
@@ -276,7 +306,18 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     if (updates.isActive !== undefined) patch.is_active = updates.isActive
 
     if (Object.keys(patch).length > 0) {
-      const { error } = await supabase.from('tasks').update(patch).eq('id', id)
+      let { error } = await supabase.from('tasks').update(patch).eq('id', id)
+      if (error && 'deadline' in patch) {
+        // Same pre-migration fallback as addTask: keep the rest of the edit
+        // rather than losing the whole change.
+        console.warn('[updateTask] retrying without deadline:', error.message)
+        const { deadline: _drop, ...legacy } = patch
+        if (Object.keys(legacy).length > 0) {
+          ;({ error } = await supabase.from('tasks').update(legacy).eq('id', id))
+        } else {
+          error = null
+        }
+      }
       if (error) {
         console.error('[updateTask] failed:', error)
         throw new Error(error.message)

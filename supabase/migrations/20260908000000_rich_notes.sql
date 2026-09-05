@@ -41,4 +41,6 @@ set content = n.content || coalesce((
   from public.project_note_items i
   where i.note_id = n.id
 ), '')
-where exists (select 1 from public.project_note_items i where i.note_id = n.id);
+where exists (select 1 from public.project_note_items i where i.note_id = n.id)
+  -- Only once: re-running must not append the checklist a second time.
+  and n.content not like '%data-type="taskList"%';

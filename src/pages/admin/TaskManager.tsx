@@ -299,6 +299,7 @@ function TaskForm({
             <input type="date" className={inp} value={form.frequency.date ?? ''}
               onChange={e => setFreq('date', e.target.value)}
               min={initial ? undefined : format(new Date(), 'yyyy-MM-dd')} />
+            <p className="text-text-subtle text-[11px] mt-1">{t('task_onDateHint')}</p>
             {err('date')}
           </div>
         )}
