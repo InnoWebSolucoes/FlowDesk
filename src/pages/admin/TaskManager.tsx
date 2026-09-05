@@ -62,7 +62,10 @@ function TaskForm({
     if (!form.title.trim()) e.title = t('task_errorTitle')
     if (!form.categoryId) e.categoryId = t('task_errorCategory')
     if (form.assignedTo.length === 0) e.assignedTo = t('task_errorAssign')
-    if (form.estimatedMinutes < 1) e.estimatedMinutes = t('task_errorMinutes')
+    // An empty estimate is fine — not every task has a meaningful one. Only a
+    // value that was typed and makes no sense is an error.
+    const mins = form.estimatedMinutes === '' ? 0 : Number(form.estimatedMinutes)
+    if (!Number.isFinite(mins) || mins < 0) e.estimatedMinutes = t('task_errorMinutes')
     if (form.frequency.type === 'weekly' && (!form.frequency.days || form.frequency.days.length === 0))
       e.days = t('task_errorDays')
     if (form.frequency.type === 'one-off' && !form.frequency.date) e.date = t('task_errorDate')
@@ -72,7 +75,9 @@ function TaskForm({
 
   const handleSave = () => {
     if (!validate()) return
-    onSave(form)
+    // '' is a typing state, not a value. 0 is how "no estimate" is stored.
+    const mins = parseInt(String(form.estimatedMinutes), 10)
+    onSave({ ...form, estimatedMinutes: Number.isFinite(mins) && mins > 0 ? mins : 0 })
   }
 
   const toggleDay = (day: number) => {
@@ -141,8 +146,24 @@ function TaskForm({
         </div>
         <div>
           <label className={lbl}>{t('task_estMinutes')}</label>
-          <input type="number" className={inp} value={form.estimatedMinutes} min={1}
-            onChange={e => set('estimatedMinutes', parseInt(e.target.value) || 30)} />
+          {/* Kept as the raw string while you type. Parsing on every keystroke
+              and falling back to a default meant clearing the box instantly
+              refilled it, so the last digit could never be deleted. Empty is a
+              real value here — the estimate is optional. */}
+          <input
+            type="number"
+            className={inp}
+            value={form.estimatedMinutes === 0 || form.estimatedMinutes === '' ? '' : form.estimatedMinutes}
+            min={0}
+            placeholder={t('task_estMinutesNone')}
+            onChange={e => set('estimatedMinutes', e.target.value === '' ? '' : Number(e.target.value))}
+            onBlur={e => {
+              // Settle it on the way out: blank or nonsense becomes "no
+              // estimate", which is 0 in the column and reads as N/A.
+              const n = parseInt(e.target.value, 10)
+              set('estimatedMinutes', Number.isFinite(n) && n > 0 ? n : 0)
+            }}
+          />
           {err('estimatedMinutes')}
         </div>
       </div>
@@ -195,7 +216,16 @@ function TaskForm({
       <div>
         <label className={lbl}>{t('task_frequency')}</label>
         <select className={inp} value={form.frequency.type}
-          onChange={e => set('frequency', { type: e.target.value as FrequencyType })}>
+          onChange={e => {
+            const type = e.target.value as FrequencyType
+            // A one-off needs a due date, so it opens on today rather than
+            // blank — an empty box that only complains on save is a trap.
+            // Any date already picked is kept when switching back to one-off.
+            set('frequency',
+              type === 'one-off'
+                ? { type, date: form.frequency.date || format(new Date(), 'yyyy-MM-dd') }
+                : { type })
+          }}>
           {FREQ_OPTIONS.map(f => <option key={f} value={f}>{freqLabel(f)}</option>)}
         </select>
 
@@ -239,8 +269,13 @@ function TaskForm({
 
         {form.frequency.type === 'one-off' && (
           <div className="mt-2">
+            <label className={lbl}>{t('task_dueDate')}</label>
+            {/* New tasks cannot be dated into the past, but an existing one
+                whose deadline has already passed must still be editable —
+                clamping it to today would silently reject its own value. */}
             <input type="date" className={inp} value={form.frequency.date ?? ''}
-              onChange={e => setFreq('date', e.target.value)} min={format(new Date(), 'yyyy-MM-dd')} />
+              onChange={e => setFreq('date', e.target.value)}
+              min={initial ? undefined : format(new Date(), 'yyyy-MM-dd')} />
             {err('date')}
           </div>
         )}
@@ -457,7 +492,9 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
                               {priorityLabel(task.priority)}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 text-text-muted text-xs">{task.estimatedMinutes}m</td>
+                          <td className="py-2.5 px-3 text-text-muted text-xs">
+                            {task.estimatedMinutes > 0 ? `${task.estimatedMinutes}m` : t('task_estMinutesNone')}
+                          </td>
                           <td className="py-2.5 px-3">
                             <div className="flex items-center gap-1">
                               <button onClick={() => setEditing(task)}

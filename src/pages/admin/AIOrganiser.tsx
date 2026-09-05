@@ -15,7 +15,8 @@ interface GeneratedTask {
   frequency: any
   categoryName: string
   priority: 'low' | 'medium' | 'high'
-  estimatedMinutes: number
+  /** '' only while being typed; 0 means no estimate. */
+  estimatedMinutes: number | ''
   _categoryId?: string
 }
 
@@ -105,7 +106,7 @@ export function AIOrganiser() {
         frequency: gt.frequency,
         categoryId: catId,
         priority: gt.priority,
-        estimatedMinutes: gt.estimatedMinutes,
+        estimatedMinutes: Number(gt.estimatedMinutes) || 0,
         createdBy: currentUser.id,
         isActive: true,
       }
@@ -239,9 +240,11 @@ export function AIOrganiser() {
                       </div>
                       <div className="flex items-center gap-3 mt-1">
                         <span className="text-xs text-text-subtle">{freqLabel(gt.frequency)}</span>
-                        <span className="flex items-center gap-1 text-xs text-text-subtle">
-                          <Clock size={10} /> {gt.estimatedMinutes}m
-                        </span>
+                        {Number(gt.estimatedMinutes) > 0 && (
+                          <span className="flex items-center gap-1 text-xs text-text-subtle">
+                            <Clock size={10} /> {gt.estimatedMinutes}m
+                          </span>
+                        )}
                       </div>
                     </div>
                     {isOpen ? <ChevronUp size={15} className="text-text-subtle flex-shrink-0" /> : <ChevronDown size={15} className="text-text-subtle flex-shrink-0" />}
@@ -281,12 +284,26 @@ export function AIOrganiser() {
                         </div>
                         <div>
                           <label className="text-xs font-medium text-text-muted mb-1 block">{t('ai_estMinutesLabel')}</label>
+                          {/* Same as the task form: the raw value while you
+                              type, so the last digit can actually be deleted,
+                              and empty settles to "no estimate" on blur. */}
                           <input
                             type="number"
                             className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface focus:outline-none focus:border-primary"
-                            value={gt.estimatedMinutes}
-                            min={1}
-                            onChange={e => updateGenerated(i, 'estimatedMinutes', parseInt(e.target.value) || 30)}
+                            value={gt.estimatedMinutes === 0 ? '' : gt.estimatedMinutes}
+                            min={0}
+                            placeholder={t('task_estMinutesNone')}
+                            onChange={e =>
+                              updateGenerated(
+                                i,
+                                'estimatedMinutes',
+                                e.target.value === '' ? '' : Number(e.target.value),
+                              )
+                            }
+                            onBlur={e => {
+                              const n = parseInt(e.target.value, 10)
+                              updateGenerated(i, 'estimatedMinutes', Number.isFinite(n) && n > 0 ? n : 0)
+                            }}
                           />
                         </div>
                       </div>

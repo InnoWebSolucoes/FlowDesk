@@ -183,10 +183,14 @@ export function TaskCard({
           <div className="flex items-center justify-between mt-1.5">
             <div className="flex items-center gap-2 flex-wrap">
               {category && <Badge label={category.name} color={category.color} size="sm" />}
-              <span className="flex items-center gap-1 text-xs text-text-subtle">
-                <Clock size={11} />
-                ~{task.estimatedMinutes} {t('taskcard_min')}
-              </span>
+              {/* 0 means no estimate was given; showing "~0 min" would read
+                  as a real one. */}
+              {task.estimatedMinutes > 0 && (
+                <span className="flex items-center gap-1 text-xs text-text-subtle">
+                  <Clock size={11} />
+                  ~{task.estimatedMinutes} {t('taskcard_min')}
+                </span>
+              )}
               {showEmployee && employeeName && (
                 <span className="text-xs text-text-subtle">• {employeeName}</span>
               )}
