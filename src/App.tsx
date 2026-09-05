@@ -107,6 +107,10 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
     initAuth()
   }, [])
 
+  const tearDownTasks = useTaskStore(s => s.teardown)
+  const tearDownNotifications = useNotificationStore(s => s.teardown)
+  const tearDownProjects = useProjectStore(s => s.teardown)
+
   useEffect(() => {
     if (authStatus === 'authenticated') {
       initProjects()
@@ -114,7 +118,15 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
       initTasks()
       initTools()
       initNotifications()
+      return
     }
+
+    // Signing out has to close the live channels too. They are subscribed with
+    // the old session's credentials, so leaving them open means the next user
+    // inherits someone else's subscriptions.
+    tearDownTasks()
+    tearDownNotifications()
+    tearDownProjects()
   }, [authStatus])
 
   if (authStatus === 'loading') return <LoadingScreen />

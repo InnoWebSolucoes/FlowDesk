@@ -8,6 +8,12 @@ import {
 
 const BUCKET = 'attachments'
 
+/**
+ * Live subscription. Outside the store because it is a connection rather than
+ * state, and must survive re-renders.
+ */
+let channel: ReturnType<typeof supabase.channel> | null = null
+
 interface ProjectState {
   projects: Project[]
   clusters: ResourceCluster[]
@@ -20,6 +26,8 @@ interface ProjectState {
   todosLoadedFor: string | null
 
   initialize: () => Promise<void>
+  /** Stop listening for live project changes. */
+  teardown: () => void
 
   createProject: (input: Partial<Project> & { name: string }) => Promise<Project | null>
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>
@@ -75,6 +83,12 @@ interface ProjectState {
   // Notes: a Keep-style board of sticky notes, per owner.
   notes: ProjectNote[]
   notesLoadedFor: string | null
+  /**
+   * The note open in the editor, if any. Live updates skip it so an autosave
+   * echoing back does not reset the note under the caret.
+   */
+  editingNoteId: string | null
+  setEditingNote: (id: string | null) => void
   loadNotes: (projectId: string, ownerId?: string | null) => Promise<void>
   createNote: (projectId: string, input?: Partial<ProjectNote>, ownerId?: string | null) => Promise<ProjectNote | null>
   updateNote: (id: string, updates: Partial<ProjectNote>) => Promise<void>
@@ -329,6 +343,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   resourcesLoadedFor: null,
   todosLoadedFor: null,
   notesLoadedFor: null,
+  editingNoteId: null,
+  setEditingNote: (id) => set({ editingNoteId: id }),
 
   initialize: async () => {
     set({ loading: true })
@@ -342,6 +358,55 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       loading: false,
       initialized: true,
     })
+
+    // Todos, notes and calendar entries are all written by other people's
+    // clients — a manager adding a todo, a colleague booking time. Without a
+    // live channel none of it appears until the page is reloaded, which is the
+    // staleness the task store already had fixed.
+    //
+    // Each board reloads only what it is currently showing: the store holds
+    // one owner's board at a time, and `*LoadedFor` records which.
+    if (channel) return
+    channel = supabase
+      .channel('project-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_todos' }, () => {
+        const key = get().todosLoadedFor
+        if (key) {
+          const [projectId, owner] = key.split(':')
+          get().loadTodos(projectId, owner === 'shared' ? null : owner)
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_todo_lists' }, () => {
+        const key = get().todosLoadedFor
+        if (key) {
+          const [projectId, owner] = key.split(':')
+          get().loadTodos(projectId, owner === 'shared' ? null : owner)
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_notes' }, (payload) => {
+        // Your own note autosaves as you type, and each save echoes back here.
+        // Reloading on that would replace the note under the caret mid-word,
+        // so skip an update to the note currently being edited.
+        const editing = get().editingNoteId
+        if (editing && (payload.new as any)?.id === editing) return
+
+        const key = get().notesLoadedFor
+        if (key) {
+          const [projectId, owner] = key.split(':')
+          get().loadNotes(projectId, owner === 'shared' ? null : owner)
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_entries' }, () => {
+        const loaded = get().calendarLoadedFor
+        if (loaded) get().loadCalendar(loaded)
+      })
+      .subscribe()
+  },
+
+  teardown: () => {
+    if (!channel) return
+    supabase.removeChannel(channel)
+    channel = null
   },
 
   createProject: async (input) => {

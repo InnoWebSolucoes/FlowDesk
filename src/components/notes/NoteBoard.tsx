@@ -51,6 +51,7 @@ function plainText(html: string): string {
 export function NoteBoard({ project, ownerId, readOnly = false }: NoteBoardProps) {
   const {
     notes, notesLoadedFor, loadNotes, createNote, updateNote, deleteNote,
+    setEditingNote,
   } = useProjectStore()
 
   const [query, setQuery] = useState('')
@@ -87,6 +88,13 @@ export function NoteBoard({ project, ownerId, readOnly = false }: NoteBoardProps
   // Keep a valid selection: the note you were reading may be deleted, archived
   // or filtered out from under you.
   const open = visible.find((n) => n.id === openId) ?? null
+
+  // Tell the store which note is being edited, so its own autosave echoing
+  // back over realtime does not reload the note under the caret.
+  useEffect(() => {
+    setEditingNote(readOnly ? null : open?.id ?? null)
+    return () => setEditingNote(null)
+  }, [open?.id, readOnly, setEditingNote])
 
   const handleNew = async () => {
     const created = await createNote(project.id, { title: '', content: '' }, ownerId)

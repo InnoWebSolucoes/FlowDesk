@@ -13,8 +13,10 @@ alter table public.project_notes
   -- Rich HTML from the editor. Empty until the note is edited, at which point
   -- the plain body below is migrated into it.
   add column if not exists content text not null default '',
-  -- Drawings, as serialised strokes. Kept apart from the HTML so a drawing can
-  -- be re-edited rather than flattened into an image the editor cannot reopen.
+  -- Reserved for storing drawings as re-editable strokes. Drawings currently
+  -- embed into `content` as images, which cannot be reopened for editing;
+  -- this is where the stroke data will live when that is addressed. Unused
+  -- for now, and harmless to keep so the column need not be added later.
   add column if not exists drawings jsonb not null default '[]'::jsonb;
 
 -- Carry every existing note's plain body into the rich field, as paragraphs.
