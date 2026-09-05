@@ -519,6 +519,69 @@ function endDrag() {
   saveSettings()
 }
 
+/**
+ * Right-click editing on every view.
+ *
+ * Electron gives a WebContentsView no context menu of its own, so a right-click
+ * anywhere in the app did nothing — no Paste, no Copy, not even on a selection.
+ * This builds one from what was actually clicked: the editing items in a text
+ * box, Copy on a selection, and the link/image actions when those are under the
+ * cursor.
+ */
+function attachContextMenu(view, label) {
+  if (!view || view.webContents.isDestroyed()) return
+
+  view.webContents.on('context-menu', (_event, params) => {
+    const items = []
+    const { editFlags = {}, isEditable, selectionText, linkURL, srcURL, mediaType } = params
+    const hasSelection = (selectionText || '').trim().length > 0
+
+    if (isEditable) {
+      items.push(
+        { role: 'undo', enabled: editFlags.canUndo !== false },
+        { role: 'redo', enabled: editFlags.canRedo !== false },
+        { type: 'separator' },
+        { role: 'cut', enabled: editFlags.canCut !== false },
+        { role: 'copy', enabled: editFlags.canCopy !== false },
+        { role: 'paste', enabled: editFlags.canPaste !== false },
+        { role: 'pasteAndMatchStyle', enabled: editFlags.canPaste !== false },
+        { type: 'separator' },
+        { role: 'selectAll' },
+      )
+    } else if (hasSelection) {
+      items.push({ role: 'copy' }, { type: 'separator' }, { role: 'selectAll' })
+    }
+
+    if (linkURL) {
+      if (items.length) items.push({ type: 'separator' })
+      items.push(
+        { label: 'Copy Link Address', click: () => clipboard.writeText(linkURL) },
+        { label: 'Open Link in Browser', click: () => shell.openExternal(linkURL) },
+      )
+    }
+
+    if (mediaType === 'image' && srcURL) {
+      if (items.length) items.push({ type: 'separator' })
+      items.push({ label: 'Copy Image Address', click: () => clipboard.writeText(srcURL) })
+    }
+
+    // Nothing actionable under the cursor: show no menu rather than an empty
+    // box. The inspector stays available for us without cluttering the rest.
+    if (!items.length) {
+      items.push({
+        label: 'Inspect Element',
+        click: () => {
+          view.webContents.inspectElement(params.x, params.y)
+        },
+      })
+    }
+
+    Menu.buildFromTemplate(items).popup({ window: win })
+  })
+
+  if (label) console.log(`[menu] context menu attached to ${label}`)
+}
+
 function buildMenu() {
   const zoomBy = (delta) => {
     const wc = focusedContents()
@@ -544,6 +607,28 @@ function buildMenu() {
         },
         { type: 'separator' },
         { role: 'quit' },
+      ],
+    },
+    {
+      // Setting our own application menu replaces Electron's default one, and
+      // the default is where Cut/Copy/Paste lived. Those roles are what
+      // register the Ctrl+X/C/V accelerators with the window, so without this
+      // menu the shortcuts do nothing at all and every text box in the app is
+      // paste-proof. The right-click menu below is the other half.
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        // Pastes the text without the source's formatting, which is usually
+        // what you want coming from a browser or Word into a plain field.
+        { role: 'pasteAndMatchStyle' },
+        { role: 'delete' },
+        { type: 'separator' },
+        { role: 'selectAll' },
       ],
     },
     {
@@ -703,6 +788,12 @@ function createWindow() {
       sandbox: true,
     },
   })
+
+  // Right-click editing in every pane that holds text. The overlay is a
+  // transparent hit-catcher with nothing to edit, so it is left out.
+  attachContextMenu(flowView, 'FlowDesk')
+  attachContextMenu(claudeView, 'Claude')
+  attachContextMenu(whatsappView, 'WhatsApp')
 
   win.contentView.addChildView(flowView)
   win.contentView.addChildView(claudeView)
@@ -950,6 +1041,21 @@ function createSetupWindow() {
     },
   })
   setupWin.setMenuBarVisibility(false)
+  // Pasting the address is the whole point of this window, so it needs the
+  // right-click menu too. Its own window, hence not the shared helper.
+  setupWin.webContents.on('context-menu', (_e, params) => {
+    if (!params.isEditable) return
+    Menu.buildFromTemplate([
+      { role: 'undo', enabled: params.editFlags.canUndo !== false },
+      { role: 'redo', enabled: params.editFlags.canRedo !== false },
+      { type: 'separator' },
+      { role: 'cut', enabled: params.editFlags.canCut !== false },
+      { role: 'copy', enabled: params.editFlags.canCopy !== false },
+      { role: 'paste', enabled: params.editFlags.canPaste !== false },
+      { type: 'separator' },
+      { role: 'selectAll' },
+    ]).popup({ window: setupWin })
+  })
   setupWin.loadFile(path.join(__dirname, 'setup.html'))
   setupWin.on('closed', () => {
     setupWin = null
