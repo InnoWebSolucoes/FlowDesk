@@ -901,13 +901,31 @@ How to behave:
                 'Not deleted: ask the user to confirm with ask_user first, then call this again with confirmed true.'
               break
             }
+            // Removing a person means removing their login, which needs the
+            // service role — deleting the profile row alone would leave an
+            // account that can still sign in.
+            if (args.kind === 'employee') {
+              const res = await fetch(
+                `${Deno.env.get('SUPABASE_URL')}/functions/v1/delete-employee`,
+                {
+                  method: 'POST',
+                  headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ employeeId: args.id }),
+                },
+              )
+              const body = await res.json().catch(() => ({}))
+              if (!res.ok) throw new Error(body.error ?? `Could not delete the account (${res.status}).`)
+              performed.push({ tool: 'delete_thing', summary: 'Deleted an employee' })
+              result = `Deleted employee ${args.id}.`
+              break
+            }
+
             const table = ({
               todo: 'project_todos',
               task: 'tasks',
               note: 'project_notes',
               calendar_entry: 'calendar_entries',
               todo_list: 'project_todo_lists',
-              employee: 'users',
             } as Record<string, string>)[args.kind]
             if (!table) throw new Error(`Cannot delete a ${args.kind}.`)
             const { error } = await db.from(table).delete().eq('id', args.id)

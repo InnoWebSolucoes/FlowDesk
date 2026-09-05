@@ -17,7 +17,13 @@ export async function generateTasks(
    */
   currentTasks?: any[],
 ): Promise<any[]> {
+  // Refresh an expired access token before calling, or a long editing session
+  // fails with "Invalid session" rather than generating.
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Your session has expired. Please sign in again.')
+
   const { data, error } = await supabase.functions.invoke('generate-tasks', {
+    headers: { Authorization: `Bearer ${session.access_token}` },
     body: currentTasks?.length ? { description, tasks: currentTasks } : { description },
   })
 

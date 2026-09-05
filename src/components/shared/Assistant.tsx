@@ -85,7 +85,15 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
     const outgoing = [...history, { role: 'user', content: text }]
 
     try {
+      // The access token expires while a conversation is open, and invoke()
+      // sends whatever the client currently holds. getSession() refreshes an
+      // expired one first, so a long chat does not die with "Invalid session"
+      // partway through.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Your session has expired. Please sign in again.')
+
       const { data, error: fnErr } = await supabase.functions.invoke('assistant', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
         body: {
           projectId,
           messages: outgoing,
