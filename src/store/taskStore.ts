@@ -273,9 +273,27 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     }
 
     if (task.assignedTo.length > 0) {
-      const { error: assignError } = await supabase
-        .from('task_assignments')
-        .insert(task.assignedTo.map((employeeId) => ({ task_id: data.id, employee_id: employeeId })))
+      // A planned day travels with the assignment, so a task created with one
+      // already sits on the right day rather than needing scheduling by hand.
+      const doDateFor = (employeeId: string) =>
+        task.schedules?.find((sc) => sc.employeeId === employeeId)?.doDate ?? null
+
+      const rows = task.assignedTo.map((employeeId) => ({
+        task_id: data.id,
+        employee_id: employeeId,
+        do_date: doDateFor(employeeId),
+      }))
+
+      let { error: assignError } = await supabase.from('task_assignments').insert(rows)
+
+      // do_date arrives with the task-dates migration; without it, still make
+      // the assignment rather than losing the task.
+      if (assignError) {
+        console.warn('[addTask] retrying assignments without do_date:', assignError.message)
+        ;({ error: assignError } = await supabase
+          .from('task_assignments')
+          .insert(task.assignedTo.map((employeeId) => ({ task_id: data.id, employee_id: employeeId }))))
+      }
 
       // The task exists but reaches nobody, which looks identical to a task
       // that was never created. Say so rather than leaving it orphaned.

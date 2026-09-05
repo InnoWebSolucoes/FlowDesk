@@ -26,6 +26,10 @@ interface GeneratedTask {
   _assignedTo?: string[]
   /** Names the model suggested, resolved to ids on arrival. */
   suggestedAssignees?: string[]
+  /** The hard deadline, YYYY-MM-DD, when the brief gave one. */
+  deadline?: string | null
+  /** The day the work should be done, YYYY-MM-DD. */
+  doDate?: string | null
 }
 
 export function AIOrganiser() {
@@ -35,6 +39,7 @@ export function AIOrganiser() {
   const { t } = useT()
 
   const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
 
   function freqLabel(freq: any): string {
     if (!freq) return '-'
@@ -147,7 +152,20 @@ export function AIOrganiser() {
 
   const handleImportAll = async () => {
     if (!currentUser) return
+    setError('')
 
+    // Nothing can be imported without someone to give it to, and failing
+    // silently here read as "the button does nothing".
+    const unassigned = generated.filter(
+      (gt) => !(gt._assignedTo?.length ? gt._assignedTo : selectedEmployees).length,
+    )
+    if (unassigned.length === generated.length) {
+      setError(t('ai_errorNoAssignee'))
+      return
+    }
+
+    let saved = 0
+    try {
     for (const gt of generated) {
       // Each task carries its own people now, so a single batch can be split
       // across the team rather than all landing on the same person.
@@ -168,12 +186,28 @@ export function AIOrganiser() {
         categoryId: catId,
         priority: gt.priority,
         estimatedMinutes: Number(gt.estimatedMinutes) || 0,
-        deadline: null,
-        schedules: [],
+        deadline: gt.deadline || null,
+        // A do date is per person, so everyone the task goes to gets the
+        // same planned day; they can move their own afterwards.
+        schedules: gt.doDate
+          ? assignees.map((employeeId) => ({ employeeId, doDate: gt.doDate! }))
+          : [],
         createdBy: currentUser.id,
         isActive: true,
       }
       await addTask(task)
+      saved++
+    }
+    } catch (e: any) {
+      // addTask throws on a failed save. Say which one broke and how many
+      // made it, rather than leaving a half-imported batch unexplained.
+      setError(`${t('ai_errorImport')} ${e.message ?? 'Unknown error'}${
+        saved > 0 ? ` (${saved} saved before this)` : ''
+      }`)
+      return
+    }
+    if (unassigned.length > 0) {
+      setError(t('ai_errorSomeUnassigned').replace('{n}', String(unassigned.length)))
     }
     setImported(true)
     setTimeout(() => setImported(false), 3000)
