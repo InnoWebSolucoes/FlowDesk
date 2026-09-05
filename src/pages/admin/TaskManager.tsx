@@ -339,6 +339,10 @@ function TaskForm({
  * The table listed what a task *is* but never whether anything was happening
  * with it, so a manager had to open each one to find out. Status is per person
  * and per day: the same task is done by one assignee and untouched by another.
+ *
+ * This used to show the assignee's initials tinted by status, which read as a
+ * status code but was not one — a one-word name gave a bare "E" and told you
+ * nothing. It now names the state, and the person, in words.
  */
 function TaskStatusCells({
   task,
@@ -348,36 +352,52 @@ function TaskStatusCells({
   employees: import('../../types').Employee[]
 }) {
   const { isTaskCompleted, isInProgress } = useTaskStore()
+  const { t } = useT()
   const today = format(new Date(), 'yyyy-MM-dd')
 
   if (task.assignedTo.length === 0) {
     return <span className="text-[11px] text-text-subtle">—</span>
   }
 
-  return (
-    <div className="flex flex-wrap gap-1">
-      {task.assignedTo.map((empId) => {
-        const who = employees.find((e) => e.id === empId)
-        const done = isTaskCompleted(task.id, empId, today)
-        const running = !done && isInProgress(task.id, empId, today)
-        const label = who?.avatarInitials ?? who?.name?.slice(0, 2).toUpperCase() ?? '??'
+  const states = task.assignedTo.map((empId) => {
+    const who = employees.find((e) => e.id === empId)
+    const done = isTaskCompleted(task.id, empId, today)
+    const running = !done && isInProgress(task.id, empId, today)
+    return { empId, name: who?.name ?? 'Unknown', done, running }
+  })
 
-        return (
-          <span
-            key={empId}
-            title={`${who?.name ?? 'Unknown'} — ${done ? 'done today' : running ? 'in progress' : 'not started'}`}
-            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${
-              done
-                ? 'bg-success-bg text-success border-success/30'
-                : running
-                  ? 'bg-warning-bg text-warning border-warning/30'
-                  : 'bg-surface-2 text-text-subtle border-border'
-            }`}
-          >
-            {label}
-          </span>
-        )
-      })}
+  const label = (s: { done: boolean; running: boolean }) =>
+    s.done ? t('status_completed') : s.running ? t('status_inProgress') : t('status_notStarted')
+
+  const style = (s: { done: boolean; running: boolean }) =>
+    s.done
+      ? 'bg-success-bg text-success border-success/30'
+      : s.running
+        ? 'bg-warning-bg text-warning border-warning/30'
+        : 'bg-surface-2 text-text-subtle border-border'
+
+  // One assignee is the common case, and naming them again would just repeat
+  // the Assigned column beside it. Several people need saying who is who.
+  if (states.length === 1) {
+    return (
+      <span
+        className={`text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${style(states[0])}`}
+      >
+        {label(states[0])}
+      </span>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {states.map((s) => (
+        <span
+          key={s.empId}
+          className={`text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${style(s)}`}
+        >
+          {s.name.split(' ')[0]} · {label(s)}
+        </span>
+      ))}
     </div>
   )
 }

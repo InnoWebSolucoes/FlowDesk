@@ -339,6 +339,7 @@ const en = {
   status_inProgress: 'In Progress',
   status_completed: 'Completed',
   status_startTask: 'Start',
+  status_notStarted: 'Not started',
 
   // Deadline indicator
   deadline_overdue: 'Overdue',
@@ -718,6 +719,7 @@ const pt: typeof en = {
   status_inProgress: 'Em andamento',
   status_completed: 'Concluído',
   status_startTask: 'Iniciar',
+  status_notStarted: 'Não iniciada',
 
   // Deadline indicator
   deadline_overdue: 'Atrasada',
