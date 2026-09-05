@@ -25,6 +25,9 @@ interface EmployeeState {
 
   initialize: () => Promise<void>
   createEmployee: (input: CreateEmployeeInput) => Promise<{ success: boolean; error?: string }>
+  /** Put an existing person on another project, keeping the ones they have. */
+  addToProject: (employeeId: string, projectId: string) => Promise<void>
+  removeFromProject: (employeeId: string, projectId: string) => Promise<void>
   updateEmployee: (id: string, updates: Partial<Employee>) => Promise<void>
   deleteEmployee: (id: string) => Promise<{ success: boolean; error?: string }>
   getEmployeeStats: (employeeId: string, completionLogs: CompletionLog[], tasks: Task[]) => EmployeeStats
@@ -43,6 +46,7 @@ function toEmployee(row: any): Employee {
     department: row.department ?? '',
     managerId: row.manager_id,
     projectId: row.project_id ?? null,
+    projectIds: (row.project_members ?? []).map((m: any) => m.project_id),
   }
 }
 
@@ -65,7 +69,7 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     set({ loading: true })
     const { data, error } = await supabase
       .from('users')
-      .select('id, email, name, avatar_initials, join_date, job_title, department, manager_id, project_id')
+      .select('id, email, name, avatar_initials, join_date, job_title, department, manager_id, project_id, project_members(project_id)')
       .eq('role', 'employee')
       .order('name')
 
@@ -111,6 +115,30 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
 
     await get().initialize()
     return { success: true }
+  },
+
+  addToProject: async (employeeId, projectId) => {
+    const { error } = await supabase
+      .from('project_members')
+      .insert({ user_id: employeeId, project_id: projectId })
+    if (error && !error.message.includes('duplicate')) {
+      console.error('[addToProject] failed:', error)
+      throw new Error(error.message)
+    }
+    await get().initialize()
+  },
+
+  removeFromProject: async (employeeId, projectId) => {
+    const { error } = await supabase
+      .from('project_members')
+      .delete()
+      .eq('user_id', employeeId)
+      .eq('project_id', projectId)
+    if (error) {
+      console.error('[removeFromProject] failed:', error)
+      throw new Error(error.message)
+    }
+    await get().initialize()
   },
 
   updateEmployee: async (id, updates) => {

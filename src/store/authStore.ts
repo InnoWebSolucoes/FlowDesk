@@ -20,7 +20,7 @@ async function fetchProfile(userId: string): Promise<User | null> {
   // and there is no project picker on their side to get it from.
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, name, role, avatar_initials, join_date, project_id')
+    .select('id, email, name, role, avatar_initials, join_date, project_id, is_owner')
     .eq('id', userId)
     .single()
 
@@ -34,6 +34,7 @@ async function fetchProfile(userId: string): Promise<User | null> {
     avatarInitials: data.avatar_initials,
     joinDate: data.join_date,
     projectId: data.project_id ?? null,
+    isOwner: data.is_owner ?? false,
   }
 }
 

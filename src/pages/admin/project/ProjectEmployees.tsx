@@ -1,10 +1,12 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
-import { Users, Plus, Trash2, X, UserPlus, LogOut } from 'lucide-react'
+import { Users, Plus, Trash2, X, UserPlus, LogOut, Shield } from 'lucide-react'
 import { format } from 'date-fns'
 import { Project, Employee } from '../../../types'
 import { useEmployeeStore } from '../../../store/employeeStore'
 import { useTaskStore } from '../../../store/taskStore'
+import { useAuthStore } from '../../../store/authStore'
+import { useProjectAdminStore } from '../../../store/projectAdminStore'
 import { EmptyState } from '../../../components/shared/EmptyState'
 import { getTasksDueOnDate } from '../../../utils/taskScheduler'
 
@@ -22,7 +24,9 @@ const emptyForm: FormState = { name: '', email: '', password: '', jobTitle: '', 
 
 export function ProjectEmployees() {
   const { project } = useOutletContext<Ctx>()
-  const { employees, createEmployee, deleteEmployee, updateEmployee } = useEmployeeStore()
+  const { employees, createEmployee, deleteEmployee, updateEmployee, addToProject } = useEmployeeStore()
+  const { currentUser } = useAuthStore()
+  const { byProject, admins: allAdmins, load: loadAdmins, grant, revoke } = useProjectAdminStore()
   const { tasks, completionLogs } = useTaskStore()
 
   const [showForm, setShowForm] = useState(false)
@@ -35,8 +39,21 @@ export function ProjectEmployees() {
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
 
-  const members = employees.filter((e) => e.projectId === project.id)
-  const unassigned = employees.filter((e) => !e.projectId)
+  // Membership decides who is on a project now, so somebody can be here and on
+  // another client at the same time.
+  const isOn = (e: Employee) =>
+    e.projectIds?.length ? e.projectIds.includes(project.id) : e.projectId === project.id
+
+  const members = employees.filter(isOn)
+
+  // Only the owner hands out admin access; the policy enforces it too, this
+  // just keeps the controls out of everyone else's way.
+  const isOwner = !!currentUser?.isOwner
+  const projectAdminIds = byProject[project.id] ?? []
+  const admins = allAdmins.filter((u) => projectAdminIds.includes(u.id))
+  const grantable = allAdmins.filter((u) => !u.isOwner && !projectAdminIds.includes(u.id))
+  // Anyone not already here can be added, including people who work elsewhere.
+  const addable = employees.filter((e) => !isOn(e))
 
   const handleCreate = async () => {
     const { name, email, password, jobTitle, department } = form
@@ -64,9 +81,13 @@ export function ProjectEmployees() {
     setShowForm(false)
   }
 
+  useEffect(() => {
+    if (isOwner) loadAdmins(project.id)
+  }, [isOwner, project.id, loadAdmins])
+
   const addButton = (
     <div className="flex gap-2">
-      {unassigned.length > 0 && (
+      {addable.length > 0 && (
         <button
           onClick={() => setShowAssign(true)}
           className="flex items-center gap-1.5 border border-border text-text-muted text-sm font-medium px-4 py-2 rounded-lg hover:bg-surface-2 transition-colors"
@@ -86,6 +107,61 @@ export function ProjectEmployees() {
   return (
     <div>
       {members.length > 0 && <div className="flex justify-end mb-5">{addButton}</div>}
+
+      {/* Who may run this project. An admin granted here can do everything the
+          owner can inside it, and nothing outside it. */}
+      {isOwner && (
+        <div className="mb-6 bg-surface rounded-xl border border-border p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Shield size={16} className="text-primary" />
+            <h3 className="text-text-main font-semibold text-sm">Who can manage this project</h3>
+          </div>
+          <p className="text-text-muted text-xs mb-4">
+            An admin added here can do everything you can inside {project.name}, and
+            nothing outside it. Only you can change this list.
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            {admins.map((a) => (
+              <span
+                key={a.id}
+                className="flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-primary-light border border-primary/30 text-xs text-text-main"
+              >
+                {a.name}
+                <button
+                  onClick={() => revoke(project.id, a.id)}
+                  title={`Remove ${a.name}'s access`}
+                  className="p-0.5 rounded-full text-text-muted hover:text-danger transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+            {admins.length === 0 && (
+              <p className="text-text-subtle text-xs italic">
+                Only you can manage this project.
+              </p>
+            )}
+          </div>
+
+          {grantable.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-border">
+              <p className="text-text-subtle text-[11px] mb-2">Give access to</p>
+              <div className="flex flex-wrap gap-2">
+                {grantable.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => grant(project.id, u.id)}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-border text-xs text-text-muted hover:border-primary hover:text-text-main transition-colors"
+                  >
+                    <UserPlus size={11} /> {u.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {members.length === 0 ? (
         <EmptyState
@@ -229,12 +305,12 @@ export function ProjectEmployees() {
             </div>
 
             <div className="space-y-2 max-h-80 overflow-y-auto">
-              {unassigned.map((emp) => (
+              {addable.map((emp) => (
                 <button
                   key={emp.id}
                   onClick={async () => {
-                    await updateEmployee(emp.id, { projectId: project.id })
-                    if (unassigned.length === 1) setShowAssign(false)
+                    await addToProject(emp.id, project.id)
+                    if (addable.length === 1) setShowAssign(false)
                   }}
                   className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-border hover:border-primary hover:bg-surface-2 transition-colors text-left"
                 >
@@ -243,7 +319,10 @@ export function ProjectEmployees() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-text-main text-sm font-medium truncate">{emp.name}</p>
-                    <p className="text-text-subtle text-xs truncate">{emp.jobTitle || emp.email}</p>
+                    <p className="text-text-subtle text-xs truncate">
+                      {emp.jobTitle || emp.email}
+                      {emp.projectIds?.length > 0 && ` · already on ${emp.projectIds.length} project(s)`}
+                    </p>
                   </div>
                 </button>
               ))}
