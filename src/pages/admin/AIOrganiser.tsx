@@ -1,10 +1,12 @@
 import React, { useState } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { Sparkles, Loader2, Download, AlertCircle, Clock, ChevronDown, ChevronUp, Wand2, X } from 'lucide-react'
 import { generateTasks } from '../../lib/anthropic'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useAuthStore } from '../../store/authStore'
-import { Task } from '../../types'
+import { useProjectStore } from '../../store/projectStore'
+import { Task, Project } from '../../types'
 import { Badge } from '../../components/shared/Badge'
 import { EmptyState } from '../../components/shared/EmptyState'
 import { useT } from '../../i18n/useT'
@@ -33,11 +35,16 @@ interface GeneratedTask {
 }
 
 export function AIOrganiser() {
+  // The project the organiser is being used inside. A todo belongs to a
+  // project directly, where a task reaches one through whoever it is
+  // assigned to.
+  const { project } = useOutletContext<{ project: Project }>()
   const { tasks, categories, addTask, addCategory } = useTaskStore()
   const { employees } = useEmployeeStore()
   // Work is assigned to staff, not to managers.
   const staff = employees.filter((e) => e.role === 'employee')
   const { currentUser } = useAuthStore()
+  const { todoLists, createTodo, createTodoList } = useProjectStore()
   const { t } = useT()
 
   const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -57,6 +64,10 @@ export function AIOrganiser() {
 
   const [description, setDescription] = useState('')
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
+  // Work for the team becomes assigned tasks; work for the manager becomes
+  // todos on their own board, which is a different table and a different
+  // shape, so it is a choice made before importing rather than after.
+  const [target, setTarget] = useState<'employees' | 'me'>('employees')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [generated, setGenerated] = useState<GeneratedTask[]>([])
@@ -153,9 +164,56 @@ export function AIOrganiser() {
     return newCat.id
   }
 
+  /**
+   * The manager's own board. A todo carries its dates itself and lives in a
+   * list, so the batch lands as todos rather than as assigned tasks.
+   */
+  const importToMyBoard = async () => {
+    let listId: string | undefined = todoLists.find((l) => l.ownerId === null)?.id
+    if (!listId) {
+      const made = await createTodoList(project.id, 'To do', null)
+      listId = made?.id
+    }
+    if (!listId) throw new Error(t('ai_errorNoList'))
+
+    for (const gt of generated) {
+      await createTodo(
+        project.id,
+        {
+          title: gt.title,
+          notes: gt.description,
+          listId,
+          priority: gt.priority,
+          dueDate: gt.deadline || null,
+          doDate: gt.doDate || null,
+        },
+        null,
+      )
+    }
+  }
+
   const handleImportAll = async () => {
     if (!currentUser) return
     setError('')
+
+    if (target === 'me') {
+      setImporting(true)
+      try {
+        await importToMyBoard()
+      } catch (e: any) {
+        setError(`${t('ai_errorImport')} ${e.message ?? 'Unknown error'}`)
+        return
+      } finally {
+        setImporting(false)
+      }
+      setGenerated([])
+      setExpanded(new Set())
+      setRefinement('')
+      setDescription('')
+      setImported(true)
+      setTimeout(() => setImported(false), 4000)
+      return
+    }
 
     // Nothing can be imported without someone to give it to, and failing
     // silently here read as "the button does nothing".
@@ -269,7 +327,29 @@ export function AIOrganiser() {
           />
 
           <div className="mt-4">
-            <p className="text-text-main text-xs font-medium mb-2">{t('ai_assignTo')}</p>
+            <p className="text-text-main text-xs font-medium mb-2">{t('ai_forWhom')}</p>
+            <div className="flex gap-2 mb-3">
+              {(['employees', 'me'] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setTarget(k)}
+                  className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                    target === k
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-surface text-text-muted border-border hover:border-primary/50'
+                  }`}
+                >
+                  {k === 'employees' ? t('ai_forTheTeam') : t('ai_forMyBoard')}
+                </button>
+              ))}
+            </div>
+
+            {target === 'me' && (
+              <p className="text-text-muted text-xs">{t('ai_forMyBoardHint')}</p>
+            )}
+
+            {target === 'employees' && (
             <div className="flex flex-wrap gap-2">
               {staff.map(emp => (
                 <button
@@ -289,6 +369,7 @@ export function AIOrganiser() {
                 <p className="text-text-muted text-xs">{t('ai_noEmployees')}</p>
               )}
             </div>
+            )}
           </div>
 
           {error && (

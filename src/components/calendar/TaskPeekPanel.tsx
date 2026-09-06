@@ -3,24 +3,34 @@ import { useNavigate } from 'react-router-dom'
 import { X, Clock, CalendarClock, Users, Tag, Repeat, CheckCircle2, ExternalLink } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { Task } from '../../types'
+import type { TranslationKey } from '../../i18n/translations'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useT } from '../../i18n/useT'
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAY_KEYS = [
+  'task_sun', 'task_mon', 'task_tue', 'task_wed', 'task_thu', 'task_fri', 'task_sat',
+] as const
 
-/** How often it comes round, in the words the rest of the app uses. */
-function frequencyLabel(f: Task['frequency']): string {
+/**
+ * How often it comes round, in the words the rest of the app uses. Takes the
+ * translator rather than calling the hook: this is a plain function, not a
+ * component, and the day names have to follow the chosen language too.
+ */
+function frequencyLabel(f: Task['frequency'], t: (k: TranslationKey) => string): string {
+  const day = (n: number) => t(DAY_KEYS[n] ?? 'task_mon')
   if (!f) return '—'
-  if (f.type === 'daily') return 'Every weekday'
+  if (f.type === 'daily') return t('taskpeek_everyWeekday')
   if (f.type === 'weekly') {
-    const days = (f.days ?? []).map((d: number) => DAY_NAMES[d]).join(', ')
-    return days ? `Weekly · ${days}` : 'Weekly'
+    const days = (f.days ?? []).map((d: number) => day(d)).join(', ')
+    return days ? `${t('taskpeek_weekly')} · ${days}` : t('taskpeek_weekly')
   }
   if (f.type === 'monthly') {
-    return `Monthly · week ${f.weekOfMonth ?? 1}, ${DAY_NAMES[f.dayOfWeek ?? 1]}`
+    return `${t('taskpeek_monthly')} · ${t('task_week')} ${f.weekOfMonth ?? 1}, ${day(f.dayOfWeek ?? 1)}`
   }
-  if (f.type === 'one-off') return f.date ? `Once, on ${f.date}` : 'One-off'
+  if (f.type === 'one-off') {
+    return f.date ? `${t('taskpeek_onceOn')} ${f.date}` : t('taskpeek_oneOff')
+  }
   return String(f.type)
 }
 
@@ -109,45 +119,45 @@ export function TaskPeekPanel({
             <p className="text-sm text-text-muted whitespace-pre-wrap mb-3">{task.description}</p>
           )}
 
-          {row(Users, 'Assigned to',
+          {row(Users, t('taskpeek_assignedTo'),
             people.length > 0
               ? people.map((p) => p!.name).join(', ')
               : <span className="text-text-subtle">{t('cal_nobody')}</span>)}
 
-          {row(Repeat, 'Repeats', frequencyLabel(task.frequency))}
+          {row(Repeat, t('taskpeek_repeats'), frequencyLabel(task.frequency, t))}
 
-          {row(CalendarClock, 'Deadline',
+          {row(CalendarClock, t('cal_deadline'),
             task.deadline
               ? format(parseISO(task.deadline), 'EEEE d MMMM yyyy')
               : <span className="text-text-subtle">{t('cal_none')}</span>)}
 
-          {task.schedules.length > 0 && row(CalendarClock, 'Planned for',
+          {task.schedules.length > 0 && row(CalendarClock, t('taskpeek_plannedFor'),
             <div className="space-y-0.5">
               {task.schedules.filter((sc) => sc.doDate).map((sc) => {
                 const who = employees.find((e) => e.id === sc.employeeId)
                 return (
                   <p key={sc.employeeId}>
-                    {who?.name ?? 'Someone'} · {sc.doDate}
+                    {who?.name ?? t('taskpeek_someone')} · {sc.doDate}
                   </p>
                 )
               })}
             </div>)}
 
-          {row(Tag, 'Category', category?.name ?? <span className="text-text-subtle">{t('cal_none')}</span>)}
+          {row(Tag, t('taskpeek_category'), category?.name ?? <span className="text-text-subtle">{t('cal_none')}</span>)}
 
-          {row(Clock, 'Estimated',
+          {row(Clock, t('taskpeek_estimated'),
             task.estimatedMinutes > 0
               ? `${task.estimatedMinutes} min`
               : <span className="text-text-subtle">{t('cal_notEstimated')}</span>)}
 
-          {done.length > 0 && row(CheckCircle2, 'Recently completed',
+          {done.length > 0 && row(CheckCircle2, t('taskpeek_recentlyCompleted'),
             <div className="space-y-0.5">
               {done.map((l) => {
                 const who = employees.find((e) => e.id === l.employeeId)
                 return (
                   <p key={`${l.taskId}-${l.employeeId}-${l.dueDate}`} className="text-xs">
-                    {who?.name ?? 'Someone'} · {l.dueDate}
-                    {l.wasLate && <span className="text-danger"> (late)</span>}
+                    {who?.name ?? t('taskpeek_someone')} · {l.dueDate}
+                    {l.wasLate && <span className="text-danger"> ({t('taskpeek_late')})</span>}
                   </p>
                 )
               })}

@@ -14,6 +14,7 @@ import { FileKindIcon, formatFileSize } from '../components/resources/ResourceTh
 import { Conversation, ResourceItem } from '../types'
 import { withHighlight } from '../lib/highlight'
 import { useT } from '../i18n/useT'
+import type { TranslationKey } from '../i18n/translations'
 
 /** Where a document sent in chat should be filed, beyond the room's own folder. */
 type UploadTarget = { clusterId: string | null; label: string }
@@ -27,11 +28,14 @@ function initials(name: string) {
     .slice(0, 2)
 }
 
-/** A day separator, the way a messaging app breaks up a long thread. */
-function dayLabel(iso: string) {
+/**
+ * A day separator, the way a messaging app breaks up a long thread. Takes the
+ * translator because it is a plain function, not a component.
+ */
+function dayLabel(iso: string, t: (k: TranslationKey) => string) {
   const d = parseISO(iso)
-  if (isToday(d)) return 'Today'
-  if (isYesterday(d)) return 'Yesterday'
+  if (isToday(d)) return t('ui_today')
+  if (isYesterday(d)) return t('chat_yesterday')
   return format(d, 'EEEE, d MMM yyyy')
 }
 
@@ -483,7 +487,7 @@ export function Chat() {
                         <div className="flex items-center gap-3 my-4">
                           <div className="flex-1 h-px bg-border" />
                           <span className="text-[10px] text-text-subtle font-medium uppercase tracking-wide">
-                            {dayLabel(m.createdAt)}
+                            {dayLabel(m.createdAt, t)}
                           </span>
                           <div className="flex-1 h-px bg-border" />
                         </div>
