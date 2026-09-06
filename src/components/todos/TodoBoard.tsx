@@ -293,8 +293,9 @@ export function TodoBoard({
           todo.isCompleted ? 'opacity-60' : ''
         } ${highlight.isHighlighted(todo.id) ? HIGHLIGHT_CLASS : ''}`}
       >
-        {/* Single row: checkbox · title · metadata · actions */}
-        <div className="flex items-center gap-3">
+        {/* Checkbox · title · metadata · actions. The metadata wraps under the
+            title when the row runs out of width, rather than crushing it. */}
+        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
           <button
             onClick={() => canEdit && toggleTodo(todo.id)}
             disabled={!canEdit}
@@ -306,8 +307,10 @@ export function TodoBoard({
             {todo.isCompleted ? <CheckCircle2 size={19} /> : <Circle size={19} />}
           </button>
 
-          {/* Title takes the slack so the metadata stays right-aligned */}
-          <div className="flex-1 min-w-0">
+          {/* Title takes the slack so the metadata stays right-aligned. The
+              basis keeps it from being squeezed to a few characters when a
+              todo carries several links and both dates. */}
+          <div className="flex-1 min-w-0 basis-[14rem]">
             {isEditing ? (
               <input
                 autoFocus
@@ -334,8 +337,9 @@ export function TodoBoard({
             )}
           </div>
 
-          {/* Metadata, inline to the right of the item */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Metadata, to the right of the item and wrapping under it when
+              there is not room for both on one line. */}
+          <div className="flex items-center gap-1.5 flex-wrap justify-end ml-auto">
             {/* Linked resources */}
             {todo.links.map((link) => {
               const info = linkLabel(link)

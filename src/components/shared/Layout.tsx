@@ -15,6 +15,9 @@ const pageTitles: Record<string, string> = {
 
 export function Layout() {
   const location = useLocation()
+  // Chat is full-bleed: capping it would leave gutters either side of a page
+  // that is meant to fill the frame.
+  const isChat = location.pathname.endsWith('/chat')
 
   // Inside a project the page renders its own header, so the top bar stays
   // generic rather than repeating "Projects" above it.
@@ -38,7 +41,10 @@ export function Layout() {
             — chat — can ask for it, instead of guessing the header height and
             leaving a strip of dead space when the guess is wrong. */}
         <main className="flex-1 overflow-y-auto">
-          <div className="p-6 h-full">
+          {/* Capped and centred: with the sidebar collapsed the window is
+              wide enough that a full-bleed row leaves its title at one edge
+              and its dates at the other, with nothing in between. */}
+          <div className={`p-6 h-full w-full ${isChat ? '' : 'max-w-[1600px] mx-auto'}`}>
             <Outlet />
           </div>
         </main>
