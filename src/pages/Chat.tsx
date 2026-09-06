@@ -318,7 +318,7 @@ export function Chat() {
   )
 
   return (
-    <div className="flex h-full -m-6 bg-bg relative">
+    <div className="flex h-full min-h-0 -m-6 bg-bg relative">
       {/* Chat failing quietly reads as chat being broken, so whatever went
           wrong says so here rather than only in the console. */}
       {error && (
@@ -390,7 +390,7 @@ export function Chat() {
       </div>
 
       {/* ─── The open room ─────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {!active ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3">
             <MessageSquare size={40} className="text-text-subtle" />

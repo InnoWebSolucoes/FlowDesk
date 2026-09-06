@@ -36,11 +36,13 @@ export function Layout() {
           <h1 className="text-text-main font-semibold text-lg">{title}</h1>
           <NotificationBell />
         </header>
-        {/* Main content */}
-        {/* h-full on the padding wrapper so a page that wants the whole frame
-            — chat — can ask for it, instead of guessing the header height and
-            leaving a strip of dead space when the guess is wrong. */}
-        <main className="flex-1 overflow-y-auto">
+        {/* Main content.
+            min-h-0 lets this flex child actually shrink, which is what gives
+            the wrapper below a real height to fill: without it h-full inside
+            resolves against nothing and the page collapses to its content.
+            Chat scrolls its own panes, so scrolling here is for everything
+            else. */}
+        <main className={`flex-1 min-h-0 ${isChat ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {/* Capped and centred: with the sidebar collapsed the window is
               wide enough that a full-bleed row leaves its title at one edge
               and its dates at the other, with nothing in between. */}
