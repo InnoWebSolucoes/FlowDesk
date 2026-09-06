@@ -4,8 +4,8 @@ import {
   Circle, CheckCircle2, Users, X,
 } from 'lucide-react'
 import {
-  addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, isSameMonth,
-  startOfMonth, startOfWeek, parseISO,
+  addDays, addWeeks, format,
+  startOfWeek, parseISO,
 } from 'date-fns'
 import { Project, ProjectTodo, CalendarEntry, Task } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
@@ -117,6 +117,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   // not also fire "create an entry here".
   const justDragged = useRef(false)
   // Right-click on a block: complete it, take it off the calendar, or delete.
+  const [dayMenu, setDayMenu] = useState<{ x: number; y: number; day: string } | null>(null)
   const [blockMenu, setBlockMenu] = useState<
     { x: number; y: number; todoId?: string; entryId?: string } | null
   >(null)
@@ -139,23 +140,33 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     })
 
   // ── The days on screen ───────────────────────────────────────────────────
+  // Both ranges roll around the cursor rather than snapping to a calendar
+  // week or month. Work does not stop on a Sunday, and a calendar month spends
+  // half its width on days that have already gone: what matters is the days
+  // either side of now, with yesterday kept in view because unfinished work
+  // does not disappear overnight.
   const days = useMemo(() => {
     if (view === 'day') return [cursor]
+
+    // Yesterday, today, and the next five days.
     if (view === 'week') {
-      const first = startOfWeek(cursor, { weekStartsOn: 1 })
-      return Array.from({ length: 7 }, (_, i) => addDays(first, i))
+      return Array.from({ length: 7 }, (_, i) => addDays(cursor, i - 1))
     }
-    const first = startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 })
-    const last = endOfWeek(endOfMonth(cursor), { weekStartsOn: 1 })
+
+    // Last week, this week, and the two ahead — whole weeks, so the columns
+    // still line up under Mon–Sun.
+    const first = addWeeks(startOfWeek(cursor, { weekStartsOn: 1 }), -1)
     const out: Date[] = []
-    for (let d = first; d <= last; d = addDays(d, 1)) out.push(d)
+    for (let i = 0; i < 28; i++) out.push(addDays(first, i))
     return out
   }, [view, cursor])
 
+  // Move by what is on screen: a week of days, or the four weeks the month
+  // view now shows.
   const step = (dir: 1 | -1) => {
     if (view === 'day') setCursor((c) => addDays(c, dir))
-    else if (view === 'week') setCursor((c) => addWeeks(c, dir))
-    else setCursor((c) => addMonths(c, dir))
+    else if (view === 'week') setCursor((c) => addDays(c, 7 * dir))
+    else setCursor((c) => addWeeks(c, 4 * dir))
   }
 
   // ── Blocks per day ───────────────────────────────────────────────────────
@@ -409,11 +420,13 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   const entry = openEntry ? calendarEntries.find((e) => e.id === openEntry) : undefined
   const today = dayKey(new Date())
 
+  // Says what is on screen. The month view no longer shows one month, so
+  // naming a month would be a lie.
   const title =
     view === 'day'
       ? format(cursor, 'EEEE d MMMM yyyy')
-      : view === 'week'
-        ? `${format(startOfWeek(cursor, { weekStartsOn: 1 }), 'd MMM')}, ${format(endOfWeek(cursor, { weekStartsOn: 1 }), 'd MMM yyyy')}`
+      : days.length > 0
+        ? `${format(days[0], 'd MMM')} – ${format(days[days.length - 1], 'd MMM yyyy')}`
         : format(cursor, 'MMMM yyyy')
 
   return (
@@ -566,7 +579,6 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           {view === 'month' ? (
             <MonthGrid
               days={days}
-              cursor={cursor}
               today={today}
               blocksFor={blocksFor}
               hoverSlot={hoverSlot}
@@ -576,6 +588,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               onOpenTask={setOpenTask}
               onCreate={createAt}
               onOpenDay={openDay}
+              onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
               justDragged={justDragged}
               onToggleDone={toggleTodo}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
@@ -597,6 +610,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               onOpenTask={setOpenTask}
               onCreate={createAt}
               onOpenDay={openDay}
+              onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
               justDragged={justDragged}
               onToggleDone={toggleTodo}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
@@ -640,6 +654,26 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       {/* Right-click on a calendar item. "Remove" only exists for a todo,
           which lives in the todo list independently of the calendar; a
           calendar entry has nowhere else to be, so it is only deleted. */}
+      {dayMenu && (() => {
+        const pos = menuPos(dayMenu.x, dayMenu.y, 1)
+        return (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setDayMenu(null)} />
+            <div
+              className="fixed z-50 w-44 py-1 bg-surface border border-border rounded-lg shadow-xl"
+              style={{ left: pos.left, top: pos.top }}
+            >
+              <button
+                onClick={() => { createEntryAt(dayMenu.day); setDayMenu(null) }}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >
+                {t('cal_blockTimeOut')}
+              </button>
+            </div>
+          </>
+        )
+      })()}
+
       {blockMenu && (() => {
         const bTodo = blockMenu.todoId ? todos.find((t) => t.id === blockMenu.todoId) : undefined
         const bEntry = blockMenu.entryId ? calendarEntries.find((e) => e.id === blockMenu.entryId) : undefined
@@ -744,6 +778,7 @@ function DayGrid({
   onOpenTask,
   onCreate,
   onOpenDay,
+  onDayContext,
   justDragged,
   onToggleDone,
   onBlockContext,
@@ -761,6 +796,7 @@ function DayGrid({
   onOpenTask: (id: string) => void
   onCreate: (day: string) => void
   onOpenDay: (day: Date) => void
+  onDayContext: (x: number, y: number, day: string) => void
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
@@ -804,6 +840,7 @@ function DayGrid({
             key={key}
             data-day={key}
             onClick={() => { if (!justDragged.current) onCreate(key) }}
+            onContextMenu={(e) => { e.preventDefault(); onDayContext(e.clientX, e.clientY, key) }}
             className={`bg-surface min-h-[320px] p-2 cursor-pointer transition-colors hover:bg-surface-2/40 ${
               dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''
             }`}
@@ -846,7 +883,6 @@ function DayGrid({
 
 function MonthGrid({
   days,
-  cursor,
   today,
   blocksFor,
   hoverSlot,
@@ -856,6 +892,7 @@ function MonthGrid({
   onOpenTask,
   onCreate,
   onOpenDay,
+  onDayContext,
   justDragged,
   onToggleDone,
   onBlockContext,
@@ -864,7 +901,6 @@ function MonthGrid({
   onDragTask,
 }: {
   days: Date[]
-  cursor: Date
   today: string
   blocksFor: (day: string) => Block[]
   hoverSlot: string | null
@@ -874,6 +910,7 @@ function MonthGrid({
   onOpenTask: (id: string) => void
   onCreate: (day: string) => void
   onOpenDay: (day: Date) => void
+  onDayContext: (x: number, y: number, day: string) => void
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
@@ -892,13 +929,16 @@ function MonthGrid({
       {days.map((day) => {
         const key = dayKey(day)
         const all = blocksFor(key)
-        const outside = !isSameMonth(day, cursor)
+        // The past is dimmed, not "another month": the grid spans four weeks
+        // around now and no longer follows a calendar month at all.
+        const outside = key < today
 
         return (
           <div
             key={key}
             data-day={key}
             onClick={() => { if (!justDragged.current) onCreate(key) }}
+            onContextMenu={(e) => { e.preventDefault(); onDayContext(e.clientX, e.clientY, key) }}
             className={`bg-surface min-h-[112px] p-1.5 cursor-pointer transition-colors hover:bg-surface-2/40 ${
               outside ? 'opacity-40' : ''
             } ${dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''}`}
