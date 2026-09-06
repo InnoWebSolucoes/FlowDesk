@@ -143,7 +143,17 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
   }
 
   return (
-    <aside className="fixed top-0 right-0 h-full w-full sm:w-[400px] bg-surface border-l border-border shadow-xl flex flex-col z-50">
+    <aside
+      className={
+        // A floating window rather than a full-height panel: the assistant is
+        // something you consult beside your work, not a place you go. Full
+        // screen on a phone, where a window would be unusable.
+        'fixed z-50 bg-surface flex flex-col shadow-2xl ' +
+        'inset-0 sm:inset-auto sm:bottom-5 sm:right-5 ' +
+        'sm:w-[400px] sm:h-[min(620px,calc(100vh-6rem))] ' +
+        'sm:rounded-xl sm:border sm:border-border overflow-hidden'
+      }
+    >
       <header className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <Sparkles size={16} className="text-primary" />

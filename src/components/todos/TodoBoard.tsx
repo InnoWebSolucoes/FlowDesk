@@ -309,10 +309,10 @@ export function TodoBoard({
             {todo.isCompleted ? <CheckCircle2 size={19} /> : <Circle size={19} />}
           </button>
 
-          {/* The title takes only the width it needs, capped so a long one
-              does not push the metadata off the row. It stretches on a narrow
-              screen, where the metadata wraps beneath it instead. */}
-          <div className="min-w-0 flex-1 sm:flex-initial sm:max-w-[46ch]">
+          {/* The title takes the slack, which puts the metadata flush against
+              the right edge of the card rather than leaving the end of every
+              row empty. */}
+          <div className="min-w-0 flex-1">
             {isEditing ? (
               <input
                 autoFocus
@@ -339,9 +339,9 @@ export function TodoBoard({
             )}
           </div>
 
-          {/* Metadata sits directly after the title rather than being pushed
-              to the far edge, which left a corridor of empty space between
-              them on a wide window. */}
+          {/* Metadata, and after it the row actions — which take no width at
+              all until the row is hovered, so they do not hold a column open
+              down the right of the list. */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {/* Linked resources */}
             {todo.links.map((link) => {
@@ -423,7 +423,7 @@ export function TodoBoard({
 
             {/* Row actions, revealed on hover */}
             {canEdit && (
-            <div className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+            <div className="flex items-center w-0 overflow-hidden opacity-0 group-hover:w-auto group-hover:opacity-100 focus-within:w-auto focus-within:opacity-100 transition-opacity">
               {!todo.isCompleted && sortMode === 'manual' && (
                 <>
                   <button onClick={() => move(todo, -1)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title={t('todo_moveUp')}>
