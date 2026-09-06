@@ -90,6 +90,12 @@ function loadSettings() {
   } catch {
     settings = { ...DEFAULT_SETTINGS }
   }
+  // FlowDesk opens showing FlowDesk. Which view was on screen when the app was
+  // last closed is not worth restoring — a saved `claudeCollapsed: false` from
+  // the old side-by-side layout meant it started with Claude down the side
+  // before anyone had touched a tab.
+  settings.claudeCollapsed = true
+  settings.claudeDocked = false
 }
 
 function saveSettings(now = false) {
