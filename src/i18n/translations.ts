@@ -606,7 +606,7 @@ const en = {
   ui_title: 'Title',
   ui_today: 'Today',
   // Files attached to a task
-  chat_deletedNote: 'Deleted · only managers see this',
+  chat_deletedNote: 'Deleted',
   chat_clear: 'Clear this chat',
   taskfiles_title: 'Work files',
   taskfiles_hint: 'Attach what the work produced, so it can be seen without being asked for.',
@@ -1224,7 +1224,7 @@ const pt: typeof en = {
   ui_title: 'Título',
   ui_today: 'Hoje',
   // Files attached to a task
-  chat_deletedNote: 'Eliminada · só os gestores veem isto',
+  chat_deletedNote: 'Eliminada',
   chat_clear: 'Limpar esta conversa',
   taskfiles_title: 'Ficheiros do trabalho',
   taskfiles_hint: 'Anexe o que o trabalho produziu, para que possa ser visto sem ser pedido.',
