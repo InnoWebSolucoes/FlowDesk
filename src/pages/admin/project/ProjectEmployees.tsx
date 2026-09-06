@@ -44,7 +44,10 @@ export function ProjectEmployees() {
   const isOn = (e: Employee) =>
     e.projectIds?.length ? e.projectIds.includes(project.id) : e.projectId === project.id
 
-  const members = employees.filter(isOn)
+  // The store now carries managers too, because their calendars are needed
+  // elsewhere. This page is about staff, so it narrows again here.
+  const staff = employees.filter((e) => e.role === 'employee')
+  const members = staff.filter(isOn)
 
   // Only the owner hands out admin access; the policy enforces it too, this
   // just keeps the controls out of everyone else's way.
@@ -53,7 +56,7 @@ export function ProjectEmployees() {
   const admins = allAdmins.filter((u) => projectAdminIds.includes(u.id))
   const grantable = allAdmins.filter((u) => !u.isOwner && !projectAdminIds.includes(u.id))
   // Anyone not already here can be added, including people who work elsewhere.
-  const addable = employees.filter((e) => !isOn(e))
+  const addable = staff.filter((e) => !isOn(e))
 
   const handleCreate = async () => {
     const { name, email, password, jobTitle, department } = form

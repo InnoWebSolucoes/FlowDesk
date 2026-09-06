@@ -35,6 +35,8 @@ interface GeneratedTask {
 export function AIOrganiser() {
   const { tasks, categories, addTask, addCategory } = useTaskStore()
   const { employees } = useEmployeeStore()
+  // Work is assigned to staff, not to managers.
+  const staff = employees.filter((e) => e.role === 'employee')
   const { currentUser } = useAuthStore()
   const { t } = useT()
 
@@ -269,7 +271,7 @@ export function AIOrganiser() {
           <div className="mt-4">
             <p className="text-text-main text-xs font-medium mb-2">{t('ai_assignTo')}</p>
             <div className="flex flex-wrap gap-2">
-              {employees.map(emp => (
+              {staff.map(emp => (
                 <button
                   key={emp.id}
                   type="button"
@@ -283,7 +285,7 @@ export function AIOrganiser() {
                   {emp.name}
                 </button>
               ))}
-              {employees.length === 0 && (
+              {staff.length === 0 && (
                 <p className="text-text-muted text-xs">{t('ai_noEmployees')}</p>
               )}
             </div>
@@ -445,7 +447,7 @@ export function AIOrganiser() {
                         <div className="sm:col-span-2">
                           <label className="text-xs font-medium text-text-muted mb-1 block">{t('ai_assignThisTask')}</label>
                           <div className="flex flex-wrap gap-1.5">
-                            {employees.map(emp => {
+                            {staff.map(emp => {
                               const picked = (gt._assignedTo ?? []).includes(emp.id)
                               const noProject = !emp.projectId
                               return (

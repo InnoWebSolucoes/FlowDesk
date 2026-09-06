@@ -396,6 +396,8 @@ function TaskStatusCells({ task }: { task: Task }) {
 export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: string }) {
   const { tasks, categories, addTask, updateTask, deleteTask, addCategory, scopedProjectId } = useTaskStore()
   const { employees } = useEmployeeStore()
+  // Work is assigned to staff, not to managers.
+  const staff = employees.filter((e) => e.role === 'employee')
   const { currentUser } = useAuthStore()
   const { t } = useT()
 
@@ -710,7 +712,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
             onSave={handleSave}
             onCancel={() => setEditing(null)}
             categories={categories}
-            employees={employees}
+            employees={staff}
             defaultAssignee={preselectedEmployee}
             onAddCategory={addCategory}
           />

@@ -39,12 +39,12 @@ function toEmployee(row: any): Employee {
     id: row.id,
     email: row.email,
     name: row.name,
-    role: 'employee',
     avatarInitials: row.avatar_initials,
     joinDate: row.join_date,
     jobTitle: row.job_title ?? '',
     department: row.department ?? '',
     managerId: row.manager_id,
+    role: row.role ?? 'employee',
     projectId: row.project_id ?? null,
     projectIds: (row.project_members ?? []).map((m: any) => m.project_id),
   }
@@ -74,8 +74,7 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     set({ loading: true })
     const { data, error } = await supabase
       .from('users')
-      .select('id, email, name, avatar_initials, join_date, job_title, department, manager_id, project_id, project_members(project_id)')
-      .eq('role', 'employee')
+      .select('id, email, name, role, avatar_initials, join_date, job_title, department, manager_id, project_id, project_members(project_id)')
       .order('name')
 
     if (!error && data) {

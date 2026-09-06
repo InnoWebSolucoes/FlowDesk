@@ -406,7 +406,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
 
             {/* Whose weeks to show alongside your own. This used to live inside
                 the type filter, where nothing suggested the team was in it. */}
-            {canOverlay && employees.length > 0 && (
+            {canOverlay && (
               <>
                 <button
                   onClick={() => setTeamOpen((v) => !v)}
@@ -428,6 +428,12 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
                       <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-subtle">
                         Show alongside yours
                       </p>
+                      {employees.length === 0 && (
+                        <p className="px-3 py-2 text-xs text-text-subtle">
+                          Nobody is on this project yet. Add someone on the Team
+                          tab and their week will show up here.
+                        </p>
+                      )}
                       <div className="max-h-56 overflow-y-auto">
                         {employees.map((emp) => (
                           <button

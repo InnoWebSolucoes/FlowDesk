@@ -18,7 +18,7 @@ export function Overview() {
   const todayStr = format(today, 'yyyy-MM-dd')
   const hour = today.getHours()
 
-  const totalEmployees = employees.length
+  const totalEmployees = employees.filter(e => e.role === 'employee').length
 
   let totalAssignedToday = 0
   let totalCompletedToday = 0
@@ -34,7 +34,11 @@ export function Overview() {
     ? Math.round((totalCompletedToday / totalAssignedToday) * 100)
     : 0
 
-  const behindEmployees = hour < 15 ? employees.filter(emp => {
+  // Managers are in the store now for their calendars; the workload figures
+  // below are about staff.
+  const staff = employees.filter(e => e.role === 'employee')
+
+  const behindEmployees = hour < 15 ? staff.filter(emp => {
     const due = getTasksDueOnDate(tasks, emp.id, today)
     if (due.length < 2) return false
     const completed = completionLogs.filter(
@@ -62,12 +66,12 @@ export function Overview() {
   }
 
   // 2. Overloaded employees
-  const empTaskCounts = employees.map(emp => ({
+  const empTaskCounts = staff.map(emp => ({
     emp,
     count: getTasksDueOnDate(tasks, emp.id, today).length,
   }))
   const totalCount = empTaskCounts.reduce((a, b) => a + b.count, 0)
-  const avg = employees.length > 0 ? totalCount / employees.length : 0
+  const avg = staff.length > 0 ? totalCount / staff.length : 0
   if (avg > 0) {
     for (const { emp, count } of empTaskCounts) {
       if (count > avg * 1.5) {
@@ -185,7 +189,7 @@ export function Overview() {
           <div className="bg-surface rounded-xl border border-border p-4">
             <h3 className="text-text-main font-semibold text-sm mb-3">{t('overview_employeeProgress')}</h3>
             <div className="space-y-3">
-              {employees.map(emp => {
+              {staff.map(emp => {
                 const due = getTasksDueOnDate(tasks, emp.id, today)
                 const done = completionLogs.filter(
                   l => l.employeeId === emp.id && l.dueDate === todayStr
@@ -211,7 +215,7 @@ export function Overview() {
                   </div>
                 )
               })}
-              {employees.length === 0 && (
+              {staff.length === 0 && (
                 <p className="text-text-muted text-sm">{t('overview_noEmployees')}</p>
               )}
             </div>
