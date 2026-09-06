@@ -32,7 +32,7 @@ export function Layout() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top bar */}
-        <header className="bg-surface border-b border-border px-6 py-4 flex items-center justify-between md:pl-6 pl-16">
+        <header className="h-16 bg-surface border-b border-border px-6 flex items-center justify-between flex-shrink-0 md:pl-6 pl-16">
           <h1 className="text-text-main font-semibold text-lg">{title}</h1>
           <NotificationBell />
         </header>

@@ -139,8 +139,11 @@ export function Sidebar() {
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div
-        className={`flex items-center border-b border-border ${
-          mini ? 'justify-center px-2 py-5' : 'gap-2.5 px-5 py-5'
+        // h-16 to match the top bar exactly: both carry a bottom border, and
+        // padding alone left them at different heights, so the two lines did
+        // not meet where the sidebar ends.
+        className={`h-16 flex items-center border-b border-border flex-shrink-0 ${
+          mini ? 'justify-center px-2' : 'gap-2.5 px-5'
         }`}
       >
         <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
