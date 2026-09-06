@@ -295,6 +295,28 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           })
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'chat_messages' },
+        (payload) => {
+          // Deleting is an update now — the row is marked, not removed — so
+          // without this the message stayed on everyone else's screen until
+          // they reloaded, which is the opposite of deleting it.
+          const row: any = payload.new
+          if (!row?.id) return
+          set((s) => {
+            const next: Record<string, ChatMessage[]> = {}
+            for (const room of Object.keys(s.messages)) {
+              next[room] = s.messages[room].map((m) =>
+                m.id === row.id
+                  ? { ...m, body: row.body ?? m.body, deletedAt: row.deleted_at ?? null }
+                  : m,
+              )
+            }
+            return { messages: next }
+          })
+        }
+      )
       .subscribe()
   },
 
