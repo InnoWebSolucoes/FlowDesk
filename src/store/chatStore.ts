@@ -40,6 +40,8 @@ interface ChatState {
   loadMessages: (conversationId: string) => Promise<void>
   sendMessage: (conversationId: string, body: string, itemIds: string[]) => Promise<void>
   deleteMessage: (messageId: string, conversationId: string) => Promise<void>
+  /** Hides every message in the room. The record survives for managers. */
+  clearConversation: (conversationId: string) => Promise<void>
 
   /** The direct room with this person, opening one if it does not exist yet. */
   openDirect: (otherUserId: string) => Promise<Conversation | null>
@@ -78,6 +80,7 @@ function toMessage(row: any): ChatMessage {
     createdAt: row.created_at,
     editedAt: row.edited_at ?? null,
     itemIds: (row.chat_message_items ?? []).map((i: any) => i.item_id),
+  deletedAt: row.deleted_at ?? null,
   }
 }
 
@@ -360,11 +363,51 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   deleteMessage: async (messageId, conversationId) => {
-    await supabase.from('chat_messages').delete().eq('id', messageId)
+    // Marked, not destroyed: a hard delete took the message from the manager
+    // as well, and left nothing to refer back to.
+    const { data: auth } = await supabase.auth.getUser()
+    const { error } = await supabase
+      .from('chat_messages')
+      .update({ deleted_at: new Date().toISOString(), deleted_by: auth.user?.id ?? null })
+      .eq('id', messageId)
+
+    if (error) {
+      console.error('[chat] delete failed:', error.message)
+      set({ error: error.message })
+      return
+    }
+    const now = new Date().toISOString()
     set((s) => ({
       messages: {
         ...s.messages,
-        [conversationId]: (s.messages[conversationId] ?? []).filter((m) => m.id !== messageId),
+        [conversationId]: (s.messages[conversationId] ?? []).map((m) =>
+          m.id === messageId ? { ...m, deletedAt: now } : m,
+        ),
+      },
+    }))
+  },
+
+  clearConversation: async (conversationId) => {
+    const { data: auth } = await supabase.auth.getUser()
+    const { error } = await supabase
+      .from('chat_messages')
+      .update({ deleted_at: new Date().toISOString(), deleted_by: auth.user?.id ?? null })
+      .eq('conversation_id', conversationId)
+      .is('deleted_at', null)
+
+    if (error) {
+      console.error('[chat] clear failed:', error.message)
+      set({ error: error.message })
+      return
+    }
+    const now = new Date().toISOString()
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [conversationId]: (s.messages[conversationId] ?? []).map((m) => ({
+          ...m,
+          deletedAt: m.deletedAt ?? now,
+        })),
       },
     }))
   },

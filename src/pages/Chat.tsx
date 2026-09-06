@@ -41,7 +41,7 @@ export function Chat() {
   const { currentUser } = useAuthStore()
   const { allTasks } = useTaskStore()
   const {
-    conversations, messages, loadMessages, sendMessage, deleteMessage,
+    conversations, messages, loadMessages, sendMessage, deleteMessage, clearConversation,
     openDirect, openTaskRoom, ensureCluster, markRead, unreadCount, loadedRooms,
     people, error, clearError,
   } = useChatStore()
@@ -125,12 +125,27 @@ export function Chat() {
     if (activeProjectId && resourcesLoadedFor !== activeProjectId) loadResources(activeProjectId)
   }, [activeProjectId, resourcesLoadedFor, loadResources])
 
-  const roomMessages = activeId ? messages[activeId] ?? [] : []
+  // A deleted message stays in the record. Managers still see it, greyed;
+  // for everyone else it is gone.
+  const roomMessages = (activeId ? messages[activeId] ?? [] : []).filter(
+    (m) => !m.deletedAt || isAdmin,
+  )
 
-  // Stay pinned to the newest message, the way a chat should.
+  // Stay pinned to the newest message, the way a chat should — but only when
+  // one arrives. The count also changes when a message is deleted, and being
+  // thrown to the bottom after tidying something near the top is maddening.
+  const lastCount = useRef(0)
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [roomMessages.length, activeId])
+    const grew = roomMessages.length > lastCount.current
+    lastCount.current = roomMessages.length
+    if (grew) endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [roomMessages.length])
+
+  // Opening a room does start at the bottom, without animating there.
+  useEffect(() => {
+    lastCount.current = 0
+    endRef.current?.scrollIntoView()
+  }, [activeId])
 
   // ─── The conversation list ────────────────────────────────────────────────
 
@@ -409,6 +424,15 @@ export function Chat() {
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                {roomMessages.length > 0 && (
+                  <button
+                    onClick={() => clearConversation(active.id)}
+                    title={t('chat_clear')}
+                    className="flex items-center gap-1.5 text-xs text-text-muted hover:text-danger px-2.5 py-1.5 rounded-lg hover:bg-surface-2 transition-colors"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
                 {active.kind === 'task' && active.taskId && (
                   <button
                     onClick={() => goToTask(active.taskId!)}
@@ -483,10 +507,15 @@ export function Chat() {
                               mine
                                 ? 'bg-primary text-white rounded-br-md'
                                 : 'bg-surface border border-border text-text-main rounded-bl-md'
-                            }`}
+                            } ${m.deletedAt ? 'opacity-50' : ''}`}
                           >
                             {m.body && (
                               <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>
+                            )}
+                            {m.deletedAt && (
+                              <p className={`text-[10px] italic mt-1 ${mine ? 'text-white/70' : 'text-text-subtle'}`}>
+                                {t('chat_deletedNote')}
+                              </p>
                             )}
 
                             {/* Documents. Real project files, so each one opens

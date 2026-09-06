@@ -11,6 +11,7 @@ import { FileKindIcon } from '../resources/ResourceThumbnail'
 import { ResourceLinkPicker, LinkKey } from '../shared/ResourceLinkPicker'
 import { KIND_STYLE } from './calendarShared'
 import { useT } from '../../i18n/useT'
+import { useEmployeeStore } from '../../store/employeeStore'
 
 const VISIBILITY: { value: Visibility | ''; label: string; Icon: typeof Lock }[] = [
   { value: '', label: 'Default for my role', Icon: UsersIcon },
@@ -200,6 +201,7 @@ const inputClass =
 
 function TodoBody({ todo }: { todo: ProjectTodo }) {
   const { t } = useT()
+  const { employees } = useEmployeeStore()
   const { updateTodo, toggleTodo, todoLists } = useProjectStore()
 
   return (
@@ -249,6 +251,23 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
       {todo.dueDate && todo.doDate && todo.doDate > todo.dueDate && (
         <p className="text-[11px] text-danger">{t('cal_theDoDateIsAfterThe')}</p>
       )}
+
+      {/* Who is doing it. Adding a todo from the calendar dropped you here
+          with no way to say whose it was, so it stayed on the shared board. */}
+      <Field label={t('cal_assignedTo')}>
+        <select
+          value={todo.assigneeId ?? ''}
+          onChange={(e) => updateTodo(todo.id, { assigneeId: e.target.value || null })}
+          className={inputClass}
+        >
+          <option value="">{t('cal_nobodyInParticular')}</option>
+          {employees.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.name}
+            </option>
+          ))}
+        </select>
+      </Field>
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Priority">

@@ -427,6 +427,8 @@ export interface Conversation {
 }
 
 export interface ChatMessage {
+  /** Set when someone deleted it. Managers still see it, greyed. */
+  deletedAt?: string | null
   id: string
   conversationId: string
   authorId: string
