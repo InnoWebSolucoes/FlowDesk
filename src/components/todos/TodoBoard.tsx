@@ -307,10 +307,10 @@ export function TodoBoard({
             {todo.isCompleted ? <CheckCircle2 size={19} /> : <Circle size={19} />}
           </button>
 
-          {/* Title takes the slack so the metadata stays right-aligned. The
-              basis keeps it from being squeezed to a few characters when a
-              todo carries several links and both dates. */}
-          <div className="flex-1 min-w-0 basis-[14rem]">
+          {/* The title takes only the width it needs, capped so a long one
+              does not push the metadata off the row. It stretches on a narrow
+              screen, where the metadata wraps beneath it instead. */}
+          <div className="min-w-0 flex-1 sm:flex-initial sm:max-w-[46ch]">
             {isEditing ? (
               <input
                 autoFocus
@@ -337,9 +337,10 @@ export function TodoBoard({
             )}
           </div>
 
-          {/* Metadata, to the right of the item and wrapping under it when
-              there is not room for both on one line. */}
-          <div className="flex items-center gap-1.5 flex-wrap justify-end ml-auto">
+          {/* Metadata sits directly after the title rather than being pushed
+              to the far edge, which left a corridor of empty space between
+              them on a wide window. */}
+          <div className="flex items-center gap-1.5 flex-wrap">
             {/* Linked resources */}
             {todo.links.map((link) => {
               const info = linkLabel(link)
