@@ -95,3 +95,36 @@ begin
   return new;
 end;
 $fn$;
+
+-- The comment trigger interpolates a name and a title the same way, so guard
+-- it too rather than leaving one of the four able to blank its own message.
+
+create or replace function public.notify_comment_added()
+returns trigger
+language plpgsql security definer set search_path = public as $fn$
+declare
+  preview text;
+begin
+  if not public.actor_is_employee(new.author_id) then
+    return new;
+  end if;
+
+  preview := regexp_replace(coalesce(new.content, ''), '\s+', ' ', 'g');
+  if length(preview) > 120 then
+    preview := left(preview, 117) || '…';
+  end if;
+
+  insert into public.notifications (type, title, message, task_id, target_user_id, target_role)
+  values (
+    'comment_added',
+    'New comment',
+    coalesce(public.actor_name(new.author_id), 'Someone')
+      || ' on "' || coalesce(public.task_title(new.task_id), 'a task') || '": ' || preview,
+    new.task_id,
+    null,
+    'admin'
+  );
+
+  return new;
+end;
+$fn$;
