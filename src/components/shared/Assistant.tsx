@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Sparkles, X, Send, Check } from 'lucide-react'
 import { supabase } from '../../lib/supabaseClient'
 import { useProjectStore } from '../../store/projectStore'
+import { useT } from '../../i18n/useT'
 
 /** One exchange in the visible transcript. */
 type Turn =
@@ -57,6 +58,7 @@ function ReplyText({ text, projectBase, onNavigate }: {
  * results, which are noise to a reader.
  */
 export function Assistant({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const { t } = useT()
   const [turns, setTurns] = useState<Turn[]>([])
   const [apiMessages, setApiMessages] = useState<unknown[]>([])
   const [input, setInput] = useState('')
@@ -145,7 +147,7 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
       <header className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <Sparkles size={16} className="text-primary" />
-          <span className="text-text-main font-medium text-sm">Assistant</span>
+          <span className="text-text-main font-medium text-sm">{t('ui_assistant')}</span>
         </div>
         <button onClick={onClose} className="text-text-subtle hover:text-text-main p-1 rounded">
           <X size={18} />
@@ -156,10 +158,8 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
         {turns.length === 0 && (
           <div className="text-center py-8">
             <Sparkles size={22} className="text-primary mx-auto mb-2" />
-            <p className="text-text-main text-sm font-medium">Ask me about this project</p>
-            <p className="text-text-subtle text-xs mt-1 mb-4">
-              I can see your todos, calendar and documents.
-            </p>
+            <p className="text-text-main text-sm font-medium">{t('ui_askMeAboutThisProject')}</p>
+            <p className="text-text-subtle text-xs mt-1 mb-4">{t('ui_iCanSeeYourTodosCalendar')}</p>
             <div className="space-y-1.5 text-left">
               {[
                 'When should I do the client contract?',
@@ -246,13 +246,11 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
               onClick={submitAnswer}
               disabled={picked.length === 0}
               className="mt-2 w-full px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium disabled:opacity-40"
-            >
-              Send answer
-            </button>
+            >{t('ui_sendAnswer')}</button>
           </div>
         )}
 
-        {busy && <p className="text-xs text-text-subtle">Thinking…</p>}
+        {busy && <p className="text-xs text-text-subtle">{t('ui_thinking')}</p>}
         {error && (
           <p className="text-xs text-danger bg-danger-bg px-3 py-2 rounded-lg">{error}</p>
         )}
@@ -272,7 +270,7 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
                 send(t)
               }
             }}
-            placeholder="Ask, or tell me what to do…"
+            placeholder={t('ui_askOrTellMeWhatTo')}
             disabled={busy}
             className="flex-1 px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-text-main outline-none focus:border-primary disabled:opacity-60"
           />
@@ -303,6 +301,7 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
  * showing itself once the assistant has actually been opened.
  */
 export function AssistantLauncher({ projectId }: { projectId: string }) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [everOpened, setEverOpened] = useState(() => {
     try {
@@ -336,8 +335,7 @@ export function AssistantLauncher({ projectId }: { projectId: string }) {
     <>
       {!open && !everOpened && (
         <div className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-border shadow-sm text-xs text-text-muted">
-          <Sparkles size={13} className="text-primary" />
-          Press <kbd className="px-1.5 py-0.5 rounded bg-surface-2 border border-border font-medium">Ctrl</kbd>
+          <Sparkles size={13} className="text-primary" />{t('ui_press')}<kbd className="px-1.5 py-0.5 rounded bg-surface-2 border border-border font-medium">Ctrl</kbd>
           +
           <kbd className="px-1.5 py-0.5 rounded bg-surface-2 border border-border font-medium">K</kbd>
           for the assistant

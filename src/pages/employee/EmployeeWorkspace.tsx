@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import { Building2 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useProjectStore } from '../../store/projectStore'
+import { useT } from '../../i18n/useT'
 
 /**
  * The employee's side of a project.
@@ -14,6 +15,7 @@ import { useProjectStore } from '../../store/projectStore'
  * here can be written against the same shape.
  */
 export function EmployeeWorkspace() {
+  const { t } = useT()
   const currentUser = useAuthStore((s) => s.currentUser)
   const { initialized, getProject } = useProjectStore()
 
@@ -23,7 +25,7 @@ export function EmployeeWorkspace() {
   // concluding there is no project — otherwise every tab flashes the empty
   // state on the way in.
   if (!initialized) {
-    return <div className="text-text-muted text-sm py-8">Loading…</div>
+    return <div className="text-text-muted text-sm py-8">{t('emp_loading')}</div>
   }
 
   // An employee with no project has nothing to show here. That is a setup
@@ -34,7 +36,7 @@ export function EmployeeWorkspace() {
         <div className="w-12 h-12 rounded-xl bg-surface-2 flex items-center justify-center mx-auto mb-3">
           <Building2 size={22} className="text-text-subtle" />
         </div>
-        <h2 className="text-text-main font-semibold mb-1">No project yet</h2>
+        <h2 className="text-text-main font-semibold mb-1">{t('emp_noProjectYet')}</h2>
         <p className="text-text-muted text-sm">
           You have not been added to a project. Ask your manager to assign you to one,
           and your lists, notes and files will appear here.

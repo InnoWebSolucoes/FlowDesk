@@ -8,6 +8,7 @@ import { ResourceFolders } from '../../components/resources/ResourceFolders'
 import { ResourceItemPanel } from '../../components/resources/ResourceItemPanel'
 import { DocumentWindow } from '../../components/resources/DocumentWindow'
 import { googleEmbedUrl } from '../../components/resources/googleDocs'
+import { useT } from '../../i18n/useT'
 
 interface Ctx { project: Project }
 
@@ -24,6 +25,7 @@ interface Ctx { project: Project }
  * managers set; nothing on this page can widen them.
  */
 export function MyResources() {
+  const { t } = useT()
   const { project } = useOutletContext<Ctx>()
   const currentUser = useAuthStore((s) => s.currentUser)
   const { resourcesLoadedFor, loadResources, items, createItem } = useProjectStore()
@@ -68,9 +70,7 @@ export function MyResources() {
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-4">
-        <p className="text-text-muted text-sm">
-          The project's documents. Open one to read it, or add your own here.
-        </p>
+        <p className="text-text-muted text-sm">{t('emp_theProjectSDocumentsOpenOne')}</p>
 
         <input
           ref={fileInput}

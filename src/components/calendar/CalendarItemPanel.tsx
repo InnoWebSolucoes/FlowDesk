@@ -10,6 +10,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { FileKindIcon } from '../resources/ResourceThumbnail'
 import { ResourceLinkPicker, LinkKey } from '../shared/ResourceLinkPicker'
 import { KIND_STYLE } from './calendarShared'
+import { useT } from '../../i18n/useT'
 
 const VISIBILITY: { value: Visibility | ''; label: string; Icon: typeof Lock }[] = [
   { value: '', label: 'Default for my role', Icon: UsersIcon },
@@ -40,6 +41,7 @@ export function CalendarItemPanel({
    */
   basePath?: string
 }) {
+  const { t } = useT()
   const {
     updateTodo, deleteTodo, setTodoLinks,
     updateCalendarEntry, deleteCalendarEntry, setCalendarEntryLinks,
@@ -112,7 +114,7 @@ export function CalendarItemPanel({
 
             <section>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-medium text-text-muted">Linked documents</label>
+                <label className="text-xs font-medium text-text-muted">{t('cal_linkedDocuments')}</label>
                 <button
                   onClick={() => setPicking(true)}
                   className="text-xs text-primary hover:underline flex items-center gap-1"
@@ -122,9 +124,7 @@ export function CalendarItemPanel({
               </div>
 
               {linked.length === 0 && (
-                <p className="text-xs text-text-subtle italic">
-                  Nothing linked. Attach the contract, brief or folder this relates to.
-                </p>
+                <p className="text-xs text-text-subtle italic">{t('cal_nothingLinkedAttachTheContractBrie')}</p>
               )}
 
               <div className="space-y-1">
@@ -133,7 +133,7 @@ export function CalendarItemPanel({
                     key={raw.id}
                     onClick={() => goToResource(item?.id, cluster?.id)}
                     className="w-full flex items-center gap-2 p-2 rounded-lg bg-surface-2 hover:bg-border text-left transition-colors group"
-                    title="Open in the resources tab"
+                    title={t('cal_openInTheResourcesTab')}
                   >
                     {cluster ? (
                       <FolderOpen size={14} style={{ color: cluster.color }} className="flex-shrink-0" />
@@ -157,9 +157,7 @@ export function CalendarItemPanel({
               <button
                 onClick={() => navigate(`${root}/todos`)}
                 className="text-xs text-primary hover:underline flex-1 text-left"
-              >
-                Open in Todos →
-              </button>
+              >{t('cal_openInTodos')}</button>
             )}
             {entry && <span className="flex-1" />}
             <button
@@ -170,8 +168,7 @@ export function CalendarItemPanel({
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-danger hover:bg-danger-bg"
             >
-              <Trash2 size={13} /> Delete
-            </button>
+              <Trash2 size={13} />{t('ui_delete')}</button>
           </footer>
         </div>
       </div>
@@ -202,6 +199,7 @@ const inputClass =
   'w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary'
 
 function TodoBody({ todo }: { todo: ProjectTodo }) {
+  const { t } = useT()
   const { updateTodo, toggleTodo, todoLists } = useProjectStore()
 
   return (
@@ -223,7 +221,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
           value={todo.notes}
           onChange={(e) => updateTodo(todo.id, { notes: e.target.value })}
           rows={4}
-          placeholder="What is this, and what does done look like?"
+          placeholder={t('cal_whatIsThisAndWhatDoes')}
           className={`${inputClass} resize-y`}
         />
       </Field>
@@ -249,9 +247,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
 
 
       {todo.dueDate && todo.doDate && todo.doDate > todo.dueDate && (
-        <p className="text-[11px] text-danger">
-          The do date is after the deadline, you would finish it late.
-        </p>
+        <p className="text-[11px] text-danger">{t('cal_theDoDateIsAfterThe')}</p>
       )}
 
       <div className="grid grid-cols-2 gap-3">
@@ -261,9 +257,9 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
             onChange={(e) => updateTodo(todo.id, { priority: e.target.value as Priority })}
             className={inputClass}
           >
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
+            <option value="high">{t('ui_high')}</option>
+            <option value="medium">{t('ui_medium')}</option>
+            <option value="low">{t('ui_low')}</option>
           </select>
         </Field>
         <Field label="List">
@@ -285,6 +281,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
 }
 
 function EntryBody({ entry }: { entry: CalendarEntry }) {
+  const { t } = useT()
   const { updateCalendarEntry } = useProjectStore()
 
   // An entry occupies whole days. Moving the first day past the last drags
@@ -332,7 +329,7 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
           value={entry.notes}
           onChange={(e) => updateCalendarEntry(entry.id, { notes: e.target.value })}
           rows={3}
-          placeholder="Agenda, location, anything useful."
+          placeholder={t('cal_agendaLocationAnythingUseful')}
           className={`${inputClass} resize-y`}
         />
       </Field>

@@ -6,6 +6,7 @@ import { useAuthStore } from '../../../store/authStore'
 import { useEmployeeStore } from '../../../store/employeeStore'
 import { useProjectAdminStore } from '../../../store/projectAdminStore'
 import { EmptyState } from '../../../components/shared/EmptyState'
+import { useT } from '../../../i18n/useT'
 
 interface Ctx { project: Project }
 
@@ -17,6 +18,7 @@ interface Ctx { project: Project }
  * team list where they had nothing to do with the people below them.
  */
 export function ProjectAdmins() {
+  const { t } = useT()
   const { project } = useOutletContext<Ctx>()
   const { currentUser } = useAuthStore()
   const { employees } = useEmployeeStore()
@@ -39,7 +41,7 @@ export function ProjectAdmins() {
     return (
       <EmptyState
         icon={Shield}
-        title="Only the owner can manage access"
+        title={t('proj_onlyTheOwnerCanManageAccess')}
         description="Ask them to add or remove an admin on this project."
       />
     )
@@ -75,13 +77,13 @@ export function ProjectAdmins() {
             </span>
           ))}
           {admins.length === 0 && (
-            <p className="text-text-subtle text-xs italic">Only you can manage this project.</p>
+            <p className="text-text-subtle text-xs italic">{t('proj_onlyYouCanManageThisProject')}</p>
           )}
         </div>
 
         {grantable.length > 0 && (
           <div className="mt-3 pt-3 border-t border-border">
-            <p className="text-text-subtle text-[11px] mb-2">Give access to</p>
+            <p className="text-text-subtle text-[11px] mb-2">{t('proj_giveAccessTo')}</p>
             <div className="flex flex-wrap gap-2">
               {grantable.map((u) => (
                 <button
@@ -100,10 +102,8 @@ export function ProjectAdmins() {
       {/* Who is an admin at all. Not a per-project decision, so it stands apart
           from the panel above. */}
       <div className="bg-surface rounded-xl border border-border p-5">
-        <h3 className="text-text-main font-semibold text-sm mb-1">Admins</h3>
-        <p className="text-text-muted text-xs mb-4">
-          Being an admin is company-wide; which projects they reach is set above.
-        </p>
+        <h3 className="text-text-main font-semibold text-sm mb-1">{t('proj_admins')}</h3>
+        <p className="text-text-muted text-xs mb-4">{t('proj_beingAnAdminIsCompanyWide')}</p>
 
         <div className="flex flex-wrap gap-2">
           {allAdmins.map((a) => (
@@ -133,7 +133,7 @@ export function ProjectAdmins() {
 
         {staff.length > 0 && (
           <div className="mt-3 pt-3 border-t border-border">
-            <p className="text-text-subtle text-[11px] mb-2">Promote to admin</p>
+            <p className="text-text-subtle text-[11px] mb-2">{t('proj_promoteToAdmin')}</p>
             <div className="flex flex-wrap gap-2">
               {staff.map((e) => (
                 <button

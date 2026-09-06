@@ -4,6 +4,7 @@ import { Save, Trash2, Globe, Mail, Phone, MapPin, User, MessageCircle } from 'l
 import { Project } from '../../../types'
 import { useProjectStore } from '../../../store/projectStore'
 import { openWhatsapp, normalisePhoneDigits } from '../../../lib/nativeShare'
+import { useT } from '../../../i18n/useT'
 
 interface Ctx { project: Project }
 
@@ -14,6 +15,7 @@ export function ProjectAbout() {
 }
 
 function ProjectAboutForm({ project }: { project: Project }) {
+  const { t } = useT()
   const { updateProject, deleteProject } = useProjectStore()
   const navigate = useNavigate()
 
@@ -94,7 +96,7 @@ function ProjectAboutForm({ project }: { project: Project }) {
     <div className="max-w-3xl space-y-6">
       {/* Description */}
       <section className="bg-surface border border-border rounded-xl p-5">
-        <h2 className="text-text-main font-semibold text-sm mb-4">Project description</h2>
+        <h2 className="text-text-main font-semibold text-sm mb-4">{t('proj_projectDescription')}</h2>
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             {field('Project name', 'name')}
@@ -102,14 +104,12 @@ function ProjectAboutForm({ project }: { project: Project }) {
           </div>
           {field('Industry', 'industry', { placeholder: 'e.g. Construction, Hospitality' })}
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">
-              Full description
-            </label>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">{t('proj_fullDescription')}</label>
             <textarea
               value={form.description}
               onChange={(e) => set('description', e.target.value)}
               rows={8}
-              placeholder="What this company does, the scope of the engagement, key context the team should know…"
+              placeholder={t('proj_whatThisCompanyDoesTheScope')}
               className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main resize-y focus:outline-none focus:border-primary"
             />
           </div>
@@ -118,7 +118,7 @@ function ProjectAboutForm({ project }: { project: Project }) {
 
       {/* Contact */}
       <section className="bg-surface border border-border rounded-xl p-5">
-        <h2 className="text-text-main font-semibold text-sm mb-4">Contact & details</h2>
+        <h2 className="text-text-main font-semibold text-sm mb-4">{t('proj_contactDetails')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           {field('Website', 'website', { placeholder: 'https://', icon: <Globe size={14} /> })}
           {field('Contact name', 'contactName', { icon: <User size={14} /> })}
@@ -135,7 +135,7 @@ function ProjectAboutForm({ project }: { project: Project }) {
 
       {/* Appearance */}
       <section className="bg-surface border border-border rounded-xl p-5">
-        <h2 className="text-text-main font-semibold text-sm mb-4">Colour</h2>
+        <h2 className="text-text-main font-semibold text-sm mb-4">{t('ui_colour')}</h2>
         <div className="flex items-center gap-3">
           <input
             type="color"
@@ -143,7 +143,7 @@ function ProjectAboutForm({ project }: { project: Project }) {
             onChange={(e) => set('color', e.target.value)}
             className="w-10 h-10 rounded-lg border border-border cursor-pointer bg-surface-2"
           />
-          <span className="text-text-muted text-sm">Used across the project's cards and headers.</span>
+          <span className="text-text-muted text-sm">{t('proj_usedAcrossTheProjectSCards')}</span>
         </div>
       </section>
 
@@ -161,8 +161,7 @@ function ProjectAboutForm({ project }: { project: Project }) {
           onClick={handleDelete}
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border text-text-muted text-sm hover:text-danger hover:border-danger transition-colors ml-auto"
         >
-          <Trash2 size={15} /> Delete project
-        </button>
+          <Trash2 size={15} />{t('proj_deleteProject')}</button>
       </div>
     </div>
   )

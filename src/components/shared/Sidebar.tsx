@@ -183,8 +183,7 @@ export function Sidebar() {
             }}
             className="flex items-center gap-1 text-[11px] text-text-subtle hover:text-text-main mb-2 px-2 transition-colors"
           >
-            <ChevronLeft size={12} /> All projects
-          </Link>
+            <ChevronLeft size={12} />{t('ui_allProjects')}</Link>
           {/* The project name is the way into its details, so About needs no
               tab of its own. */}
           <NavLink
@@ -348,7 +347,7 @@ export function Sidebar() {
           <button
             onClick={handleLogout}
             className="text-text-subtle hover:text-danger transition-colors p-1 rounded"
-            title="Logout"
+            title={t('ui_logout')}
           >
             <LogOut size={15} />
           </button>
@@ -365,7 +364,7 @@ export function Sidebar() {
           }`}
         >
           {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-          {!mini && <span className="text-xs font-medium">Collapse</span>}
+          {!mini && <span className="text-xs font-medium">{t('ui_collapse')}</span>}
         </button>
       </div>
     </div>

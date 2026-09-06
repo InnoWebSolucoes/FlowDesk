@@ -8,6 +8,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { NoteEditor } from './NoteEditor'
 import { useHighlight } from '../../hooks/useHighlight'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
+import { useT } from '../../i18n/useT'
 
 interface NoteBoardProps {
   project: Project
@@ -51,6 +52,7 @@ function plainText(html: string): string {
  * between them.
  */
 export function NoteBoard({ project, ownerId, readOnly = false }: NoteBoardProps) {
+  const { t } = useT()
   const {
     notes, notesLoadedFor, loadNotes, createNote, updateNote, deleteNote,
     setEditingNote,
@@ -136,15 +138,14 @@ export function NoteBoard({ project, ownerId, readOnly = false }: NoteBoardProps
               onClick={handleNew}
               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-dark transition-colors"
             >
-              <Plus size={15} /> New note
-            </button>
+              <Plus size={15} />{t('note_newNote')}</button>
           )}
           <div className="relative">
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-subtle" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search"
+              placeholder={t('note_search')}
               className="w-full pl-7 pr-2 py-1.5 rounded-lg bg-surface-2 border border-border text-xs text-text-main focus:outline-none focus:border-primary"
             />
           </div>
@@ -212,7 +213,7 @@ export function NoteBoard({ project, ownerId, readOnly = false }: NoteBoardProps
         {!open ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6">
             <FileText size={30} className="text-text-subtle" />
-            <p className="text-text-muted text-sm font-medium">No note open</p>
+            <p className="text-text-muted text-sm font-medium">{t('note_noNoteOpen')}</p>
             <p className="text-text-subtle text-xs">
               {readOnly
                 ? 'Pick a note from the list to read it.'
@@ -247,6 +248,7 @@ function NoteView({
   onDelete: () => void
   onClose: () => void
 }) {
+  const { t } = useT()
   const [title, setTitle] = useState(note.title)
   const [paletteOpen, setPaletteOpen] = useState(false)
 
@@ -260,7 +262,7 @@ function NoteView({
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => title !== note.title && onChange({ title })}
           readOnly={readOnly}
-          placeholder="Title"
+          placeholder={t('ui_title')}
           className="flex-1 bg-transparent text-base font-semibold text-zinc-900 placeholder-zinc-500 focus:outline-none"
         />
 
@@ -276,7 +278,7 @@ function NoteView({
         <div className="relative">
           <button
             onClick={() => setPaletteOpen((v) => !v)}
-            title="Colour"
+            title={t('ui_colour')}
             disabled={readOnly}
             className="p-1.5 rounded text-zinc-600 hover:bg-black/10 disabled:opacity-40 transition-colors"
           >
@@ -313,14 +315,14 @@ function NoteView({
 
         <button
           onClick={onDelete}
-          title="Delete"
+          title={t('ui_delete')}
           disabled={readOnly}
           className="p-1.5 rounded text-zinc-600 hover:bg-red-500/20 hover:text-red-700 disabled:opacity-40 transition-colors"
         >
           <Trash2 size={15} />
         </button>
 
-        <button onClick={onClose} title="Close" className="p-1.5 rounded text-zinc-600 hover:bg-black/10">
+        <button onClick={onClose} title={t('ui_close')} className="p-1.5 rounded text-zinc-600 hover:bg-black/10">
           <X size={15} />
         </button>
       </header>

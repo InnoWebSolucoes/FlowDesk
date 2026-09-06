@@ -13,6 +13,7 @@ import { EmptyState } from '../shared/EmptyState'
 import { FileKindIcon } from '../resources/ResourceThumbnail'
 import { ResourceLinkPicker } from '../shared/ResourceLinkPicker'
 import { CalendarItemPanel } from '../calendar/CalendarItemPanel'
+import { useT } from '../../i18n/useT'
 
 interface TodoBoardProps {
   project: Project
@@ -58,6 +59,7 @@ export function TodoBoard({
   readOnly = false,
   emptyDescription,
 }: TodoBoardProps) {
+  const { t } = useT()
   const navigate = useNavigate()
   const {
     todos, todoLists, todosLoadedFor, loadTodos,
@@ -362,10 +364,10 @@ export function TodoBoard({
               <button
                 onClick={() => setLinkingId(todo.id)}
                 className="flex items-center gap-1 text-[11px] text-text-muted hover:text-primary px-1.5 py-1 rounded-md bg-surface-2 transition-colors"
-                title="Link resources"
+                title={t('todo_linkResources')}
               >
                 <Link2 size={11} />
-                {todo.links.length === 0 && <span className="hidden sm:inline">Link</span>}
+                {todo.links.length === 0 && <span className="hidden sm:inline">{t('ui_link')}</span>}
               </button>
             )}
 
@@ -412,11 +414,11 @@ export function TodoBoard({
               onChange={(e) => updateTodo(todo.id, { priority: e.target.value as Priority })}
               disabled={!canEdit}
               className={`text-[11px] font-medium px-1.5 py-1 rounded-md border-0 cursor-pointer ${PRIORITY_STYLES[todo.priority]}`}
-              title="Priority"
+              title={t('todo_priority')}
             >
-              <option value="high">High</option>
-              <option value="medium">Med</option>
-              <option value="low">Low</option>
+              <option value="high">{t('ui_high')}</option>
+              <option value="medium">{t('todo_med')}</option>
+              <option value="low">{t('ui_low')}</option>
             </select>
 
             {/* Row actions, revealed on hover */}
@@ -424,18 +426,18 @@ export function TodoBoard({
             <div className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
               {!todo.isCompleted && sortMode === 'manual' && (
                 <>
-                  <button onClick={() => move(todo, -1)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title="Move up">
+                  <button onClick={() => move(todo, -1)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title={t('todo_moveUp')}>
                     <ChevronUp size={14} />
                   </button>
-                  <button onClick={() => move(todo, 1)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title="Move down">
+                  <button onClick={() => move(todo, 1)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title={t('todo_moveDown')}>
                     <ChevronDown size={14} />
                   </button>
                 </>
               )}
-              <button onClick={() => setEditingId(todo.id)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title="Edit">
+              <button onClick={() => setEditingId(todo.id)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title={t('ui_edit')}>
                 <Pencil size={13} />
               </button>
-              <button onClick={() => deleteTodo(todo.id)} className="text-text-subtle hover:text-danger p-0.5 rounded" title="Delete">
+              <button onClick={() => deleteTodo(todo.id)} className="text-text-subtle hover:text-danger p-0.5 rounded" title={t('ui_delete')}>
                 <Trash2 size={13} />
               </button>
             </div>
@@ -533,10 +535,9 @@ export function TodoBoard({
           <button
             onClick={handleAddList}
             className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-text-muted hover:text-primary transition-colors flex-shrink-0"
-            title="New list"
+            title={t('todo_newList')}
           >
-            <Plus size={14} /> List
-          </button>
+            <Plus size={14} />{t('todo_list')}</button>
         )}
       </div>
 
@@ -563,14 +564,12 @@ export function TodoBoard({
                 }}
                 className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >
-                <Pencil size={12} /> Edit
-              </button>
+                <Pencil size={12} />{t('ui_edit')}</button>
               <button
                 onClick={() => { handleDuplicateList(target.id); setListMenu(null) }}
                 className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >
-                <Copy size={12} /> Duplicate
-              </button>
+                <Copy size={12} />{t('ui_duplicate')}</button>
               {lists.length > 1 && (
                 <>
                   <div className="h-px bg-border my-1" />
@@ -578,8 +577,7 @@ export function TodoBoard({
                     onClick={() => { setListMenu(null); handleDeleteList(target.id, target.name) }}
                     className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
                   >
-                    <Trash2 size={12} /> Delete
-                  </button>
+                    <Trash2 size={12} />{t('ui_delete')}</button>
                 </>
               )}
             </div>
@@ -647,26 +645,26 @@ export function TodoBoard({
               value={draft.notes}
               onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
               rows={2}
-              placeholder="Description"
+              placeholder={t('ui_description')}
               className="w-full px-2.5 py-2 rounded-md bg-surface border border-border text-xs text-text-main resize-none focus:outline-none focus:border-primary"
             />
 
             <div className="flex flex-wrap gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-text-subtle">Priority</span>
+                <span className="text-[11px] text-text-subtle">{t('todo_priority')}</span>
                 <select
                   value={draft.priority}
                   onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value as Priority }))}
                   className="px-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-main focus:outline-none focus:border-primary"
                 >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
+                  <option value="low">{t('ui_low')}</option>
+                  <option value="medium">{t('ui_medium')}</option>
+                  <option value="high">{t('ui_high')}</option>
                 </select>
               </label>
 
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-text-subtle">Do date</span>
+                <span className="text-[11px] text-text-subtle">{t('todo_doDate')}</span>
                 <input
                   type="date"
                   value={draft.doDate}
@@ -676,7 +674,7 @@ export function TodoBoard({
               </label>
 
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-text-subtle">Due date</span>
+                <span className="text-[11px] text-text-subtle">{t('todo_dueDate')}</span>
                 <input
                   type="date"
                   value={draft.dueDate}
@@ -698,9 +696,7 @@ export function TodoBoard({
                 <button
                   onClick={() => setDraft(emptyDraft)}
                   className="text-[11px] text-text-muted hover:text-text-main transition-colors"
-                >
-                  Clear
-                </button>
+                >{t('ui_clear')}</button>
               )}
             </div>
           </div>
@@ -726,7 +722,7 @@ export function TodoBoard({
       {listTodos.length > 0 && (
         <div className="flex items-center justify-between gap-3 mb-3 text-xs">
           <div className="flex items-center gap-1.5">
-            <span className="text-text-subtle">Sort</span>
+            <span className="text-text-subtle">{t('todo_sort')}</span>
             {(['manual', 'priority', 'doDate', 'dueDate'] as SortMode[]).map((mode) => (
               <button
                 key={mode}
@@ -748,7 +744,7 @@ export function TodoBoard({
       {listTodos.length === 0 ? (
         <EmptyState
           icon={ListTodo}
-          title="Nothing in this list yet"
+          title={t('todo_nothingInThisListYet')}
           description={
             emptyDescription ??
             'These todos are for you and the other managers, employees never see them.'

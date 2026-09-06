@@ -20,6 +20,7 @@ import {
   Code, Minus, Undo2, Redo2, Pencil, Trash2, Type,
 } from 'lucide-react'
 import { DrawingPad } from './DrawingPad'
+import { useT } from '../../i18n/useT'
 
 /**
  * The extension set. Kept here rather than inline so the editor and any
@@ -77,6 +78,7 @@ function Divider() {
 
 /** The formatting bar. Everything the iPhone Notes app offers, and tables. */
 function Toolbar({ editor, onDraw }: { editor: Editor; onDraw: () => void }) {
+  const { t } = useT()
   // Subscribing to the editor's transactions is what keeps the active states
   // honest — without it the buttons never light up as the caret moves.
   const [, force] = useState(0)
@@ -103,10 +105,10 @@ function Toolbar({ editor, onDraw }: { editor: Editor; onDraw: () => void }) {
 
   return (
     <div className="flex items-center gap-0.5 flex-wrap p-2 border-b border-border bg-surface sticky top-0 z-10">
-      <Btn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="Undo">
+      <Btn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title={t('note_undo')}>
         <Undo2 size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="Redo">
+      <Btn onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title={t('note_redo')}>
         <Redo2 size={15} />
       </Btn>
 
@@ -116,71 +118,71 @@ function Toolbar({ editor, onDraw }: { editor: Editor; onDraw: () => void }) {
       <Btn
         onClick={() => editor.chain().focus().setParagraph().run()}
         active={editor.isActive('paragraph')}
-        title="Body text"
+        title={t('note_bodyText')}
       >
         <Type size={15} />
       </Btn>
       <Btn
         onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
         active={editor.isActive('heading', { level: 1 })}
-        title="Title"
+        title={t('ui_title')}
       >
         <Heading1 size={15} />
       </Btn>
       <Btn
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
         active={editor.isActive('heading', { level: 2 })}
-        title="Heading"
+        title={t('note_heading')}
       >
         <Heading2 size={15} />
       </Btn>
       <Btn
         onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
         active={editor.isActive('heading', { level: 3 })}
-        title="Subheading"
+        title={t('note_subheading')}
       >
         <Heading3 size={15} />
       </Btn>
 
       <Divider />
 
-      <Btn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="Bold">
+      <Btn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title={t('note_bold')}>
         <Bold size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} title="Italic">
+      <Btn onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} title={t('note_italic')}>
         <Italic size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title="Underline">
+      <Btn onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title={t('note_underline')}>
         <UnderlineIcon size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title="Strikethrough">
+      <Btn onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title={t('note_strikethrough')}>
         <Strikethrough size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} title="Highlight">
+      <Btn onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} title={t('note_highlight')}>
         <Highlighter size={15} />
       </Btn>
 
       <Divider />
 
-      <Btn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Bulleted list">
+      <Btn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title={t('note_bulletedList')}>
         <List size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Numbered list">
+      <Btn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title={t('note_numberedList')}>
         <ListOrdered size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive('taskList')} title="Checklist">
+      <Btn onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive('taskList')} title={t('note_checklist')}>
         <ListChecks size={15} />
       </Btn>
 
       <Divider />
 
-      <Btn onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title="Align left">
+      <Btn onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} title={t('note_alignLeft')}>
         <AlignLeft size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title="Centre">
+      <Btn onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} title={t('note_centre')}>
         <AlignCenter size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title="Align right">
+      <Btn onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} title={t('note_alignRight')}>
         <AlignRight size={15} />
       </Btn>
 
@@ -189,23 +191,23 @@ function Toolbar({ editor, onDraw }: { editor: Editor; onDraw: () => void }) {
       <Btn
         onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
         active={editor.isActive('table')}
-        title="Insert table"
+        title={t('note_insertTable')}
       >
         <TableIcon size={15} />
       </Btn>
-      <Btn onClick={onDraw} title="Add a drawing">
+      <Btn onClick={onDraw} title={t('note_addADrawing')}>
         <Pencil size={15} />
       </Btn>
-      <Btn onClick={addLink} active={editor.isActive('link')} title="Link">
+      <Btn onClick={addLink} active={editor.isActive('link')} title={t('ui_link')}>
         <Link2 size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title="Quote">
+      <Btn onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title={t('note_quote')}>
         <Quote size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive('codeBlock')} title="Code">
+      <Btn onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive('codeBlock')} title={t('note_code')}>
         <Code size={15} />
       </Btn>
-      <Btn onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Divider">
+      <Btn onClick={() => editor.chain().focus().setHorizontalRule().run()} title={t('note_divider')}>
         <Minus size={15} />
       </Btn>
 

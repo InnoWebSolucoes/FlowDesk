@@ -11,6 +11,7 @@ import { ClusterPanel } from './ClusterPanel'
 import { googleEmbedUrl } from './googleDocs'
 import { isNative, dragDocumentOut, copyDocumentFile, prepareDocument } from '../../lib/nativeShare'
 import { ResourceThumbnail } from './ResourceThumbnail'
+import { useT } from '../../i18n/useT'
 
 const ITEM_W = 132
 const THUMB_H = 92
@@ -108,6 +109,7 @@ function spawnPosition(index: number) {
 }
 
 export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }: Props) {
+  const { t } = useT()
   const {
     clusters, items, resourcesLoadedFor, loadResources,
     createCluster, updateCluster, deleteCluster, duplicateCluster,
@@ -1097,8 +1099,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               currentClusterId === null ? 'text-text-main font-medium' : 'text-text-muted hover:text-text-main'
             }`}
           >
-            <Home size={14} /> Resources
-          </button>
+            <Home size={14} />{t('ui_resources')}</button>
           {trail.map((c) => (
             <React.Fragment key={c.id}>
               <ChevronRight size={13} className="text-text-subtle flex-shrink-0" />
@@ -1125,14 +1126,14 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 if (e.key === 'Escape') setQuery('')
                 if (e.key === 'Enter' && searchResults?.[0]) goToResult(searchResults[0])
               }}
-              placeholder="Search resources…"
+              placeholder={t('res_searchResources')}
               className="w-40 sm:w-52 pl-7 pr-6 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-text-main focus:outline-none focus:border-primary"
             />
             {query && (
               <button
                 onClick={() => setQuery('')}
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-subtle hover:text-text-main"
-                title="Clear"
+                title={t('ui_clear')}
               >
                 <X size={12} />
               </button>
@@ -1142,7 +1143,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             {searchResults && (
               <div className="absolute top-full right-0 mt-1 w-80 max-h-72 overflow-y-auto bg-surface border border-border rounded-lg shadow-xl z-40">
                 {searchResults.length === 0 ? (
-                  <p className="text-text-subtle text-xs text-center py-6">No matches.</p>
+                  <p className="text-text-subtle text-xs text-center py-6">{t('res_noMatches')}</p>
                 ) : (
                   searchResults.map((r) => (
                     <button
@@ -1170,20 +1171,20 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
 
           <div className="w-px h-5 bg-border mx-0.5" />
 
-          <button onClick={() => zoomBy(1 / 1.25)} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title="Zoom out">
+          <button onClick={() => zoomBy(1 / 1.25)} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title={t('res_zoomOut')}>
             <ZoomOut size={15} />
           </button>
-          <button onClick={() => zoomBy(1.25)} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title="Zoom in">
+          <button onClick={() => zoomBy(1.25)} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title={t('res_zoomIn')}>
             <ZoomIn size={15} />
           </button>
-          <button onClick={resetView} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title="Reset view">
+          <button onClick={resetView} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title={t('res_resetView')}>
             <Maximize2 size={15} />
           </button>
           {currentClusterId && (
             <button
               onClick={exitCluster}
               className="p-1.5 rounded-md text-text-muted hover:bg-surface-2"
-              title="Leave cluster (or just zoom out)"
+              title={t('res_leaveClusterOrJustZoomOut')}
             >
               <CornerLeftUp size={15} />
             </button>
@@ -1194,14 +1195,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
           <button
             onClick={() => setLinkDraft({ url: '', title: '' })}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:bg-surface-2"
-            title="New link-only item"
+            title={t('res_newLinkOnlyItem')}
           >
-            <Link2 size={14} /> Link
-          </button>
+            <Link2 size={14} />{t('ui_link')}</button>
           <label className="cursor-pointer">
             <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors">
-              <Plus size={14} /> Upload
-            </span>
+              <Plus size={14} />{t('res_upload')}</span>
             <input type="file" multiple className="hidden" onChange={handleAddFiles} />
           </label>
         </div>
@@ -1317,7 +1316,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                         setRenameValue(cluster.title)
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
-                      title="Click to rename"
+                      title={t('res_clickToRename')}
                       className="text-text-main font-semibold px-2.5 py-1 rounded-lg bg-surface/85 backdrop-blur-sm border border-border shadow-sm cursor-text hover:border-primary/50 transition-colors"
                       style={{ fontSize: 15 }}
                     >
@@ -1616,7 +1615,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); openItem(item) }}
                     className="absolute top-1 right-1 pointer-events-auto opacity-0 group-hover:opacity-100 focus:opacity-100 bg-surface/90 border border-border rounded-md p-1 text-text-muted hover:text-primary transition-opacity"
-                    title="Open the file"
+                    title={t('res_openTheFile')}
                   >
                     <ExternalLink size={12} />
                   </button>
@@ -1657,9 +1656,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               <p className="text-text-muted text-sm">
                 {currentClusterId ? 'This cluster is empty.' : 'No resources yet.'}
               </p>
-              <p className="text-text-subtle text-xs mt-1">
-                Drop files here, add links, or create a cluster to group them.
-              </p>
+              <p className="text-text-subtle text-xs mt-1">{t('res_dropFilesHereAddLinksOr')}</p>
             </div>
           </div>
         )}
@@ -1724,15 +1721,11 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               <button
                 onClick={act(() => enterCluster(target))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-              >
-                Open
-              </button>
+              >{t('ui_open')}</button>
               <button
                 onClick={act(() => setDetailClusterId(target.id))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-              >
-                Details and sharing…
-              </button>
+              >{t('res_detailsAndSharing')}</button>
               {(() => {
                 const children = clusters.filter((c) => c.parentClusterId === target.id)
                 if (children.length === 0) return null
@@ -1773,17 +1766,13 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               <button
                 onClick={act(() => duplicateCluster(target.id))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-                title="Copies the cluster and its nesting; the documents are tagged into the copy, not duplicated"
-              >
-                Duplicate
-              </button>
+                title={t('res_copiesTheClusterAndItsNesting')}
+              >{t('ui_duplicate')}</button>
               <div className="h-px bg-border my-1" />
               <button
                 onClick={act(() => handleDeleteCluster(target))}
                 className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
-              >
-                Delete
-              </button>
+              >{t('ui_delete')}</button>
             </div>
           </>
         )
@@ -1817,21 +1806,15 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
               <button
                 onClick={act(() => bgUploadRef.current?.click())}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-              >
-                Upload files
-              </button>
+              >{t('res_uploadFiles')}</button>
               <button
                 onClick={act(() => setLinkDraft({ url: '', title: '' }))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-              >
-                Add link
-              </button>
+              >{t('ui_addLink')}</button>
               <button
                 onClick={act(() => handleAddCluster(bgMenu.world))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-              >
-                Create cluster
-              </button>
+              >{t('res_createCluster')}</button>
 
               {count > 0 && (
                 <>
@@ -1839,38 +1822,28 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                   <button
                     onClick={act(bulkDuplicate)}
                     className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-                    title="A separate copy of each, beside the original"
-                  >
-                    Duplicate
-                  </button>
+                    title={t('res_aSeparateCopyOfEachBeside')}
+                  >{t('ui_duplicate')}</button>
                   <button
                     onClick={act(() => bulkIntoNewCluster(bgMenu.world, false))}
                     className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-                  >
-                    Move to new cluster
-                  </button>
+                  >{t('res_moveToNewCluster')}</button>
                   <button
                     onClick={act(() => bulkIntoNewCluster(bgMenu.world, true))}
                     className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-                    title="They stay here as well as appearing in the new cluster"
-                  >
-                    Duplicate into new cluster
-                  </button>
+                    title={t('res_theyStayHereAsWellAs')}
+                  >{t('res_duplicateIntoNewCluster')}</button>
                   <div className="h-px bg-border my-1" />
                   <button
                     onClick={act(bulkUntag)}
                     className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
                     title={`Removes them from ${where} only, they stay everywhere else`}
-                  >
-                    Remove
-                  </button>
+                  >{t('ui_remove')}</button>
                   <button
                     onClick={act(bulkDelete)}
                     className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
-                    title="Deletes the files from every location, permanently"
-                  >
-                    Delete
-                  </button>
+                    title={t('res_deletesTheFilesFromEveryLocation')}
+                  >{t('ui_delete')}</button>
                 </>
               )}
             </div>
@@ -1920,19 +1893,15 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                     : updateItem(target.id, { showAtTopLevel: false })
                 )}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-                title="Remove from here only; the document stays everywhere else"
-              >
-                Remove
-              </button>
+                title={t('res_removeFromHereOnlyTheDocument')}
+              >{t('ui_remove')}</button>
               <div className="h-px bg-border my-1" />
               <button
                 onClick={act(() => {
                   deleteItem(target.id)
                 })}
                 className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
-              >
-                Delete
-              </button>
+              >{t('ui_delete')}</button>
             </div>
           </>
         )
@@ -1949,15 +1918,13 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-5 py-4 border-b border-border">
-              <h3 className="text-text-main font-semibold text-base">Add a link</h3>
-              <p className="text-text-subtle text-xs">
-                It appears on the canvas like a file. Double-click it to open the page.
-              </p>
+              <h3 className="text-text-main font-semibold text-base">{t('res_addALink')}</h3>
+              <p className="text-text-subtle text-xs">{t('res_itAppearsOnTheCanvasLike')}</p>
             </div>
 
             <div className="p-5 space-y-3">
               <div>
-                <label className="block text-text-muted text-xs mb-1">Address</label>
+                <label className="block text-text-muted text-xs mb-1">{t('res_address')}</label>
                 <input
                   autoFocus
                   value={linkDraft.url}
@@ -1969,12 +1936,12 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 />
               </div>
               <div>
-                <label className="block text-text-muted text-xs mb-1">Name <span className="text-text-subtle">(optional)</span></label>
+                <label className="block text-text-muted text-xs mb-1">{t('ui_name')}<span className="text-text-subtle">(optional)</span></label>
                 <input
                   value={linkDraft.title}
                   onChange={(e) => setLinkDraft({ ...linkDraft, title: e.target.value })}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleCreateLink() }}
-                  placeholder="Taken from the address if left empty"
+                  placeholder={t('res_takenFromTheAddressIfLeft')}
                   className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-text-main outline-none focus:border-primary"
                 />
               </div>
@@ -1985,9 +1952,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 onClick={() => setLinkDraft(null)}
                 disabled={linkBusy}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:bg-surface-2 disabled:opacity-50"
-              >
-                Cancel
-              </button>
+              >{t('ui_cancel')}</button>
               <button
                 onClick={handleCreateLink}
                 disabled={linkBusy || !linkDraft.url.trim()}

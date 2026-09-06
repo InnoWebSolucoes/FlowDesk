@@ -9,6 +9,7 @@ import { useAuthStore } from '../../../store/authStore'
 import { useProjectAdminStore } from '../../../store/projectAdminStore'
 import { EmptyState } from '../../../components/shared/EmptyState'
 import { getTasksDueOnDate } from '../../../utils/taskScheduler'
+import { useT } from '../../../i18n/useT'
 
 interface Ctx { project: Project }
 
@@ -23,6 +24,7 @@ interface FormState {
 const emptyForm: FormState = { name: '', email: '', password: '', jobTitle: '', department: '' }
 
 export function ProjectEmployees() {
+  const { t } = useT()
   const { project } = useOutletContext<Ctx>()
   const { employees, createEmployee, deleteEmployee, addToProject, removeFromProject } = useEmployeeStore()
   const { currentUser } = useAuthStore()
@@ -88,15 +90,13 @@ export function ProjectEmployees() {
           onClick={() => setShowAssign(true)}
           className="flex items-center gap-1.5 border border-border text-text-muted text-sm font-medium px-4 py-2 rounded-lg hover:bg-surface-2 transition-colors"
         >
-          <UserPlus size={15} /> Assign existing
-        </button>
+          <UserPlus size={15} />{t('proj_assignExisting')}</button>
       )}
       <button
         onClick={() => { setForm(emptyForm); setError(''); setShowForm(true) }}
         className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors"
       >
-        <Plus size={15} /> Add employee
-      </button>
+        <Plus size={15} />{t('proj_addEmployee')}</button>
     </div>
   )
 
@@ -109,7 +109,7 @@ export function ProjectEmployees() {
       {members.length === 0 ? (
         <EmptyState
           icon={Users}
-          title="No employees on this project"
+          title={t('proj_noEmployeesOnThisProject')}
           description="Add a new employee, or assign someone who isn't on a project yet."
           action={addButton}
         />
@@ -158,14 +158,14 @@ export function ProjectEmployees() {
                     <button
                       onClick={() => removeFromProject(emp.id, project.id)}
                       className="text-text-subtle hover:text-warning transition-colors p-1 rounded"
-                      title="Remove from this project (keeps the account)"
+                      title={t('proj_removeFromThisProjectKeepsThe')}
                     >
                       <LogOut size={14} />
                     </button>
                     <button
                       onClick={() => setPendingDelete(emp)}
                       className="text-text-subtle hover:text-danger transition-colors p-1 rounded"
-                      title="Delete employee"
+                      title={t('proj_deleteEmployee')}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -174,7 +174,7 @@ export function ProjectEmployees() {
 
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-text-muted text-xs">Today</span>
+                    <span className="text-text-muted text-xs">{t('ui_today')}</span>
                     <span className="text-text-main text-xs font-medium">{doneToday}/{dueTasks.length}</span>
                   </div>
                   <div className="w-full bg-surface-2 rounded-full h-2">
@@ -194,9 +194,7 @@ export function ProjectEmployees() {
                 <Link
                   to={`/admin/projects/${project.id}/employees/team/${emp.id}`}
                   className="w-full text-center text-sm font-medium text-primary border border-primary/30 rounded-lg py-2 hover:bg-primary-light transition-colors"
-                >
-                  View profile
-                </Link>
+                >{t('proj_viewProfile')}</Link>
               </div>
             )
           })}
@@ -290,22 +288,16 @@ export function ProjectEmployees() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setPendingDelete(null)}>
           <div className="bg-surface rounded-xl border border-border w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-text-main font-semibold text-base mb-2">Delete {pendingDelete.name}?</h3>
-            <p className="text-text-muted text-sm mb-4">
-              This permanently deletes their account and history. This cannot be undone.
-            </p>
+            <p className="text-text-muted text-sm mb-4">{t('proj_thisPermanentlyDeletesTheirAccount')}</p>
             <div className="flex gap-2">
               <button
                 onClick={async () => { await deleteEmployee(pendingDelete.id); setPendingDelete(null) }}
                 className="flex-1 bg-danger text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity"
-              >
-                Delete
-              </button>
+              >{t('ui_delete')}</button>
               <button
                 onClick={() => setPendingDelete(null)}
                 className="flex-1 border border-border text-text-muted text-sm px-4 py-2 rounded-lg hover:bg-surface-2 transition-colors"
-              >
-                Cancel
-              </button>
+              >{t('ui_cancel')}</button>
             </div>
           </div>
         </div>

@@ -8,6 +8,7 @@ import { ResourceItem, ResourceAccess } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { fileKind, FileKindIcon, formatFileSize } from './ResourceThumbnail'
+import { useT } from '../../i18n/useT'
 
 const ACCESS_OPTIONS: {
   value: ResourceAccess
@@ -80,6 +81,7 @@ export function ResourceItemPanel({
   dropActive = false,
   readOnly = false,
 }: Props) {
+  const { t } = useT()
   const {
     updateItem, removeItemFile, deleteItem, setItemLinks, getFileUrl,
     addItemVersion, makeVersionCurrent, deleteItemVersion,
@@ -217,8 +219,7 @@ export function ResourceItemPanel({
             onClick={() => setLinks([...links, { label: '', url: '' }])}
             className="text-xs text-primary hover:underline flex items-center gap-1"
           >
-            <Plus size={12} /> Add link
-          </button>
+            <Plus size={12} />{t('ui_addLink')}</button>
         )}
       </div>
 
@@ -257,7 +258,7 @@ export function ResourceItemPanel({
                   next[idx] = { ...next[idx], label: e.target.value }
                   setLinks(next)
                 }}
-                placeholder="Label (e.g. Google Docs)"
+                placeholder={t('res_labelEGGoogleDocs')}
                 className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-text-main focus:outline-none focus:border-primary"
               />
               <input
@@ -278,7 +279,7 @@ export function ResourceItemPanel({
                   target="_blank"
                   rel="noreferrer"
                   className="text-text-subtle hover:text-primary p-1 rounded"
-                  title="Open"
+                  title={t('ui_open')}
                 >
                   <ExternalLink size={13} />
                 </a>
@@ -286,7 +287,7 @@ export function ResourceItemPanel({
               <button
                 onClick={() => setLinks(links.filter((_, i) => i !== idx))}
                 className="text-text-subtle hover:text-danger p-1 rounded"
-                title="Remove"
+                title={t('ui_remove')}
               >
                 <Trash2 size={13} />
               </button>
@@ -300,7 +301,7 @@ export function ResourceItemPanel({
 
   const fileSection = (
     <section>
-      <label className="block text-xs font-medium text-text-muted mb-2">File</label>
+      <label className="block text-xs font-medium text-text-muted mb-2">{t('res_file')}</label>
       {item.storagePath ? (
         <div className="rounded-lg border border-border overflow-hidden">
           {kind === 'image' && fileUrl && (
@@ -325,7 +326,7 @@ export function ResourceItemPanel({
                   target="_blank"
                   rel="noreferrer"
                   className="text-text-subtle hover:text-primary p-1.5 rounded"
-                  title="Open"
+                  title={t('ui_open')}
                 >
                   <ExternalLink size={14} />
                 </a>
@@ -333,7 +334,7 @@ export function ResourceItemPanel({
                   href={fileUrl}
                   download={item.fileName ?? undefined}
                   className="text-text-subtle hover:text-primary p-1.5 rounded"
-                  title="Download"
+                  title={t('ui_download')}
                 >
                   <Download size={14} />
                 </a>
@@ -360,7 +361,7 @@ export function ResourceItemPanel({
           <button
             onClick={() => removeItemFile(item.id)}
             className="px-3 py-2 rounded-lg border border-border text-xs text-text-muted hover:text-danger hover:border-danger transition-colors"
-            title="Remove file, keep the info"
+            title={t('res_removeFileKeepTheInfo')}
           >
             <Trash2 size={14} />
           </button>
@@ -387,9 +388,7 @@ export function ResourceItemPanel({
     >
       {dropActive && (
         <div className="absolute inset-0 z-10 bg-primary/5 flex items-center justify-center pointer-events-none">
-          <span className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium shadow">
-            Drop to add as the newest version
-          </span>
+          <span className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium shadow">{t('res_dropToAddAsTheNewest')}</span>
         </div>
       )}
       <header className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
@@ -484,9 +483,7 @@ export function ResourceItemPanel({
           {item.access === 'specific' && (
             <div className="mt-2 border border-border rounded-lg p-2 space-y-1 max-h-48 overflow-y-auto">
               {projectPeople.length === 0 ? (
-                <p className="text-[11px] text-text-subtle italic px-1">
-                  Nobody is assigned to this project yet.
-                </p>
+                <p className="text-[11px] text-text-subtle italic px-1">{t('res_nobodyIsAssignedToThisProject')}</p>
               ) : (
                 projectPeople.map((person) => {
                   const checked = accessUsers.includes(person.id)
@@ -531,9 +528,7 @@ export function ResourceItemPanel({
             item.clusterIds.length + (item.showAtTopLevel ? 1 : 0) === 1 ? '' : 's'
           }`}
         >
-          <p className="text-[11px] text-text-subtle mb-2">
-            One document, shown everywhere you tick. It isn't copied.
-          </p>
+          <p className="text-[11px] text-text-subtle mb-2">{t('res_oneDocumentShownEverywhereYouTick')}</p>
           <div className="space-y-1 max-h-44 overflow-y-auto">
             {/* The main space is a destination in its own right, so a document
                 can sit at the top level and inside clusters at the same time. */}
@@ -549,7 +544,7 @@ export function ResourceItemPanel({
             </label>
 
             {projectClusters.length === 0 && (
-              <p className="text-xs text-text-subtle italic">No clusters in this project yet.</p>
+              <p className="text-xs text-text-subtle italic">{t('res_noClustersInThisProjectYet')}</p>
             )}
             {projectClusters.map((c) => {
               const checked = item.clusterIds.includes(c.id)
@@ -589,7 +584,7 @@ export function ResourceItemPanel({
         {/* Metadata */}
         <section className="space-y-3">
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">Title</label>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">{t('ui_title')}</label>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -598,7 +593,7 @@ export function ResourceItemPanel({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">Description</label>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">{t('ui_description')}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -627,14 +622,14 @@ export function ResourceItemPanel({
         <button
           onClick={() => duplicateItem(item.id)}
           className="px-3 py-2 rounded-lg border border-border text-text-muted hover:text-primary hover:border-primary transition-colors"
-          title="Duplicate, a real copy, separate from this one"
+          title={t('res_duplicateARealCopySeparateFrom')}
         >
           <Copy size={15} />
         </button>
         <button
           onClick={handleDelete}
           className="px-3 py-2 rounded-lg border border-border text-text-muted hover:text-danger hover:border-danger transition-colors"
-          title="Delete item"
+          title={t('res_deleteItem')}
         >
           <Trash2 size={15} />
         </button>
@@ -656,9 +651,10 @@ function VersionActions({
   onDelete: () => void
   readOnly?: boolean
 }) {
+  const { t } = useT()
   return (
     <div className="flex items-center gap-0.5 flex-shrink-0">
-      <button onClick={onOpen} className="text-text-subtle hover:text-primary p-1 rounded" title="Open this version">
+      <button onClick={onOpen} className="text-text-subtle hover:text-primary p-1 rounded" title={t('res_openThisVersion')}>
         <ExternalLink size={12} />
       </button>
       {readOnly ? null : (
@@ -666,11 +662,11 @@ function VersionActions({
       <button
         onClick={onRestore}
         className="text-text-subtle hover:text-success p-1 rounded"
-        title="Make this the current version"
+        title={t('res_makeThisTheCurrentVersion')}
       >
         <Check size={13} />
       </button>
-      <button onClick={onDelete} className="text-text-subtle hover:text-danger p-1 rounded" title="Delete this version">
+      <button onClick={onDelete} className="text-text-subtle hover:text-danger p-1 rounded" title={t('res_deleteThisVersion')}>
         <Trash2 size={12} />
       </button>
       </>

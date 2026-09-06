@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { X, Undo2, Eraser, Check } from 'lucide-react'
+import { useT } from '../../i18n/useT'
 
 const COLOURS = ['#18181b', '#dc2626', '#2563eb', '#16a34a', '#ca8a04', '#9333ea']
 const WIDTHS = [2, 4, 8, 16]
@@ -21,6 +22,7 @@ export function DrawingPad({
   onSave: (dataUrl: string) => void
   onCancel: () => void
 }) {
+  const { t } = useT()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const [colour, setColour] = useState(COLOURS[0])
@@ -93,7 +95,7 @@ export function DrawingPad({
     <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
       <div className="bg-surface rounded-xl border border-border w-full max-w-2xl flex flex-col max-h-[90vh]">
         <header className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <span className="text-text-main font-semibold text-sm">Drawing</span>
+          <span className="text-text-main font-semibold text-sm">{t('note_drawing')}</span>
           <button onClick={onCancel} className="text-text-subtle hover:text-text-main p-1 rounded">
             <X size={16} />
           </button>
@@ -137,7 +139,7 @@ export function DrawingPad({
 
           <button
             onClick={() => setErasing((v) => !v)}
-            title="Eraser"
+            title={t('note_eraser')}
             className={`p-1.5 rounded transition-colors ${
               erasing ? 'bg-primary text-white' : 'text-text-muted hover:bg-surface-2'
             }`}
@@ -147,7 +149,7 @@ export function DrawingPad({
           <button
             onClick={() => setStrokes((s) => s.slice(0, -1))}
             disabled={strokes.length === 0}
-            title="Undo stroke"
+            title={t('note_undoStroke')}
             className="p-1.5 rounded text-text-muted hover:bg-surface-2 disabled:opacity-30"
           >
             <Undo2 size={15} />
@@ -171,16 +173,13 @@ export function DrawingPad({
           <button
             onClick={onCancel}
             className="px-3 py-2 rounded-lg border border-border text-text-muted text-sm hover:bg-surface-2 transition-colors"
-          >
-            Cancel
-          </button>
+          >{t('ui_cancel')}</button>
           <button
             onClick={save}
             disabled={strokes.length === 0}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-40 hover:bg-primary-dark transition-colors"
           >
-            <Check size={15} /> Insert
-          </button>
+            <Check size={15} />{t('note_insert')}</button>
         </footer>
       </div>
     </div>

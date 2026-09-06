@@ -10,6 +10,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { ResourceThumbnail, FileKindIcon, kindStyle, fileKind, formatFileSize } from './ResourceThumbnail'
 import { useMarqueeSelect } from './useMarqueeSelect'
 import { isNative, dragDocumentOut, copyDocumentFile, prepareDocument } from '../../lib/nativeShare'
+import { useT } from '../../i18n/useT'
 
 type SortKey = 'name' | 'type' | 'size' | 'modified'
 type ViewMode = 'list' | 'grid'
@@ -77,6 +78,7 @@ export function ResourceFolders({
   canEditItem,
   onOpenCluster,
 }: Props) {
+  const { t } = useT()
   const { clusters, items, moveItem, setItemClusters, deleteItem, duplicateItem, updateItem } = useProjectStore()
   const [mode, setMode] = useState<ViewMode>('list')
   const [query, setQuery] = useState('')
@@ -342,8 +344,7 @@ export function ResourceFolders({
               clusterId === null ? 'text-text-main font-medium' : 'text-text-muted hover:text-text-main'
             }`}
           >
-            <Home size={14} /> Resources
-          </button>
+            <Home size={14} />{t('ui_resources')}</button>
           {trail.map((c) => (
             <React.Fragment key={c.id}>
               <ChevronRight size={13} className="text-text-subtle flex-shrink-0" />
@@ -369,14 +370,14 @@ export function ResourceFolders({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search this folder"
+              placeholder={t('res_searchThisFolder')}
               className="w-40 sm:w-52 pl-7 pr-7 py-1.5 rounded-md bg-surface-2 border border-transparent text-xs text-text-main placeholder:text-text-muted focus:outline-none focus:border-primary focus:bg-surface transition-colors"
             />
             {query && (
               <button
                 onClick={() => setQuery('')}
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted hover:text-text-main transition-colors"
-                title="Clear search"
+                title={t('res_clearSearch')}
               >
                 <X size={12} />
               </button>
@@ -389,7 +390,7 @@ export function ResourceFolders({
                 setSelected(selected.size === files.length ? new Set() : new Set(files.map((f) => f.id)))
               }
               className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors"
-              title="Select files for bulk actions"
+              title={t('res_selectFilesForBulkActions')}
             >
               {selected.size === files.length && files.length > 0
                 ? <CheckSquare size={14} />
@@ -428,40 +429,34 @@ export function ResourceFolders({
             onClick={() => setMovePicker('move')}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:text-text-main hover:bg-surface transition-colors"
           >
-            <FolderInput size={13} /> Move to
-          </button>
+            <FolderInput size={13} />{t('res_moveTo')}</button>
           <button
             onClick={() => setMovePicker('tag')}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:text-text-main hover:bg-surface transition-colors"
-            title="Also show these in another cluster, without moving them"
+            title={t('res_alsoShowTheseInAnotherCluster')}
           >
-            <Tag size={13} /> Add to
-          </button>
+            <Tag size={13} />{t('res_addTo')}</button>
           <button
             onClick={bulkDuplicate}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:text-text-main hover:bg-surface transition-colors"
           >
-            <Copy size={13} /> Duplicate
-          </button>
+            <Copy size={13} />{t('ui_duplicate')}</button>
           <button
             onClick={bulkRemoveFromCluster}
             className="px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:text-text-main hover:bg-surface transition-colors"
-            title="Remove from here only; the documents stay everywhere else"
-          >
-            Remove here
-          </button>
+            title={t('res_removeFromHereOnlyTheDocuments')}
+          >{t('res_removeHere')}</button>
           <button
             onClick={bulkDelete}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-danger hover:bg-surface transition-colors"
           >
-            <Trash2 size={13} /> Delete
-          </button>
+            <Trash2 size={13} />{t('ui_delete')}</button>
           </>
           )}
           <button
             onClick={clearSelection}
             className="text-text-subtle hover:text-text-main p-1 rounded"
-            title="Clear selection"
+            title={t('res_clearSelection')}
           >
             <X size={14} />
           </button>
@@ -541,7 +536,7 @@ export function ResourceFolders({
                 >
                   <Folder size={16} style={{ color: f.color }} className="flex-shrink-0" />
                   <span className="flex-1 text-sm text-text-main truncate">{f.title}</span>
-                  <span className="w-16 flex-shrink-0 text-[11px] text-text-subtle">Folder</span>
+                  <span className="w-16 flex-shrink-0 text-[11px] text-text-subtle">{t('res_folder')}</span>
                   <span className="w-20 flex-shrink-0 text-[11px] text-text-subtle">
                     {n + sub > 0 ? `${n + sub} items` : '-'}
                   </span>
@@ -600,7 +595,7 @@ export function ResourceFolders({
                   <button
                     onClick={(e) => { e.stopPropagation(); onOpenItem(i) }}
                     className="w-8 flex-shrink-0 text-text-subtle hover:text-primary"
-                    title="Open"
+                    title={t('ui_open')}
                   >
                     <ExternalLink size={13} />
                   </button>
@@ -789,9 +784,7 @@ export function ResourceFolders({
               <button
                 onClick={() => setMovePicker(null)}
                 className="px-4 py-2 rounded-lg border border-border text-text-muted text-sm hover:bg-surface-2 transition-colors"
-              >
-                Cancel
-              </button>
+              >{t('ui_cancel')}</button>
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@ import { format, parseISO } from 'date-fns'
 import { Task } from '../../types'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
+import { useT } from '../../i18n/useT'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -47,6 +48,7 @@ export function TaskPeekPanel({
   /** Where this side of the app lives, for the link out to the task manager. */
   basePath?: string
 }) {
+  const { t } = useT()
   const { categories, completionLogs } = useTaskStore()
   const { employees } = useEmployeeStore()
   const navigate = useNavigate()
@@ -90,9 +92,7 @@ export function TaskPeekPanel({
                 {task.priority}
               </span>
               {!task.isActive && (
-                <span className="px-2 py-0.5 rounded-full text-[11px] bg-surface-2 text-text-muted border border-border">
-                  Retired
-                </span>
+                <span className="px-2 py-0.5 rounded-full text-[11px] bg-surface-2 text-text-muted border border-border">{t('cal_retired')}</span>
               )}
             </div>
           </div>
@@ -112,14 +112,14 @@ export function TaskPeekPanel({
           {row(Users, 'Assigned to',
             people.length > 0
               ? people.map((p) => p!.name).join(', ')
-              : <span className="text-text-subtle">Nobody</span>)}
+              : <span className="text-text-subtle">{t('cal_nobody')}</span>)}
 
           {row(Repeat, 'Repeats', frequencyLabel(task.frequency))}
 
           {row(CalendarClock, 'Deadline',
             task.deadline
               ? format(parseISO(task.deadline), 'EEEE d MMMM yyyy')
-              : <span className="text-text-subtle">None</span>)}
+              : <span className="text-text-subtle">{t('cal_none')}</span>)}
 
           {task.schedules.length > 0 && row(CalendarClock, 'Planned for',
             <div className="space-y-0.5">
@@ -133,12 +133,12 @@ export function TaskPeekPanel({
               })}
             </div>)}
 
-          {row(Tag, 'Category', category?.name ?? <span className="text-text-subtle">None</span>)}
+          {row(Tag, 'Category', category?.name ?? <span className="text-text-subtle">{t('cal_none')}</span>)}
 
           {row(Clock, 'Estimated',
             task.estimatedMinutes > 0
               ? `${task.estimatedMinutes} min`
-              : <span className="text-text-subtle">Not estimated</span>)}
+              : <span className="text-text-subtle">{t('cal_notEstimated')}</span>)}
 
           {done.length > 0 && row(CheckCircle2, 'Recently completed',
             <div className="space-y-0.5">
@@ -157,8 +157,7 @@ export function TaskPeekPanel({
             onClick={() => navigate(`${basePath ?? ''}/employees/tasks`)}
             className="mt-4 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-xs text-text-muted hover:border-primary/50 hover:text-text-main transition-colors"
           >
-            <ExternalLink size={13} /> Open in the task manager
-          </button>
+            <ExternalLink size={13} />{t('cal_openInTheTaskManager')}</button>
         </div>
       </div>
     </div>

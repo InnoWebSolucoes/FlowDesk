@@ -17,6 +17,7 @@ import { TaskPeekPanel } from './TaskPeekPanel'
 import {
   KIND_STYLE, LAYERS, Layer, dayKey, dayDate, entryCoversDay,
 } from './calendarShared'
+import { useT } from '../../i18n/useT'
 
 type View = 'day' | 'week' | 'month'
 
@@ -74,6 +75,7 @@ interface CalendarBoardProps {
  * view is the same tool on both sides.
  */
 export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps) {
+  const { t } = useT()
   const {
     todos, todosLoadedFor, loadTodos, updateTodo,
     todoLists,
@@ -428,9 +430,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           <button
             onClick={() => setCursor(new Date())}
             className="ml-1 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-muted hover:bg-surface-2 border border-border"
-          >
-            Today
-          </button>
+          >{t('ui_today')}</button>
           <h2 className="ml-3 text-text-main font-semibold text-base">{title}</h2>
         </div>
 
@@ -457,7 +457,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
                   ? 'border-primary text-primary bg-primary-light'
                   : 'border-border text-text-muted hover:bg-surface-2'
               }`}
-              title="Show or hide types"
+              title={t('cal_showOrHideTypes')}
             >
               <SlidersHorizontal size={13} />
               {hidden.size > 0 ? `${LAYERS.length - hidden.size}/${LAYERS.length}` : 'Filter'}
@@ -474,7 +474,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
                       ? 'bg-primary-light border-primary/30 text-primary'
                       : 'bg-surface border-border text-text-muted hover:text-text-main'
                   }`}
-                  title="Show a colleague's calendar alongside yours"
+                  title={t('cal_showAColleagueSCalendarAlongside')}
                 >
                   <Users size={13} />
                   {overlaid.size > 0 ? `${overlaid.size} shown` : 'Team'}
@@ -484,9 +484,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setTeamOpen(false)} />
                     <div className="absolute right-0 top-full mt-1 z-50 w-56 py-1.5 bg-surface border border-border rounded-lg shadow-xl">
-                      <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-subtle">
-                        Show alongside yours
-                      </p>
+                      <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-subtle">{t('cal_showAlongsideYours')}</p>
                       {employees.length === 0 && (
                         <p className="px-3 py-2 text-xs text-text-subtle">
                           Nobody is on this project yet. Add someone on the Team
@@ -519,9 +517,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
                           <button
                             onClick={() => setOverlaid(new Set())}
                             className="w-full px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface-2"
-                          >
-                            Show only mine
-                          </button>
+                          >{t('cal_showOnlyMine')}</button>
                         </>
                       )}
                     </div>
@@ -556,9 +552,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
                     <button
                       onClick={() => setHidden(new Set())}
                       className="w-full text-left px-3 py-1.5 text-xs text-primary hover:bg-surface-2 border-t border-border mt-1 pt-1.5"
-                    >
-                      Show everything
-                    </button>
+                    >{t('cal_showEverything')}</button>
                   )}
                 </div>
               </>
@@ -679,18 +673,14 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               <button
                 onClick={act(() => (bTodo ? setOpenTodo(bTodo.id) : setOpenEntry(bEntry!.id)))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-              >
-                Details
-              </button>
+              >{t('cal_details')}</button>
 
               {bTodo && (
                 <button
                   onClick={act(() => unscheduleTodo(bTodo.id))}
                   className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-                  title="Takes it off the calendar and back to the unscheduled list; the todo stays"
-                >
-                  Remove
-                </button>
+                  title={t('cal_takesItOffTheCalendarAnd')}
+                >{t('ui_remove')}</button>
               )}
 
               <div className="h-px bg-border my-1" />
@@ -700,9 +690,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
                   else deleteCalendarEntry(bEntry!.id)
                 })}
                 className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
-              >
-                Delete
-              </button>
+              >{t('ui_delete')}</button>
             </div>
           </>
         )
@@ -780,6 +768,7 @@ function DayGrid({
   onDragEntry: (entry: CalendarEntry) => void
   onDragTask: (task: Task, employeeId: string) => void
 }) {
+  const { t } = useT()
   return (
     <div
       className="grid gap-px bg-border rounded-xl overflow-hidden border border-border"
@@ -845,7 +834,7 @@ function DayGrid({
                 />
               ))}
               {blocks.length === 0 && (
-                <p className="text-[11px] text-text-subtle text-center pt-4">Nothing planned</p>
+                <p className="text-[11px] text-text-subtle text-center pt-4">{t('cal_nothingPlanned')}</p>
               )}
             </div>
           </div>
@@ -1079,6 +1068,7 @@ function Unscheduled({
   onDragStart: (id: string, label: string) => void
   onOpen: (id: string) => void
 }) {
+  const { t } = useT()
   // Only the main list, as asked — otherwise every list's backlog piles in here.
   const mainListId = lists[0]?.id ?? null
   const pending = todos.filter(
@@ -1093,20 +1083,18 @@ function Unscheduled({
       }`}
     >
       <h3 className="text-text-main font-medium text-sm flex items-center gap-1.5">
-        <CalendarClock size={14} className="text-text-muted" />
-        Not scheduled
-      </h3>
+        <CalendarClock size={14} className="text-text-muted" />{t('cal_notScheduled')}</h3>
       <p className="text-text-subtle text-[11px] mt-0.5 mb-3">
         {lists[0] ? `From "${lists[0].name}".` : ''} Drag onto a day to set its do
         date, or back here to unschedule it.
       </p>
 
       {dropActive && (
-        <p className="text-[11px] text-primary font-medium mb-2">Drop to unschedule</p>
+        <p className="text-[11px] text-primary font-medium mb-2">{t('cal_dropToUnschedule')}</p>
       )}
 
       {pending.length === 0 ? (
-        <p className="text-xs text-text-subtle italic">Everything has a do date.</p>
+        <p className="text-xs text-text-subtle italic">{t('cal_everythingHasADoDate')}</p>
       ) : (
         <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
           {pending.map((t) => (

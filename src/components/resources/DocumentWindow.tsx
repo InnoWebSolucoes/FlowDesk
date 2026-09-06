@@ -7,6 +7,7 @@ import { ResourceItem } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { fileKind } from './ResourceThumbnail'
 import { googleEmbedUrl } from './googleDocs'
+import { useT } from '../../i18n/useT'
 
 /**
  * A draggable, resizable window that renders a document in place, so opening a
@@ -26,6 +27,7 @@ type Source =
   | { type: 'unsupported'; url: string | null; reason: string }
 
 export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose: () => void }) {
+  const { t } = useT()
   const getFileUrl = useProjectStore((s) => s.getFileUrl)
   const [source, setSource] = useState<Source>({ type: 'loading' })
   const [maximised, setMaximised] = useState(false)
@@ -195,7 +197,7 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
             target="_blank"
             rel="noreferrer"
             className="text-text-subtle hover:text-primary p-1 rounded"
-            title="Open outside FlowDesk"
+            title={t('res_openOutsideFlowdesk')}
           >
             <ExternalLink size={14} />
           </a>
@@ -205,7 +207,7 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
             href={source.url}
             download={item.fileName ?? undefined}
             className="text-text-subtle hover:text-primary p-1 rounded"
-            title="Download"
+            title={t('ui_download')}
           >
             <Download size={14} />
           </a>
@@ -231,7 +233,7 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
         >
           {maximised ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
-        <button onClick={onClose} className="text-text-subtle hover:text-danger p-1 rounded" title="Close">
+        <button onClick={onClose} className="text-text-subtle hover:text-danger p-1 rounded" title={t('ui_close')}>
           <X size={15} />
         </button>
       </header>
@@ -291,9 +293,7 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
                   target="_blank"
                   rel="noreferrer"
                   className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium"
-                >
-                  Open externally
-                </a>
+                >{t('res_openExternally')}</a>
               )}
             </div>
           )}
@@ -307,7 +307,7 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
             document.body.style.userSelect = 'none'
           }}
           className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize hover:bg-primary/30"
-          title="Drag to resize the panel"
+          title={t('res_dragToResizeThePanel')}
         />
       )}
 
@@ -318,7 +318,7 @@ export function DocumentWindow({ item, onClose }: { item: ResourceItem; onClose:
             document.body.style.userSelect = 'none'
           }}
           className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize"
-          title="Resize"
+          title={t('res_resize')}
         />
       )}
     </div>

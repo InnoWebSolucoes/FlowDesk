@@ -5,8 +5,10 @@ import { useProjectStore } from '../../../store/projectStore'
 import { useEmployeeStore } from '../../../store/employeeStore'
 import { useTaskStore } from '../../../store/taskStore'
 import { AssistantLauncher } from '../../../components/shared/Assistant'
+import { useT } from '../../../i18n/useT'
 
 export function ProjectLayout() {
+  const { t } = useT()
   const { projectId } = useParams<{ projectId: string }>()
   const { initialized, getProject } = useProjectStore()
   const setEmployeeScope = useEmployeeStore((s) => s.setProjectScope)
@@ -34,7 +36,7 @@ export function ProjectLayout() {
   // before deciding the project doesn't exist — otherwise a deep link to a
   // project bounces to the index before its data ever arrives.
   if (!initialized) {
-    return <div className="text-text-muted text-sm py-8">Loading project…</div>
+    return <div className="text-text-muted text-sm py-8">{t('proj_loadingProject')}</div>
   }
   if (!project) return <Navigate to="/admin/projects" replace />
 

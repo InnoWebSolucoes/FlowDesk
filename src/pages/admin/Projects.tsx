@@ -6,10 +6,12 @@ import { useEmployeeStore } from '../../store/employeeStore'
 import { useTaskStore } from '../../store/taskStore'
 import { EmptyState } from '../../components/shared/EmptyState'
 import { Project } from '../../types'
+import { useT } from '../../i18n/useT'
 
 const PROJECT_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4']
 
 export function Projects() {
+  const { t } = useT()
   const { projects, createProject, updateProject, deleteProject } = useProjectStore()
   const { employees } = useEmployeeStore()
   const { tasks } = useTaskStore()
@@ -53,8 +55,7 @@ export function Projects() {
       onClick={() => { setName(''); setCompanyName(''); setError(''); setShowForm(true) }}
       className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors"
     >
-      <Plus size={15} /> New project
-    </button>
+      <Plus size={15} />{t('adm_newProject')}</button>
   )
 
   return (
@@ -64,7 +65,7 @@ export function Projects() {
       {active.length === 0 ? (
         <EmptyState
           icon={Building2}
-          title="No projects yet"
+          title={t('adm_noProjectsYet')}
           description="Each project is a company you manage, with its own about page, resources, employees and todo list."
           action={addButton}
         />
@@ -106,7 +107,7 @@ export function Projects() {
                 <div className="flex items-center gap-4 text-xs text-text-subtle">
                   <span className="flex items-center gap-1.5"><Users size={13} /> {memberCount}</span>
                   <span className="flex items-center gap-1.5"><ListTodo size={13} /> {taskCount}</span>
-                  <span className="flex items-center gap-1.5"><FolderOpen size={13} /> Resources</span>
+                  <span className="flex items-center gap-1.5"><FolderOpen size={13} />{t('ui_resources')}</span>
                 </div>
               </Link>
             )
@@ -133,8 +134,7 @@ export function Projects() {
                 onClick={() => { setEditing(target); setMenu(null) }}
                 className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >
-                <Pencil size={12} /> Edit
-              </button>
+                <Pencil size={12} />{t('ui_edit')}</button>
               <div className="h-px bg-border my-1" />
               <button
                 onClick={async () => {
@@ -143,8 +143,7 @@ export function Projects() {
                 }}
                 className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
               >
-                <Trash2 size={12} /> Delete
-              </button>
+                <Trash2 size={12} />{t('ui_delete')}</button>
             </div>
           </>
         )
@@ -166,7 +165,7 @@ export function Projects() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowForm(false)}>
           <div className="bg-surface rounded-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-text-main font-semibold text-lg">New project</h2>
+              <h2 className="text-text-main font-semibold text-lg">{t('adm_newProject')}</h2>
               <button onClick={() => setShowForm(false)} className="text-text-subtle hover:text-text-main p-1">
                 <X size={18} />
               </button>
@@ -174,23 +173,23 @@ export function Projects() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">Project name *</label>
+                <label className="block text-xs font-medium text-text-muted mb-1.5">{t('adm_projectName2')}</label>
                 <input
                   autoFocus
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                  placeholder="e.g. Acme Corp"
+                  placeholder={t('adm_eGAcmeCorp')}
                   className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1.5">Company name</label>
+                <label className="block text-xs font-medium text-text-muted mb-1.5">{t('adm_companyName')}</label>
                 <input
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                  placeholder="Defaults to the project name"
+                  placeholder={t('adm_defaultsToTheProjectName')}
                   className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary"
                 />
               </div>
@@ -208,9 +207,7 @@ export function Projects() {
                 <button
                   onClick={() => setShowForm(false)}
                   className="px-4 py-2 rounded-lg border border-border text-text-muted text-sm hover:bg-surface-2 transition-colors"
-                >
-                  Cancel
-                </button>
+                >{t('ui_cancel')}</button>
               </div>
             </div>
           </div>
@@ -230,6 +227,7 @@ function ProjectEditDialog({
   onClose: () => void
   onSave: (updates: Partial<Project>) => Promise<void>
 }) {
+  const { t } = useT()
   const [name, setName] = useState(project.name)
   const [companyName, setCompanyName] = useState(project.companyName)
   const [color, setColor] = useState(project.color)
@@ -246,7 +244,7 @@ function ProjectEditDialog({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-surface rounded-xl border border-border w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-text-main font-semibold text-lg">Edit project</h2>
+          <h2 className="text-text-main font-semibold text-lg">{t('adm_editProject')}</h2>
           <button onClick={onClose} className="text-text-subtle hover:text-text-main p-1">
             <X size={18} />
           </button>
@@ -254,7 +252,7 @@ function ProjectEditDialog({
 
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">Project name</label>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">{t('adm_projectName')}</label>
             <input
               autoFocus
               value={name}
@@ -264,7 +262,7 @@ function ProjectEditDialog({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">Company name</label>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">{t('adm_companyName')}</label>
             <input
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
@@ -273,7 +271,7 @@ function ProjectEditDialog({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">Colour</label>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">{t('ui_colour')}</label>
             <input
               type="color"
               value={color}
@@ -282,9 +280,7 @@ function ProjectEditDialog({
             />
           </div>
 
-          <p className="text-[11px] text-text-subtle">
-            The description and contact details live in the project's About tab.
-          </p>
+          <p className="text-[11px] text-text-subtle">{t('adm_theDescriptionAndContactDetailsLiv')}</p>
 
           <div className="flex gap-2 pt-1">
             <button
@@ -297,9 +293,7 @@ function ProjectEditDialog({
             <button
               onClick={onClose}
               className="px-4 py-2 rounded-lg border border-border text-text-muted text-sm hover:bg-surface-2 transition-colors"
-            >
-              Cancel
-            </button>
+            >{t('ui_cancel')}</button>
           </div>
         </div>
       </div>

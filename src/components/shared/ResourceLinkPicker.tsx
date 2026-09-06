@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { X, FolderOpen, CheckCircle2, ChevronRight, Home, Search, CornerDownLeft } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { FileKindIcon } from '../resources/ResourceThumbnail'
+import { useT } from '../../i18n/useT'
 
 export interface LinkKey {
   itemId?: string
@@ -30,6 +31,7 @@ export function ResourceLinkPicker({
   onClose: () => void
   onSave: (links: LinkKey[]) => Promise<void>
 }) {
+  const { t } = useT()
   const { clusters, items } = useProjectStore()
   const [selected, setSelected] = useState<LinkKey[]>(initial)
   const [query, setQuery] = useState('')
@@ -119,7 +121,7 @@ export function ResourceLinkPicker({
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search everything in this project…"
+              placeholder={t('ui_searchEverythingInThisProject')}
               className="w-full pl-9 pr-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary"
             />
           </div>
@@ -187,7 +189,7 @@ export function ResourceLinkPicker({
                     setOpenCluster(c.id)
                   }}
                   className="p-2 mr-1 rounded-md text-text-subtle hover:text-primary hover:bg-surface"
-                  title="Open this cluster"
+                  title={t('ui_openThisCluster')}
                 >
                   <ChevronRight size={16} />
                 </button>
@@ -226,9 +228,7 @@ export function ResourceLinkPicker({
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-lg border border-border text-text-muted text-sm hover:bg-surface-2 transition-colors"
-          >
-            Cancel
-          </button>
+          >{t('ui_cancel')}</button>
           <button
             onClick={async () => {
               setSaving(true)

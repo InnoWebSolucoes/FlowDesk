@@ -8,6 +8,7 @@ import { ResourceCluster, ResourceAccess } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { FileKindIcon } from './ResourceThumbnail'
+import { useT } from '../../i18n/useT'
 
 const COLORS = [
   '#6366f1', '#0ea5e9', '#10b981', '#f59e0b',
@@ -65,6 +66,7 @@ export function ClusterPanel({
   onDelete: () => void
   onDuplicate: () => void
 }) {
+  const { t } = useT()
   const { clusters, items, updateCluster, setClusterAccess } = useProjectStore()
   const { allEmployees } = useEmployeeStore()
 
@@ -154,7 +156,7 @@ export function ClusterPanel({
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {/* Name */}
         <section>
-          <label className="block text-xs font-medium text-text-muted mb-1.5">Name</label>
+          <label className="block text-xs font-medium text-text-muted mb-1.5">{t('ui_name')}</label>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -169,7 +171,7 @@ export function ClusterPanel({
 
         {/* Colour */}
         <section>
-          <label className="block text-xs font-medium text-text-muted mb-1.5">Colour</label>
+          <label className="block text-xs font-medium text-text-muted mb-1.5">{t('ui_colour')}</label>
           <div className="flex flex-wrap gap-1.5">
             {COLORS.map((c) => (
               <button
@@ -188,8 +190,7 @@ export function ClusterPanel({
         {/* Access */}
         <section>
           <label className="flex items-center gap-1.5 text-xs font-medium text-text-muted mb-1.5">
-            <Shield size={13} /> Who can open this cluster
-          </label>
+            <Shield size={13} />{t('res_whoCanOpenThisCluster')}</label>
 
           <div className="space-y-1">
             {ACCESS_OPTIONS.map((opt) => {
@@ -232,7 +233,7 @@ export function ClusterPanel({
                   : 'These people can open the cluster and everything inside it.'}
               </p>
               {candidates.length === 0 ? (
-                <p className="text-xs text-text-subtle italic">Nobody is on this project yet.</p>
+                <p className="text-xs text-text-subtle italic">{t('res_nobodyIsOnThisProjectYet')}</p>
               ) : (
                 <div className="space-y-0.5 max-h-44 overflow-y-auto">
                   {candidates.map((emp) => (
@@ -266,8 +267,7 @@ export function ClusterPanel({
           {restrictingAncestor && (
             <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-warning-bg border border-warning/30">
               <Layers size={13} className="text-warning mt-0.5 flex-shrink-0" />
-              <p className="text-[11px] text-warning">
-                This sits inside <strong>{restrictingAncestor.title}</strong>, which is
+              <p className="text-[11px] text-warning">{t('res_thisSitsInside')}<strong>{restrictingAncestor.title}</strong>, which is
                 restricted. Access is inherited, so nobody blocked there can reach this
                 cluster however it is set here.
               </p>
@@ -278,7 +278,7 @@ export function ClusterPanel({
         {/* Where it sits */}
         {ancestors.length > 0 && (
           <section>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">Inside</label>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">{t('res_inside')}</label>
             <div className="flex items-center gap-1 flex-wrap text-[11px] text-text-muted">
               {ancestors.map((a, i) => (
                 <React.Fragment key={a.id}>
@@ -304,7 +304,7 @@ export function ClusterPanel({
           </label>
 
           {children.length === 0 && contents.length === 0 ? (
-            <p className="text-xs text-text-subtle italic">Empty.</p>
+            <p className="text-xs text-text-subtle italic">{t('res_empty')}</p>
           ) : (
             <div className="space-y-1 max-h-56 overflow-y-auto">
               {children.map((c) => (
@@ -348,18 +348,17 @@ export function ClusterPanel({
           onClick={onOpen}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-dark transition-colors"
         >
-          <FolderOpen size={15} /> Open
-        </button>
+          <FolderOpen size={15} />{t('ui_open')}</button>
         <button
           onClick={onDuplicate}
-          title="Duplicate"
+          title={t('ui_duplicate')}
           className="px-3 py-2 rounded-lg border border-border text-text-muted hover:text-primary hover:border-primary transition-colors"
         >
           <Copy size={15} />
         </button>
         <button
           onClick={onDelete}
-          title="Delete cluster"
+          title={t('res_deleteCluster')}
           className="px-3 py-2 rounded-lg border border-border text-text-muted hover:text-danger hover:border-danger transition-colors"
         >
           <Trash2 size={15} />
