@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useMatch, Link, useLocation } from 'react-router-dom'
 import {
   ListTodo, Users, Info, FolderOpen, CalendarDays,
@@ -103,9 +103,6 @@ export function Sidebar() {
   // below runs with the deps it declares, so closing over the flags would use
   // whatever they were on the last route change — stale by the time a tab is
   // clicked, which left the Claude tab open when switching tabs.
-  const dockedRef = useRef({ whatsapp: false, claude: false })
-  dockedRef.current = { whatsapp: whatsappDocked, claude: claudeDocked }
-
   // Always starts collapsed to icons, so the main area opens with the room
   // whatever happened last time. Expanding is one click and lasts as long as
   // you are on the page; it is deliberately not remembered.
@@ -117,9 +114,13 @@ export function Sidebar() {
     setSidebarWidth(collapsed ? 64 : 240)
   }, [collapsed])
 
+  // Unconditional on purpose. Guarding these on a docked flag meant a flag
+  // that had not arrived yet — or that the shell reported differently — left
+  // the view mounted, and it showed as a panel down the edge of the window.
+  // Closing something already closed costs nothing, so nothing is asked.
   const leaveNativeTabs = () => {
-    if (dockedRef.current.whatsapp) setWhatsappTab(false)
-    if (dockedRef.current.claude) setClaudeTab(false)
+    setWhatsappTab(false)
+    setClaudeTab(false)
   }
 
   // Still needed for the ways out that are not a sidebar click: the project
@@ -268,7 +269,7 @@ export function Sidebar() {
               setMobileOpen(false)
               // One native view at a time: leaving the other open docked both
               // and the one behind became a side panel.
-              if (dockedRef.current.claude) setClaudeTab(false)
+              setClaudeTab(false)
               // Always open, never toggle: a tab does not deselect itself when
               // you click it again. You leave by picking another tab.
               setWhatsappTab(true)
@@ -291,7 +292,7 @@ export function Sidebar() {
           <button
             onClick={() => {
               setMobileOpen(false)
-              if (dockedRef.current.whatsapp) setWhatsappTab(false)
+              setWhatsappTab(false)
               setClaudeTab(true)
             }}
             title={mini ? 'Claude' : undefined}

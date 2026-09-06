@@ -34,8 +34,11 @@ export async function requestNotifyPermission() {
 export function notifyDesktop(title: string, body: string, onClick?: () => void) {
   if (!canNotify() || Notification.permission !== 'granted') return
 
-  // A pop-up for something already on screen is just noise.
-  if (typeof document !== 'undefined' && document.visibilityState === 'visible') return
+  // Deliberately not suppressed while the window is visible.
+  // visibilityState is 'visible' whenever the window is not minimised — which
+  // includes sitting behind whatever you are actually working in — so
+  // suppressing on it meant the pop-up almost never appeared. WhatsApp raises
+  // one whether or not its window is on screen, and this matches that.
 
   try {
     const n = new Notification(title, {

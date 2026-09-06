@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import { ChatMessage, Conversation } from '../types'
+import { notifyDesktop, requestNotifyPermission } from '../lib/desktopNotify'
 
 /** Someone you can message. Everyone, managers included. */
 export interface ChatPerson {
@@ -210,6 +211,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     )
 
     if (channel) return
+    requestNotifyPermission()
     channel = supabase
       .channel('chat-live')
       .on(
@@ -237,6 +239,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             .single()
 
           const message = toMessage(full ?? row)
+
+          // Someone else's message, announced whether or not the app is the
+          // window in front. Your own never pops up.
+          const meId = cachedUserId ?? (await me())
+          if (message.authorId !== meId) {
+            const who = get().people.find((p) => p.id === message.authorId)?.name ?? 'New message'
+            notifyDesktop(who, message.body || 'Sent a document')
+          }
           set((s) => {
             // Checked again here, not only above: the fetch between the two is
             // an await, and sendMessage may have added this very message in the
