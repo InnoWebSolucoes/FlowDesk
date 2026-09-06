@@ -1042,23 +1042,25 @@ create policy "conversations_select" on public.conversations
 
 -- Anyone may start a conversation, but only one they are actually part of: a
 -- direct room they are in, or the room for a task they can see.
+-- ─── Fix: starting a conversation ───────────────────────────────────────────
+--
+-- The first version of this policy failed for every direct chat with "new row
+-- violates row-level security policy". Two things were wrong with it.
+--
+-- It referenced `conversations.task_id` inside the WITH CHECK. In an INSERT
+-- policy the row being checked is not reliably addressable by table name, so
+-- that subquery did not see the value being inserted.
+--
+-- And it asked a question it did not need to ask. Who may READ a room is
+-- already decided by can_see_conversation; the insert only has to establish
+-- that you are not creating a room in someone else's name. A task room is
+-- harmless to create — it is the discussion of a task, and reading it is
+-- gated separately — so requiring assignment here bought nothing and was one
+-- more way to be refused.
+
 drop policy if exists "conversations_insert" on public.conversations;
 create policy "conversations_insert" on public.conversations
-  for insert to authenticated with check (
-    created_by = auth.uid()
-    and (
-      kind = 'direct'
-      or (
-        kind = 'task' and (
-          public.is_admin()
-          or exists (
-            select 1 from public.task_assignments ta
-            where ta.task_id = conversations.task_id and ta.employee_id = auth.uid()
-          )
-        )
-      )
-    )
-  );
+  for insert to authenticated with check (created_by = auth.uid());
 
 -- Members touch last_message_at on send, and set the room's cluster the first
 -- time a file goes in. Nothing else about a room is editable.
@@ -1077,17 +1079,21 @@ create policy "conversation_members_select" on public.conversation_members
 
 -- Starting a direct chat means writing both rows — yours and theirs — so this
 -- cannot be limited to your own id.
+--
+-- The bare column, not conversation_members.conversation_id: a qualified
+-- reference in a WITH CHECK does not reliably resolve to the row being
+-- inserted, which is what broke the conversations insert policy above.
 drop policy if exists "conversation_members_insert" on public.conversation_members;
 create policy "conversation_members_insert" on public.conversation_members
   for insert to authenticated with check (
     exists (
       select 1 from public.conversations c
-      where c.id = conversation_members.conversation_id and c.created_by = auth.uid()
+      where c.id = conversation_id and c.created_by = auth.uid()
     )
     -- A task room has no member rows until someone reads it, and the read
     -- marker is written by upsert — so anyone who can see the room must be
     -- able to insert their own marker into it.
-    or public.can_see_conversation(conversation_members.conversation_id)
+    or public.can_see_conversation(conversation_id)
   );
 
 -- Only your own read marker.
@@ -1123,7 +1129,7 @@ create policy "chat_message_items_select" on public.chat_message_items
   for select to authenticated using (
     exists (
       select 1 from public.chat_messages m
-      where m.id = chat_message_items.message_id
+      where m.id = message_id
         and public.can_see_conversation(m.conversation_id)
     )
   );
@@ -1134,13 +1140,13 @@ create policy "chat_message_items_write" on public.chat_message_items
   using (
     exists (
       select 1 from public.chat_messages m
-      where m.id = chat_message_items.message_id and m.author_id = auth.uid()
+      where m.id = message_id and m.author_id = auth.uid()
     )
   )
   with check (
     exists (
       select 1 from public.chat_messages m
-      where m.id = chat_message_items.message_id and m.author_id = auth.uid()
+      where m.id = message_id and m.author_id = auth.uid()
     )
   );
 
