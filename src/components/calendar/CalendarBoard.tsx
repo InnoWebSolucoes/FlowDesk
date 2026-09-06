@@ -74,6 +74,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     todoLists,
     toggleTodo, deleteTodo,
     calendarEntries, calendarLoadedFor, loadCalendar,
+    createTodo, createTodoList,
     createCalendarEntry, updateCalendarEntry, deleteCalendarEntry,
     overlayTodos, loadOverlayTodos,
   } = useProjectStore()
@@ -330,7 +331,31 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   }, [drag, slotAt, overDropOut, updateTodo, updateCalendarEntry, calendarEntries])
 
   /** Click on empty space in a day → a new entry on that day. */
+  /**
+   * Clicking an empty day adds a todo on it, not a busy block: planning work
+   * is what this calendar is for, and a "Busy" entry was almost never what
+   * anyone meant. Blocking time out is still there, on the day's own menu.
+   */
   const createAt = async (day: string) => {
+    // A todo has to live in a list. Falling back to making one beats refusing
+    // the click on a project whose board is still empty.
+    let listId: string | undefined = todoLists[0]?.id
+    if (!listId) {
+      const made = await createTodoList(project.id, 'To do', ownerId)
+      listId = made?.id
+    }
+    if (!listId) return
+
+    const created = await createTodo(
+      project.id,
+      { title: 'New todo', listId, doDate: day },
+      ownerId,
+    )
+    if (created) setOpenTodo(created.id)
+  }
+
+  /** Blocking time out, which the day menu still offers. */
+  const createEntryAt = async (day: string) => {
     const created = await createCalendarEntry({
       projectId: project.id,
       title: 'Busy',
@@ -643,6 +668,13 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
             </div>
           </>
         )
+      })()}
+
+      {openTask && (() => {
+        const t = tasks.find((x) => x.id === openTask)
+        return t ? (
+          <TaskPeekPanel task={t} basePath={basePath} onClose={() => setOpenTask(null)} />
+        ) : null
       })()}
 
       {(todo || entry) && (
