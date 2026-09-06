@@ -84,6 +84,7 @@ alter table public.task_files enable row level security;
 
 -- Seen by whoever the task concerns: the people it is assigned to, and the
 -- managers of its project.
+drop policy if exists "task_files_select" on public.task_files;
 create policy "task_files_select" on public.task_files
   for select to authenticated using (
     public.is_project_admin(public.task_project(task_id))
@@ -94,6 +95,7 @@ create policy "task_files_select" on public.task_files
   );
 
 -- Added by the person doing the work, or by a manager of the project.
+drop policy if exists "task_files_insert" on public.task_files;
 create policy "task_files_insert" on public.task_files
   for insert to authenticated with check (
     uploaded_by = auth.uid()
@@ -107,6 +109,7 @@ create policy "task_files_insert" on public.task_files
   );
 
 -- Removed by whoever put it there, or by a manager.
+drop policy if exists "task_files_delete" on public.task_files;
 create policy "task_files_delete" on public.task_files
   for delete to authenticated using (
     uploaded_by = auth.uid()

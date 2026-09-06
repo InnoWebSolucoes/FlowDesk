@@ -31,6 +31,7 @@ create index if not exists chat_messages_deleted_idx
 drop policy if exists "chat_messages_delete" on public.chat_messages;
 
 -- Only a manager may remove one outright, and only as a last resort.
+drop policy if exists "chat_messages_delete_admin" on public.chat_messages;
 create policy "chat_messages_delete_admin" on public.chat_messages
   for delete to authenticated using (public.is_admin());
 
