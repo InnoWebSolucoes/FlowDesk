@@ -266,6 +266,9 @@ export function Sidebar() {
           <button
             onClick={() => {
               setMobileOpen(false)
+              // One native view at a time: leaving the other open docked both
+              // and the one behind became a side panel.
+              if (dockedRef.current.claude) setClaudeTab(false)
               // Always open, never toggle: a tab does not deselect itself when
               // you click it again. You leave by picking another tab.
               setWhatsappTab(true)
@@ -288,6 +291,7 @@ export function Sidebar() {
           <button
             onClick={() => {
               setMobileOpen(false)
+              if (dockedRef.current.whatsapp) setWhatsappTab(false)
               setClaudeTab(true)
             }}
             title={mini ? 'Claude' : undefined}

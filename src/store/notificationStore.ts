@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import { AppNotification } from '../types'
+import { notifyDesktop, requestNotifyPermission } from '../lib/desktopNotify'
 
 interface NotificationState {
   notifications: AppNotification[]
@@ -57,6 +58,7 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
     // which happens on someone else's machine. Without this a manager would
     // only ever see them by reloading the app.
     if (channel) return
+    requestNotifyPermission()
     channel = supabase
       .channel('notifications-live')
       .on(
@@ -64,13 +66,21 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
         { event: 'INSERT', schema: 'public', table: 'notifications' },
         (payload) => {
           const notif = toNotification(payload.new)
+          const known = get().notifications.some((n) => n.id === notif.id)
           set((s) =>
             // The insert that this client made itself already arrived through
             // addNotification, so drop the echo rather than showing it twice.
-            s.notifications.some((n) => n.id === notif.id)
+            known
               ? s
               : { notifications: [notif, ...s.notifications].slice(0, 100) }
           )
+
+          // A pop-up for anything that arrives while you are elsewhere. A
+          // message especially: it is worth nothing if the other person only
+          // finds it on their next visit.
+          if (!known) {
+            notifyDesktop(notif.title, notif.message)
+          }
         }
       )
       .subscribe()
