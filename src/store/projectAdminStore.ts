@@ -17,6 +17,12 @@ interface ProjectAdminState {
   load: (projectId: string) => Promise<void>
   grant: (projectId: string, userId: string) => Promise<void>
   revoke: (projectId: string, userId: string) => Promise<void>
+  /**
+   * Make someone an admin, or put them back to being an employee. Owner-only:
+   * the users policy refuses it for anyone else, this just keeps the control
+   * out of their way.
+   */
+  setRole: (userId: string, role: 'admin' | 'employee') => Promise<void>
 }
 
 export const useProjectAdminStore = create<ProjectAdminState>()((set, get) => ({
@@ -61,6 +67,19 @@ export const useProjectAdminStore = create<ProjectAdminState>()((set, get) => ({
       throw new Error(error.message)
     }
     await get().load(projectId)
+  },
+
+  setRole: async (userId, role) => {
+    const { error } = await supabase.from('users').update({ role }).eq('id', userId)
+    if (error) {
+      console.error('[projectAdmins] role change failed:', error)
+      throw new Error(error.message)
+    }
+    // Dropping back to employee leaves their grants behind, where they would
+    // silently take effect again if they were ever promoted a second time.
+    if (role === 'employee') {
+      await supabase.from('project_admins').delete().eq('user_id', userId)
+    }
   },
 
   revoke: async (projectId, userId) => {

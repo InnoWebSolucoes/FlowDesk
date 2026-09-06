@@ -24,9 +24,9 @@ const emptyForm: FormState = { name: '', email: '', password: '', jobTitle: '', 
 
 export function ProjectEmployees() {
   const { project } = useOutletContext<Ctx>()
-  const { employees, createEmployee, deleteEmployee, updateEmployee, addToProject } = useEmployeeStore()
+  const { employees, createEmployee, deleteEmployee, updateEmployee, addToProject, removeFromProject } = useEmployeeStore()
   const { currentUser } = useAuthStore()
-  const { byProject, admins: allAdmins, load: loadAdmins, grant, revoke } = useProjectAdminStore()
+  const { byProject, admins: allAdmins, load: loadAdmins, grant, revoke, setRole } = useProjectAdminStore()
   const { tasks, completionLogs } = useTaskStore()
 
   const [showForm, setShowForm] = useState(false)
@@ -144,6 +144,31 @@ export function ProjectEmployees() {
             )}
           </div>
 
+          {/* Every admin, whether or not they run this project — demoting is
+              not a per-project decision, so it lives on its own row. */}
+          {allAdmins.filter((a) => !a.isOwner).length > 0 && (
+            <div className="mt-3 pt-3 border-t border-border">
+              <p className="text-text-subtle text-[11px] mb-2">Admins</p>
+              <div className="flex flex-wrap gap-2">
+                {allAdmins.filter((a) => !a.isOwner).map((a) => (
+                  <span
+                    key={a.id}
+                    className="flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full border border-border text-xs text-text-muted"
+                  >
+                    {a.name}
+                    <button
+                      onClick={() => setRole(a.id, 'employee')}
+                      title={`Make ${a.name} an employee again`}
+                      className="p-0.5 rounded-full hover:text-danger transition-colors"
+                    >
+                      <LogOut size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {grantable.length > 0 && (
             <div className="mt-3 pt-3 border-t border-border">
               <p className="text-text-subtle text-[11px] mb-2">Give access to</p>
@@ -201,8 +226,19 @@ export function ProjectEmployees() {
                     <p className="text-text-subtle text-xs truncate">{emp.department}</p>
                   </div>
                   <div className="flex flex-col gap-1 flex-shrink-0">
+                    {/* Promoting is the owner's call: only they can then grant
+                        the projects a new admin would need. */}
+                    {isOwner && (
+                      <button
+                        onClick={() => setRole(emp.id, 'admin')}
+                        className="text-text-subtle hover:text-primary transition-colors p-1 rounded"
+                        title={`Make ${emp.name} an admin`}
+                      >
+                        <Shield size={14} />
+                      </button>
+                    )}
                     <button
-                      onClick={() => updateEmployee(emp.id, { projectId: null })}
+                      onClick={() => removeFromProject(emp.id, project.id)}
                       className="text-text-subtle hover:text-warning transition-colors p-1 rounded"
                       title="Remove from this project (keeps the account)"
                     >
