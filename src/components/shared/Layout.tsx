@@ -46,7 +46,10 @@ export function Layout() {
           {/* Capped and centred: with the sidebar collapsed the window is
               wide enough that a full-bleed row leaves its title at one edge
               and its dates at the other, with nothing in between. */}
-          <div className={`p-6 h-full w-full ${isChat ? '' : 'max-w-[1600px] mx-auto'}`}>
+          {/* No padding for chat rather than padding it cancels with -m-6:
+              h-full measures the padded box, so the negative margin pulled the
+              content up and left the padding showing as a strip underneath. */}
+          <div className={`h-full w-full ${isChat ? '' : 'p-6 max-w-[1600px] mx-auto'}`}>
             <Outlet />
           </div>
         </main>

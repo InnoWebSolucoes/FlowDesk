@@ -333,7 +333,7 @@ export function Chat() {
   )
 
   return (
-    <div className="flex h-full min-h-0 -m-6 bg-bg relative">
+    <div className="flex h-full min-h-0 bg-bg relative">
       {/* Chat failing quietly reads as chat being broken, so whatever went
           wrong says so here rather than only in the console. */}
       {error && (
