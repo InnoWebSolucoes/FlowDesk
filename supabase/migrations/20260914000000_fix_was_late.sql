@@ -20,3 +20,24 @@ select
   count(*) filter (where not was_late) as now_on_time,
   count(*)                             as total
 from public.completion_logs;
+
+
+-- ─── The notifications those completions raised ─────────────────────────────
+--
+-- A notification's words are written once, when the trigger fires, and stored.
+-- Correcting was_late does not go back and rewrite them, so every completion
+-- recorded under the old rule keeps announcing itself as late in the bell for
+-- as long as it is kept. Reword the ones whose completion is no longer late.
+
+update public.notifications n
+set title = 'Task completed',
+    message = replace(n.message, ' (late)', '')
+where n.type = 'task_completed'
+  and n.title = 'Task completed late'
+  and exists (
+    select 1 from public.completion_logs cl
+    where cl.task_id = n.task_id
+      and not cl.was_late
+      -- The completion this notification was raised for: same task, same day.
+      and (cl.completed_at at time zone 'UTC')::date = (n.created_at at time zone 'UTC')::date
+  );
