@@ -89,7 +89,12 @@ export function ResourceItemPanel({
 
   const accessUsers = item.accessUserIds
   const projectPeople = useMemo(
-    () => employees.filter((e) => e.projectId === item.projectId),
+    () =>
+      employees.filter((e) =>
+        e.projectIds?.length
+          ? e.projectIds.includes(item.projectId)
+          : e.projectId === item.projectId,
+      ),
     [employees, item.projectId],
   )
 

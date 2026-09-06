@@ -76,7 +76,14 @@ export function ClusterPanel({
   // Only people on this project can be named: access is scoped to it anyway,
   // so offering anyone else would create rows that never grant anything.
   const candidates = useMemo(
-    () => allEmployees.filter((e) => e.projectId === cluster.projectId),
+    () =>
+      // Membership, not the primary column: someone whose main project is
+      // elsewhere still works here and must be shareable with.
+      allEmployees.filter((e) =>
+        e.projectIds?.length
+          ? e.projectIds.includes(cluster.projectId)
+          : e.projectId === cluster.projectId,
+      ),
     [allEmployees, cluster.projectId],
   )
 

@@ -164,7 +164,6 @@ export function CalendarItemPanel({
             {entry && <span className="flex-1" />}
             <button
               onClick={() => {
-                const label = todo?.title ?? entry?.title
                 if (todo) deleteTodo(todo.id)
                 else deleteCalendarEntry(entry!.id)
                 onClose()
