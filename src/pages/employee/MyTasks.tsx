@@ -92,7 +92,10 @@ function OwedSummary({ label, total, done }: { label: string; total: number; don
 
 export function MyTasks() {
   const { currentUser } = useAuthStore()
-  const { tasks, categories, completionLogs, completeTask, uncompleteTask, isTaskCompleted } = useTaskStore()
+  const {
+    tasks, categories, completionLogs, completeTask, uncompleteTask, isTaskCompleted,
+    isInProgress: isInProgressFn, setInProgress, clearInProgress,
+  } = useTaskStore()
   const { t, dateLocale } = useT()
   const [tab, setTab] = useState<Tab>('today')
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set())
@@ -465,9 +468,12 @@ export function MyTasks() {
                         key={task.id}
                         task={task}
                         isCompleted={isTaskCompleted(task.id, empId, dateStr)}
+                        isInProgress={isInProgressFn(task.id, empId, dateStr)}
                         category={categories.find(c => c.id === task.categoryId)}
                         onComplete={() => completeTask(task.id, empId, dateStr)}
                         onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
+                        onSetInProgress={() => setInProgress(task.id, empId, dateStr)}
+                        onClearInProgress={() => clearInProgress(task.id, empId, dateStr)}
                         currentUserId={empId}
                         dueDate={dateStr}
                         highlighted={highlight.isHighlighted(task.id)}
@@ -531,9 +537,12 @@ export function MyTasks() {
                                 key={task.id}
                                 task={task}
                                 isCompleted={isTaskCompleted(task.id, empId, dateStr)}
+                                isInProgress={isInProgressFn(task.id, empId, dateStr)}
                                 category={categories.find(c => c.id === task.categoryId)}
                                 onComplete={() => completeTask(task.id, empId, dateStr)}
                                 onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
+                                onSetInProgress={() => setInProgress(task.id, empId, dateStr)}
+                                onClearInProgress={() => clearInProgress(task.id, empId, dateStr)}
                                 currentUserId={empId}
                                 dueDate={dateStr}
                                 highlighted={highlight.isHighlighted(task.id)}

@@ -413,12 +413,11 @@ function toggleWhatsapp(force, mode) {
   settings.whatsappOpen = open
   if (open) settings.whatsappMode = want
   // Two docked views cannot share the pane, so opening WhatsApp as a tab
-  // leaves the Claude tab.
+  // leaves the Claude tab. Through setClaudeDocked, not by clearing the flag:
+  // setting it directly skipped restoring the pane and left Claude showing as
+  // a column beside whatever tab you had just picked.
   if (open && want === 'dock' && settings.claudeDocked) {
-    settings.claudeDocked = false
-    if (flowView && !flowView.webContents.isDestroyed()) {
-      flowView.webContents.send('claude:state', { docked: false })
-    }
+    setClaudeDocked(false)
   }
   saveSettings()
 
@@ -456,20 +455,33 @@ function raiseWhatsapp() {
 }
 
 /**
- * Shows or hides Claude filling the FlowDesk pane, for the sidebar tab. Leaving
- * the tab restores whatever the split was before, so the side-by-side column is
- * not lost by visiting the tab.
+ * Shows or hides Claude filling the FlowDesk pane, for the sidebar tab.
+ *
+ * Docking uncollapses the pane, because a docked view that is also collapsed
+ * would show nothing. The catch is what happens on the way out: leaving the
+ * tab used to clear only `claudeDocked`, so the now-uncollapsed pane fell
+ * through to the split layout and Claude reappeared as a column down the side
+ * of the window — which is not a thing anybody asked for by pressing another
+ * tab. Whatever the pane was before docking is remembered and put back.
  */
+let claudeCollapsedBeforeDock = null
+
 function setClaudeDocked(docked) {
   if (!win || win.isDestroyed()) return
   endDrag()
-  settings.claudeDocked = docked
-  // Docking implies Claude is showing; undocking must not leave the pane
-  // collapsed, or leaving the tab would reveal nothing.
+
   if (docked) {
+    if (!settings.claudeDocked) claudeCollapsedBeforeDock = settings.claudeCollapsed
     settings.claudeCollapsed = false
     ensureClaudeLoaded()
+  } else if (settings.claudeDocked) {
+    // Back to how the pane was, and collapsed by default: arriving at another
+    // tab should show that tab, not Claude beside it.
+    settings.claudeCollapsed = claudeCollapsedBeforeDock ?? true
+    claudeCollapsedBeforeDock = null
   }
+
+  settings.claudeDocked = docked
   saveSettings()
 
   // Closing the WhatsApp tab is the shell's job too — two docked views would
