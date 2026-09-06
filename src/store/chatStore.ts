@@ -102,11 +102,27 @@ let channel: ReturnType<typeof supabase.channel> | null = null
  * time a click can happen.
  */
 async function me(): Promise<string | null> {
-  // getSession, not getUser: the session is already in memory, so this cannot
-  // fail on a slow or dropped connection the way a network round-trip can —
-  // and a send must not be lost because the identity lookup timed out.
+  // getSession first: it is already in memory, so it cannot fail on a slow or
+  // dropped connection the way a network round-trip can.
   const { data } = await supabase.auth.getSession()
-  return data.session?.user?.id ?? null
+  const session = data.session
+  if (!session) return null
+
+  // But "there is a session" is not "the database will accept it". Every write
+  // below is checked against auth.uid(), which is read from the token actually
+  // sent — so a token that has expired since it was cached gives a null
+  // auth.uid() and every insert is refused for violating its policy, no matter
+  // how permissive that policy is. Refresh before trusting it.
+  const expiresAt = session.expires_at ?? 0
+  const secondsLeft = expiresAt - Math.floor(Date.now() / 1000)
+  if (secondsLeft > 60) return session.user?.id ?? null
+
+  const { data: refreshed, error } = await supabase.auth.refreshSession()
+  if (error || !refreshed.session) {
+    console.error('[chat] session could not be refreshed:', error?.message)
+    return null
+  }
+  return refreshed.session.user?.id ?? null
 }
 
 /**
@@ -368,8 +384,20 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         .eq('pair_key', key)
         .maybeSingle()
       if (!theirs) {
-        console.error('[chat] could not open a direct chat:', error?.message)
-        set({ error: error?.message ?? 'Could not open that chat.' })
+        // An RLS refusal on this insert has one remaining cause worth naming:
+        // the row was sent with a created_by the database did not agree was
+        // the caller. Report both halves, so the mismatch is visible rather
+        // than being another round of guessing.
+        const { data: check } = await supabase.auth.getSession()
+        console.error('[chat] could not open a direct chat:', error?.message, {
+          sentCreatedBy: userId,
+          sessionUserId: check.session?.user?.id ?? null,
+          tokenExpiresAt: check.session?.expires_at ?? null,
+          now: Math.floor(Date.now() / 1000),
+        })
+        set({
+          error: `${error?.message ?? 'Could not open that chat.'} (as ${userId.slice(0, 8)}…)`,
+        })
         return null
       }
       const conv = toConversation(theirs)
