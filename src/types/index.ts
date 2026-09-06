@@ -443,6 +443,12 @@ export interface AppNotification {
   taskId?: string
   /** The room a chat notification opens. */
   conversationId?: string
+  /**
+   * Who the notification is ABOUT, as against who it is for. A workload alert
+   * goes to the managers but concerns one employee, and this is what lets
+   * opening it land on that person rather than on a list of everything.
+   */
+  subjectUserId?: string
   isRead: boolean
   createdAt: string
   targetUserId: string | null // employee id, or null when targetRole is set

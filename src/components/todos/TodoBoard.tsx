@@ -79,6 +79,7 @@ export function TodoBoard({
   const [draftOpen, setDraftOpen] = useState(false)
   const [draft, setDraft] = useState(emptyDraft)
   const [draftLinking, setDraftLinking] = useState(false)
+  const [error, setError] = useState('')
   const [showCompleted, setShowCompleted] = useState(true)
   const [sortMode, setSortMode] = useState<SortMode>('manual')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -207,6 +208,7 @@ export function TodoBoard({
     if (!currentListId || pendingTitles.length === 0) return
     const details = draftOpen ? draft : emptyDraft
     setNewTitle('')
+    try {
     for (const title of pendingTitles) {
       const created = await createTodo(
         project.id,
@@ -225,6 +227,12 @@ export function TodoBoard({
       if (created && details.links.length > 0) {
         await setTodoLinks(created.id, details.links)
       }
+    }
+    } catch (e) {
+      // createTodo throws on a refused insert; without this the loop dies
+      // mid-batch and the box just empties with nothing added.
+      setError((e as Error).message || 'That could not be added.')
+      return
     }
     setDraft(emptyDraft)
     setDraftOpen(false)
@@ -573,6 +581,13 @@ export function TodoBoard({
           </>
         )
       })()}
+
+      {error && (
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-danger-bg border border-danger/30 text-danger text-xs">
+          {error}
+          <button onClick={() => setError('')} className="ml-auto hover:opacity-70">×</button>
+        </div>
+      )}
 
       {/* Add box: accepts several todos at once, separated by commas or lines */}
       {canEdit && (

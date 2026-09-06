@@ -1448,8 +1448,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
 
     if (error || !data) {
+      // Returning null made a refused insert indistinguishable from a click
+      // that did nothing at all — the caller had no way to say why.
       console.error('[createTodo] failed:', error)
-      return null
+      throw new Error(error?.message ?? 'The todo could not be created.')
     }
     const todo = toTodo(data)
     set((s) => ({ todos: [...s.todos, todo] }))

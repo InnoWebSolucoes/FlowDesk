@@ -117,6 +117,7 @@ export function NotificationBell() {
               type: 'workload_alert',
               title: t('notif_workloadAlert'),
               message: `${emp.name}: ${counts[i]} tasks`,
+              subjectUserId: emp.id,
               targetUserId: null,
               targetRole: 'admin',
             })
@@ -176,10 +177,21 @@ export function NotificationBell() {
     }
 
     if (!notif.taskId) {
-      // Workload and inactivity alerts are about a person, not one task, so
-      // the team list is as specific as this can get.
+      // These are about a person rather than a task. The alert carries who,
+      // so open their profile — the projects index it used to fall back to
+      // said nothing about what had just been clicked.
       if (notif.type === 'workload_alert' || notif.type === 'inactivity_alert') {
-        navigate(role === 'admin' ? '/admin/projects' : '/employee/tasks')
+        if (role !== 'admin') {
+          navigate('/employee/tasks')
+          return
+        }
+        const who = employees.find((e) => e.id === notif.subjectUserId)
+        const project = who?.projectIds?.[0] ?? who?.projectId
+        navigate(
+          who && project
+            ? `/admin/projects/${project}/employees/team/${who.id}`
+            : '/admin/projects',
+        )
       }
       return
     }

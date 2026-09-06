@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
-  Circle, CheckCircle2, Users,
+  Circle, CheckCircle2, Users, X,
 } from 'lucide-react'
 import {
   addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, isSameMonth,
@@ -97,6 +97,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   // A task block used to open nothing: the handler only knew todos and
   // entries, so clicking assigned work silently did nothing at all.
   const [openTask, setOpenTask] = useState<string | null>(null)
+  const [error, setError] = useState('')
   const [drag, setDrag] = useState<DragState | null>(null)
   const [hoverSlot, setHoverSlot] = useState<string | null>(null)
   // Where the pointer is, so the dragged item can follow it. Null until the
@@ -337,21 +338,29 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
    * anyone meant. Blocking time out is still there, on the day's own menu.
    */
   const createAt = async (day: string) => {
-    // A todo has to live in a list. Falling back to making one beats refusing
-    // the click on a project whose board is still empty.
-    let listId: string | undefined = todoLists[0]?.id
-    if (!listId) {
-      const made = await createTodoList(project.id, 'To do', ownerId)
-      listId = made?.id
-    }
-    if (!listId) return
+    setError('')
+    try {
+      // A todo has to live in a list. Falling back to making one beats
+      // refusing the click on a project whose board is still empty.
+      let listId: string | undefined = todoLists[0]?.id
+      if (!listId) {
+        const made = await createTodoList(project.id, 'To do', ownerId)
+        listId = made?.id
+      }
+      if (!listId) {
+        setError('Could not make a list to put this in.')
+        return
+      }
 
-    const created = await createTodo(
-      project.id,
-      { title: 'New todo', listId, doDate: day },
-      ownerId,
-    )
-    if (created) setOpenTodo(created.id)
+      const created = await createTodo(
+        project.id,
+        { title: 'New todo', listId, doDate: day },
+        ownerId,
+      )
+      if (created) setOpenTodo(created.id)
+    } catch (e) {
+      setError((e as Error).message || 'That could not be added.')
+    }
   }
 
   /** Blocking time out, which the day menu still offers. */
@@ -669,6 +678,15 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           </>
         )
       })()}
+
+      {error && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-lg bg-danger-bg border border-danger/30 text-danger text-xs shadow-lg">
+          {error}
+          <button onClick={() => setError('')} className="hover:opacity-70">
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       {openTask && (() => {
         const t = tasks.find((x) => x.id === openTask)
