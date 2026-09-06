@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
-import { TaskSchedule, Task, CompletionLog, Category, TaskComment, TaskAttachment, ActivityLog } from '../types'
+import { TaskSchedule, Task, CompletionLog, Category, TaskComment, TaskAttachment, TaskFile, ActivityLog } from '../types'
 import { getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOfDay } from '../utils/taskScheduler'
 import { format } from 'date-fns'
 
@@ -50,6 +50,13 @@ interface TaskState {
   getTaskComments: (taskId: string) => TaskComment[]
 
   addActivityLog: (log: Omit<ActivityLog, 'id' | 'timestamp'>) => Promise<void>
+
+  /** Files showing the work done, per task and per day it was done. */
+  taskFiles: TaskFile[]
+  loadTaskFiles: (taskId: string) => Promise<void>
+  uploadTaskFile: (taskId: string, dueDate: string | null, file: File) => Promise<void>
+  deleteTaskFile: (id: string) => Promise<void>
+  getTaskFileUrl: (storagePath: string) => Promise<string | null>
   getActivityLogs: (taskId: string) => ActivityLog[]
 
   addCategory: (category: Omit<Category, 'id'>) => Promise<Category>
@@ -82,6 +89,20 @@ function toTask(row: any): Task {
     createdAt: row.created_at,
     createdBy: row.created_by,
     isActive: row.is_active,
+  }
+}
+
+function toTaskFile(row: any): TaskFile {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    dueDate: row.due_date ?? null,
+    name: row.name,
+    type: row.type ?? '',
+    size: row.size ?? 0,
+    storagePath: row.storage_path,
+    uploadedAt: row.uploaded_at,
+    uploadedBy: row.uploaded_by,
   }
 }
 
@@ -512,6 +533,92 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   },
 
   getTaskComments: (taskId) => get().taskComments.filter((c) => c.taskId === taskId),
+
+  taskFiles: [],
+
+  loadTaskFiles: async (taskId) => {
+    const { data, error } = await supabase
+      .from('task_files')
+      .select('*')
+      .eq('task_id', taskId)
+      .order('uploaded_at', { ascending: false })
+
+    if (error) {
+      console.warn('[loadTaskFiles] failed:', error.message)
+      return
+    }
+    set((s) => ({
+      // Replace this task's files rather than appending, or opening the same
+      // task twice would show everything twice.
+      taskFiles: [
+        ...s.taskFiles.filter((f) => f.taskId !== taskId),
+        ...(data ?? []).map(toTaskFile),
+      ],
+    }))
+  },
+
+  uploadTaskFile: async (taskId, dueDate, file) => {
+    const { data: auth } = await supabase.auth.getUser()
+    const uid = auth.user?.id
+    if (!uid) throw new Error('You are not signed in.')
+
+    // Named by time so two files of the same name on the same task do not
+    // overwrite each other.
+    const path = `tasks/${taskId}/${Date.now()}-${file.name}`
+    const { error: upErr } = await supabase.storage
+      .from('attachments')
+      .upload(path, file, { upsert: false })
+    if (upErr) {
+      console.error('[uploadTaskFile] storage failed:', upErr)
+      throw new Error(upErr.message)
+    }
+
+    const { data, error } = await supabase
+      .from('task_files')
+      .insert({
+        task_id: taskId,
+        due_date: dueDate,
+        name: file.name,
+        type: file.type || '',
+        size: file.size,
+        storage_path: path,
+        uploaded_by: uid,
+      })
+      .select()
+      .single()
+
+    if (error || !data) {
+      // The bytes are up but the row is not, which would leave a file nobody
+      // can find. Take it back out rather than leaving litter.
+      await supabase.storage.from('attachments').remove([path])
+      console.error('[uploadTaskFile] failed:', error)
+      throw new Error(error?.message ?? 'The file could not be attached.')
+    }
+
+    set((s) => ({ taskFiles: [toTaskFile(data), ...s.taskFiles] }))
+  },
+
+  deleteTaskFile: async (id) => {
+    const file = get().taskFiles.find((f) => f.id === id)
+    const { error } = await supabase.from('task_files').delete().eq('id', id)
+    if (error) {
+      console.error('[deleteTaskFile] failed:', error)
+      throw new Error(error.message)
+    }
+    if (file) await supabase.storage.from('attachments').remove([file.storagePath])
+    set((s) => ({ taskFiles: s.taskFiles.filter((f) => f.id !== id) }))
+  },
+
+  getTaskFileUrl: async (storagePath) => {
+    const { data, error } = await supabase.storage
+      .from('attachments')
+      .createSignedUrl(storagePath, 60 * 60)
+    if (error) {
+      console.warn('[getTaskFileUrl] failed:', error.message)
+      return null
+    }
+    return data?.signedUrl ?? null
+  },
 
   addActivityLog: async (log) => {
     const { data, error } = await supabase

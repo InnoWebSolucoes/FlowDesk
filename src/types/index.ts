@@ -365,6 +365,23 @@ export interface TaskAttachment {
   uploadedBy: string
 }
 
+/**
+ * A file attached to a task: what the work produced, kept against the task it
+ * was produced for rather than against a comment thread that no longer exists.
+ */
+export interface TaskFile {
+  id: string
+  taskId: string
+  /** Which day's work this is, for a task that comes round again. */
+  dueDate: string | null
+  name: string
+  type: string
+  size: number
+  storagePath: string
+  uploadedAt: string
+  uploadedBy: string
+}
+
 export interface TaskComment {
   id: string
   taskId: string

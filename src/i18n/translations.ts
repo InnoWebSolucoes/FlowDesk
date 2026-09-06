@@ -603,6 +603,16 @@ const en = {
   ui_thinking: 'Thinking…',
   ui_title: 'Title',
   ui_today: 'Today',
+  // Files attached to a task
+  taskfiles_title: 'Work files',
+  taskfiles_hint: 'Attach what the work produced, so it can be seen without being asked for.',
+  taskfiles_add: 'Add files',
+  taskfiles_uploading: 'Uploading…',
+  taskfiles_none: 'Nothing attached yet.',
+  taskfiles_openFile: 'Open this file',
+  taskfiles_couldNotAttach: 'That file could not be attached.',
+  taskfiles_couldNotOpen: 'That file could not be opened.',
+  taskfiles_couldNotRemove: 'That file could not be removed.',
 }
 
 const pt: typeof en = {
@@ -1207,6 +1217,16 @@ const pt: typeof en = {
   ui_thinking: 'A pensar…',
   ui_title: 'Título',
   ui_today: 'Hoje',
+  // Files attached to a task
+  taskfiles_title: 'Ficheiros do trabalho',
+  taskfiles_hint: 'Anexe o que o trabalho produziu, para que possa ser visto sem ser pedido.',
+  taskfiles_add: 'Adicionar ficheiros',
+  taskfiles_uploading: 'A carregar…',
+  taskfiles_none: 'Ainda não há nada anexado.',
+  taskfiles_openFile: 'Abrir este ficheiro',
+  taskfiles_couldNotAttach: 'Não foi possível anexar esse ficheiro.',
+  taskfiles_couldNotOpen: 'Não foi possível abrir esse ficheiro.',
+  taskfiles_couldNotRemove: 'Não foi possível remover esse ficheiro.',
 }
 
 export const translations: Record<Lang, typeof en> = { en, pt }

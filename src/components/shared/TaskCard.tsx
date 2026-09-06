@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock, CheckCircle2, Circle, Timer, MessageSquare } from 'lucide-react'
+import { Clock, CheckCircle2, Circle, Timer, MessageSquare, Paperclip } from 'lucide-react'
 import { Task, Category } from '../../types'
 import { Badge } from './Badge'
 import { useChatStore } from '../../store/chatStore'
@@ -8,6 +8,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useT } from '../../i18n/useT'
 import { differenceInDays, parseISO } from 'date-fns'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
+import { TaskFiles } from './TaskFiles'
 
 interface TaskCardProps {
   task: Task
@@ -91,6 +92,7 @@ export function TaskCard({
 }: TaskCardProps) {
   const [animating, setAnimating] = useState(false)
   const [opening, setOpening] = useState(false)
+  const [showFiles, setShowFiles] = useState(false)
   const { t } = useT()
   const navigate = useNavigate()
   const { currentUser } = useAuthStore()
@@ -230,6 +232,15 @@ export function TaskCard({
               )}
             </div>
 
+            {/* What the work produced, kept against the task. */}
+            <button
+              onClick={() => setShowFiles(true)}
+              title={t('taskfiles_title')}
+              className="flex items-center gap-1 text-xs text-text-subtle hover:text-text-main transition-colors"
+            >
+              <Paperclip size={13} />
+            </button>
+
             {/* The way into this task's discussion, over in chat. */}
             <button
               onClick={openDiscussion}
@@ -244,6 +255,9 @@ export function TaskCard({
         </div>
       </div>
 
+      {showFiles && (
+        <TaskFiles taskId={task.id} dueDate={dueDate ?? null} onClose={() => setShowFiles(false)} />
+      )}
     </div>
   )
 }
