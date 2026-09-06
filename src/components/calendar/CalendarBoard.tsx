@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
-  Circle, CheckCircle2,
+  Circle, CheckCircle2, Users,
 } from 'lucide-react'
 import {
   addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, isSameMonth,
@@ -77,7 +77,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     overlayTodos, loadOverlayTodos,
   } = useProjectStore()
 
-  const { tasks, setTaskDoDate } = useTaskStore()
+  const { tasks } = useTaskStore()
   const { employees } = useEmployeeStore()
 
   // Whose calendars to overlay, beyond your own. Admin-only: a manager needs
@@ -89,6 +89,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   const [cursor, setCursor] = useState(() => new Date())
   const [hidden, setHidden] = useState<Set<Layer>>(new Set())
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [teamOpen, setTeamOpen] = useState(false)
   const [openTodo, setOpenTodo] = useState<string | null>(null)
   const [openEntry, setOpenEntry] = useState<string | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -403,6 +404,67 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               {hidden.size > 0 ? `${LAYERS.length - hidden.size}/${LAYERS.length}` : 'Filter'}
             </button>
 
+            {/* Whose weeks to show alongside your own. This used to live inside
+                the type filter, where nothing suggested the team was in it. */}
+            {canOverlay && employees.length > 0 && (
+              <>
+                <button
+                  onClick={() => setTeamOpen((v) => !v)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+                    overlaid.size > 0
+                      ? 'bg-primary-light border-primary/30 text-primary'
+                      : 'bg-surface border-border text-text-muted hover:text-text-main'
+                  }`}
+                  title="Show a colleague's calendar alongside yours"
+                >
+                  <Users size={13} />
+                  {overlaid.size > 0 ? `${overlaid.size} shown` : 'Team'}
+                </button>
+
+                {teamOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setTeamOpen(false)} />
+                    <div className="absolute right-0 top-full mt-1 z-50 w-56 py-1.5 bg-surface border border-border rounded-lg shadow-xl">
+                      <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-subtle">
+                        Show alongside yours
+                      </p>
+                      <div className="max-h-56 overflow-y-auto">
+                        {employees.map((emp) => (
+                          <button
+                            key={emp.id}
+                            onClick={() =>
+                              setOverlaid((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(emp.id)) next.delete(emp.id)
+                                else next.add(emp.id)
+                                return next
+                              })
+                            }
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-main hover:bg-surface-2"
+                          >
+                            <span className="w-3 h-3 rounded-full bg-primary/70 flex-shrink-0" />
+                            <span className="flex-1 text-left truncate">{emp.name}</span>
+                            {overlaid.has(emp.id) && <Check size={13} className="text-primary" />}
+                          </button>
+                        ))}
+                      </div>
+                      {overlaid.size > 0 && (
+                        <>
+                          <div className="h-px bg-border my-1.5" />
+                          <button
+                            onClick={() => setOverlaid(new Set())}
+                            className="w-full px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface-2"
+                          >
+                            Show only mine
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
             {filtersOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setFiltersOpen(false)} />
@@ -425,46 +487,6 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
                       {visible(l.key) && <Check size={13} className="text-primary" />}
                     </button>
                   ))}
-                  {/* Whose calendars to show alongside your own. A manager
-                      plans against the team's week, so the team has to be
-                      visible in it. */}
-                  {canOverlay && employees.length > 0 && (
-                    <>
-                      <div className="h-px bg-border my-1.5" />
-                      <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-subtle">
-                        Employees
-                      </p>
-                      <div className="max-h-44 overflow-y-auto">
-                        {employees.map((emp) => (
-                          <button
-                            key={emp.id}
-                            onClick={() =>
-                              setOverlaid((prev) => {
-                                const next = new Set(prev)
-                                if (next.has(emp.id)) next.delete(emp.id)
-                                else next.add(emp.id)
-                                return next
-                              })
-                            }
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-main hover:bg-surface-2"
-                          >
-                            <span className="w-3 h-3 rounded-full bg-primary/70 flex-shrink-0" />
-                            <span className="flex-1 text-left truncate">{emp.name}</span>
-                            {overlaid.has(emp.id) && <Check size={13} className="text-primary" />}
-                          </button>
-                        ))}
-                      </div>
-                      {overlaid.size > 0 && (
-                        <button
-                          onClick={() => setOverlaid(new Set())}
-                          className="w-full px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface-2"
-                        >
-                          Clear employees
-                        </button>
-                      )}
-                      <div className="h-px bg-border my-1.5" />
-                    </>
-                  )}
                   {hidden.size > 0 && (
                     <button
                       onClick={() => setHidden(new Set())}

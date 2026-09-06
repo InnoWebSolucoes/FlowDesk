@@ -53,7 +53,12 @@ function toEmployee(row: any): Employee {
 /** Narrow the visible list to one project, so pages reading `employees` are
  *  scoped without each needing to know about projects. */
 function scoped(all: Employee[], projectId: string | null) {
-  return projectId ? all.filter((e) => e.projectId === projectId) : all
+  if (!projectId) return all
+  // Membership decides who is on a project, not the primary column: someone
+  // whose main project is elsewhere still works here and must show up here.
+  return all.filter((e) =>
+    e.projectIds?.length ? e.projectIds.includes(projectId) : e.projectId === projectId,
+  )
 }
 
 export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
