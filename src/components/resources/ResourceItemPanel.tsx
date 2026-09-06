@@ -344,7 +344,7 @@ export function ResourceItemPanel({
         </div>
       ) : (
         <p className="text-xs text-text-subtle italic">
-          No file attached, this is a link. You can attach one if you want the document here too.
+          t('res_noFileAttached')
         </p>
       )}
 
@@ -370,7 +370,7 @@ export function ResourceItemPanel({
       )}
       {!readOnly && item.storagePath && (
         <p className="text-[11px] text-text-subtle mt-1.5">
-          The current file is archived below, and the title, description and links are kept.
+          t('res_currentFileArchived')
         </p>
       )}
     </section>
@@ -453,7 +453,7 @@ export function ResourceItemPanel({
         {!readOnly && (
         <Collapsible
           icon={<Shield size={13} />}
-          label="Who can see this"
+          label={t('res_whoCanSeeThis')}
           summary={
             item.access === 'specific'
               ? `${accessUsers.length} person${accessUsers.length === 1 ? '' : 's'}`
@@ -523,7 +523,7 @@ export function ResourceItemPanel({
         {!readOnly && (
         <Collapsible
           icon={<FolderOpen size={13} />}
-          label="Appears in"
+          label={t('res_appearsIn')}
           summary={`${item.clusterIds.length + (item.showAtTopLevel ? 1 : 0)} place${
             item.clusterIds.length + (item.showAtTopLevel ? 1 : 0) === 1 ? '' : 's'
           }`}

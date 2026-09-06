@@ -29,7 +29,7 @@ export function Projects() {
 
   const handleCreate = async () => {
     if (!name.trim()) {
-      setError('Project name is required.')
+      setError(t('err_projectNameRequired'))
       return
     }
     setSubmitting(true)
@@ -66,7 +66,7 @@ export function Projects() {
         <EmptyState
           icon={Building2}
           title={t('adm_noProjectsYet')}
-          description="Each project is a company you manage, with its own about page, resources, employees and todo list."
+          description={t('adm_projectsHint')}
           action={addButton}
         />
       ) : (

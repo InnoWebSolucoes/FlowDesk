@@ -60,7 +60,7 @@ export function ProjectEmployees() {
   const handleCreate = async () => {
     const { name, email, password, jobTitle, department } = form
     if (!name.trim() || !email.trim() || !password.trim()) {
-      setError('Name, email and password are required.')
+      setError(t('err_nameEmailPassword'))
       return
     }
 
@@ -110,7 +110,7 @@ export function ProjectEmployees() {
         <EmptyState
           icon={Users}
           title={t('proj_noEmployeesOnThisProject')}
-          description="Add a new employee, or assign someone who isn't on a project yet."
+          description={t('proj_addOrAssign')}
           action={addButton}
         />
       ) : (

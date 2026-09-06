@@ -375,7 +375,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
         listId = made?.id
       }
       if (!listId) {
-        setError('Could not make a list to put this in.')
+        setError(t('err_noList'))
         return
       }
 

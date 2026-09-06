@@ -691,7 +691,7 @@ export function ResourceFolders({
                 <MenuItem label="Details" onClick={() => { onSelectItem(menuTarget); setMenu(null) }} />
                 {nativeShare && menuTarget.storagePath && (
                   <MenuItem
-                    label="Copy file"
+                    label={t('res_copyFile')}
                     onClick={async () => {
                       setMenu(null)
                       const res = await copyDocumentFile(menuTarget.storagePath, menuTarget.fileName)

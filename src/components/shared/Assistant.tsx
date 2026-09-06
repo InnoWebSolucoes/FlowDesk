@@ -92,7 +92,7 @@ export function Assistant({ projectId, onClose }: { projectId: string; onClose: 
       // expired one first, so a long chat does not die with "Invalid session"
       // partway through.
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Your session has expired. Please sign in again.')
+      if (!session) throw new Error(t('err_sessionExpired'))
 
       const { data, error: fnErr } = await supabase.functions.invoke('assistant', {
         headers: { Authorization: `Bearer ${session.access_token}` },

@@ -42,7 +42,7 @@ export function ProjectAdmins() {
       <EmptyState
         icon={Shield}
         title={t('proj_onlyTheOwnerCanManageAccess')}
-        description="Ask them to add or remove an admin on this project."
+        description={t('proj_askOwnerForAccess')}
       />
     )
   }

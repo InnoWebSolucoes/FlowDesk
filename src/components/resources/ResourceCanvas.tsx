@@ -1564,7 +1564,7 @@ export function ResourceCanvas({ projectId, clusterId, onNavigate, onOpenItem }:
                 dragDocumentOut(item.storagePath, item.fileName).then((ok) => {
                   if (!ok) {
                     setCopied(null)
-                    alert('The file could not be prepared for dragging. Try "Copy file" instead.')
+                    alert(t('res_couldNotPrepare'))
                   }
                 })
               }}

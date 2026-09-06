@@ -218,7 +218,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
         {todo.isCompleted ? 'Completed' : 'Mark as done'}
       </button>
 
-      <Field label="Description">
+      <Field label={t('cal_descriptionLabel')}>
         <textarea
           value={todo.notes}
           onChange={(e) => updateTodo(todo.id, { notes: e.target.value })}
@@ -229,7 +229,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Do date, when you'll work on it">
+        <Field label={t('cal_doDateLabel')}>
           <input
             type="date"
             value={todo.doDate ?? ''}
@@ -237,7 +237,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
             className={inputClass}
           />
         </Field>
-        <Field label="Deadline">
+        <Field label={t('cal_deadline')}>
           <input
             type="date"
             value={todo.dueDate ?? ''}
@@ -270,7 +270,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Priority">
+        <Field label={t('cal_priorityLabel')}>
           <select
             value={todo.priority}
             onChange={(e) => updateTodo(todo.id, { priority: e.target.value as Priority })}
@@ -281,7 +281,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
             <option value="low">{t('ui_low')}</option>
           </select>
         </Field>
-        <Field label="List">
+        <Field label={t('cal_listLabel')}>
           <select
             value={todo.listId ?? ''}
             onChange={(e) => useProjectStore.getState().moveTodoToList(todo.id, e.target.value)}
@@ -320,7 +320,7 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
 
   return (
     <>
-      <Field label="Type">
+      <Field label={t('cal_typeLabel')}>
         <div className="grid grid-cols-4 gap-1.5">
           {(Object.keys(KIND_STYLE) as CalendarEntryKind[]).map((k) => (
             <button
@@ -343,7 +343,7 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
         </div>
       </Field>
 
-      <Field label="Notes">
+      <Field label={t('cal_notesLabel')}>
         <textarea
           value={entry.notes}
           onChange={(e) => updateCalendarEntry(entry.id, { notes: e.target.value })}
@@ -354,7 +354,7 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="First day">
+        <Field label={t('cal_firstDay')}>
           <input
             type="date"
             value={entry.startsOn}
@@ -362,7 +362,7 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
             className={inputClass}
           />
         </Field>
-        <Field label="Last day">
+        <Field label={t('cal_lastDay')}>
           <input
             type="date"
             value={entry.endsOn}
@@ -372,7 +372,7 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
         </Field>
       </div>
 
-      <Field label="Who can see it">
+      <Field label={t('cal_whoCanSeeIt')}>
         <select
           value={entry.visibility ?? ''}
           onChange={(e) => updateCalendarEntry(entry.id, { visibility: (e.target.value || null) as Visibility | null })}
