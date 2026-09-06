@@ -106,22 +106,12 @@ export function Sidebar() {
   const dockedRef = useRef({ whatsapp: false, claude: false })
   dockedRef.current = { whatsapp: whatsappDocked, claude: claudeDocked }
 
-  // Collapsed to icons only by default, so the main area starts with the room:
-  // the tabs are one click away and the choice is remembered, so anyone who
-  // prefers them open only says so once.
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      const saved = localStorage.getItem('flowdesk.sidebarCollapsed')
-      return saved === null ? true : saved === '1'
-    } catch {
-      return true
-    }
-  })
+  // Always starts collapsed to icons, so the main area opens with the room
+  // whatever happened last time. Expanding is one click and lasts as long as
+  // you are on the page; it is deliberately not remembered.
+  const [collapsed, setCollapsed] = useState(true)
 
   useEffect(() => {
-    try {
-      localStorage.setItem('flowdesk.sidebarCollapsed', collapsed ? '1' : '0')
-    } catch {}
     // The docked native views start where the sidebar ends, so the shell has
     // to be told when that width changes or they would overlap or leave a gap.
     setSidebarWidth(collapsed ? 64 : 240)

@@ -34,8 +34,11 @@ export function Layout() {
           <NotificationBell />
         </header>
         {/* Main content */}
+        {/* h-full on the padding wrapper so a page that wants the whole frame
+            — chat — can ask for it, instead of guessing the header height and
+            leaving a strip of dead space when the guess is wrong. */}
         <main className="flex-1 overflow-y-auto">
-          <div className="p-6">
+          <div className="p-6 h-full">
             <Outlet />
           </div>
         </main>

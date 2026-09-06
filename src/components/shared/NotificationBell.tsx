@@ -192,12 +192,29 @@ export function NotificationBell() {
           navigate('/employee/tasks')
           return
         }
-        const who = employees.find((e) => e.id === notif.subjectUserId)
-        const project = who?.projectIds?.[0] ?? who?.projectId
+        // Alerts raised before subject_user_id existed carry the name only in
+        // their message — "Rafael: 5 tasks" — so fall back to reading it out
+        // rather than sending the reader somewhere unrelated.
+        const named = notif.message.split(':')[0]?.trim().toLowerCase()
+        const who =
+          employees.find((e) => e.id === notif.subjectUserId) ??
+          (named ? employees.find((e) => e.name.toLowerCase() === named) : undefined)
+
+        // Prefer the project being looked at: an alert should not relocate
+        // someone who is already inside a project.
+        const project =
+          activeProjectId ??
+          (who?.projectIds?.length ? who.projectIds[0] : who?.projectId ?? undefined)
+
+        if (!project) {
+          // Nothing better to offer than the picker, and no project to stay in.
+          navigate('/admin/projects')
+          return
+        }
         navigate(
-          who && project
+          who
             ? `/admin/projects/${project}/employees/team/${who.id}`
-            : '/admin/projects',
+            : `/admin/projects/${project}/employees/team`,
         )
       }
       return
