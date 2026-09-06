@@ -3,7 +3,7 @@ import {
   Bell, X, CheckCircle2, AlertTriangle, MessageSquare, Clock, Calendar,
   PlayCircle, RotateCcw, Paperclip,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useMatch, useNavigate } from 'react-router-dom'
 import { useNotificationStore } from '../../store/notificationStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
@@ -42,6 +42,9 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  // Which project the reader is in, so opening a notification does not move
+  // them out of it.
+  const activeProjectId = useMatch('/admin/projects/:projectId/*')?.params.projectId
 
   const userId = currentUser?.id ?? ''
   const role = currentUser?.role ?? 'employee'
@@ -170,9 +173,13 @@ export function NotificationBell() {
     // A message points at its room, not at a page of rows — the room itself is
     // the thing, and chat opens it directly.
     if (notif.conversationId) {
-      navigate(
-        `${role === 'admin' ? '/admin/chat' : '/employee/chat'}?conversation=${notif.conversationId}`
-      )
+      const chatBase =
+        role !== 'admin'
+          ? '/employee/chat'
+          : activeProjectId
+            ? `/admin/projects/${activeProjectId}/chat`
+            : '/admin/chat'
+      navigate(`${chatBase}?conversation=${notif.conversationId}`)
       return
     }
 

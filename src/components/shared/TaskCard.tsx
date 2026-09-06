@@ -111,7 +111,12 @@ export function TaskCard({
     try {
       const conv = await openTaskRoom(task.id, task.projectId)
       if (!conv) return
-      const base = currentUser?.role === 'admin' ? '/admin/chat' : '/employee/chat'
+      // Inside the project the task belongs to, so opening its discussion
+      // does not drop the manager out of the project they were working in.
+      const base =
+        currentUser?.role === 'admin'
+          ? `/admin/projects/${task.projectId}/chat`
+          : '/employee/chat'
       navigate(`${base}?conversation=${conv.id}`)
     } finally {
       setOpening(false)
