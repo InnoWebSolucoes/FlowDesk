@@ -34,6 +34,9 @@ function menuPos(x: number, y: number, rows: number, width = 192) {
 // drag to now that the calendar is day-based.
 type DragState =
   | { kind: 'todo'; id: string; label: string }
+  // A task's do date belongs to the assignment, not the task, so moving one
+  // has to say whose plan is being changed.
+  | { kind: 'task'; id: string; employeeId: string; label: string }
   | { kind: 'entry'; id: string; label: string }
   | { kind: 'unscheduled'; id: string; label: string }
 
@@ -48,6 +51,8 @@ interface Block {
   task?: Task
   /** Whose block this is, when other people's calendars are overlaid. */
   ownerName?: string
+  /** For a task block: whose assignment this is, so it can be rescheduled. */
+  employeeId?: string
 }
 
 interface CalendarBoardProps {
@@ -79,7 +84,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     overlayTodos, loadOverlayTodos,
   } = useProjectStore()
 
-  const { tasks } = useTaskStore()
+  const { tasks, setTaskDoDate } = useTaskStore()
   const { employees } = useEmployeeStore()
 
   // Whose calendars to overlay, beyond your own. Admin-only: a manager needs
@@ -209,6 +214,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
             color: '#6366f1',
             outlined: !planned,
             task,
+            employeeId: empIdForCal,
             ownerName: canOverlay ? who?.name : undefined,
           })
         }
@@ -294,6 +300,9 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       // is how something comes off the calendar without being deleted.
       if (droppedOut) {
         if (drag.kind === 'todo') await updateTodo(drag.id, { doDate: null })
+        else if (drag.kind === 'task') {
+          await setTaskDoDate(drag.id, drag.employeeId, { doDate: null })
+        }
         return
       }
 
@@ -301,6 +310,11 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
 
       if (drag.kind === 'unscheduled' || drag.kind === 'todo') {
         await updateTodo(drag.id, { doDate: day })
+        return
+      }
+
+      if (drag.kind === 'task') {
+        await setTaskDoDate(drag.id, drag.employeeId, { doDate: day })
         return
       }
 
@@ -329,7 +343,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [drag, slotAt, overDropOut, updateTodo, updateCalendarEntry, calendarEntries])
+  }, [drag, slotAt, overDropOut, updateTodo, updateCalendarEntry, setTaskDoDate, calendarEntries])
 
   /** Click on empty space in a day → a new entry on that day. */
   /**
@@ -361,6 +375,13 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     } catch (e) {
       setError((e as Error).message || 'That could not be added.')
     }
+  }
+
+  /** Clicking a date opens that day on its own, which is what someone is
+   *  asking for when they click it in a week or a month. */
+  const openDay = (day: Date) => {
+    setCursor(day)
+    setView('day')
   }
 
   /** Blocking time out, which the day menu still offers. */
@@ -560,11 +581,15 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               onOpenEntry={setOpenEntry}
               onOpenTask={setOpenTask}
               onCreate={createAt}
+              onOpenDay={openDay}
               justDragged={justDragged}
               onToggleDone={toggleTodo}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
+              onDragTask={(t, employeeId) =>
+                setDrag({ kind: 'task', id: t.id, employeeId, label: t.title })
+              }
             />
           ) : (
             <DayGrid
@@ -577,11 +602,15 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               onOpenEntry={setOpenEntry}
               onOpenTask={setOpenTask}
               onCreate={createAt}
+              onOpenDay={openDay}
               justDragged={justDragged}
               onToggleDone={toggleTodo}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
+              onDragTask={(t, employeeId) =>
+                setDrag({ kind: 'task', id: t.id, employeeId, label: t.title })
+              }
             />
           )}
         </div>
@@ -726,11 +755,13 @@ function DayGrid({
   onOpenEntry,
   onOpenTask,
   onCreate,
+  onOpenDay,
   justDragged,
   onToggleDone,
   onBlockContext,
   onDragTodo,
   onDragEntry,
+  onDragTask,
 }: {
   days: Date[]
   today: string
@@ -741,11 +772,13 @@ function DayGrid({
   onOpenEntry: (id: string) => void
   onOpenTask: (id: string) => void
   onCreate: (day: string) => void
+  onOpenDay: (day: Date) => void
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
+  onDragTask: (task: Task, employeeId: string) => void
 }) {
   return (
     <div
@@ -755,7 +788,12 @@ function DayGrid({
       {days.map((day) => {
         const key = dayKey(day)
         return (
-          <div key={`h-${key}`} className="bg-surface-2 px-2 py-2 text-center">
+          <button
+            key={`h-${key}`}
+            onClick={() => onOpenDay(day)}
+            title={`Open ${format(day, 'EEEE d MMMM')}`}
+            className="bg-surface-2 px-2 py-2 text-center hover:bg-surface transition-colors"
+          >
             <p className="text-[11px] text-text-muted">{format(day, 'EEE')}</p>
             <p
               className={`text-sm font-medium mt-0.5 w-6 h-6 mx-auto flex items-center justify-center rounded-full ${
@@ -764,7 +802,7 @@ function DayGrid({
             >
               {format(day, 'd')}
             </p>
-          </div>
+          </button>
         )
       })}
 
@@ -793,7 +831,13 @@ function DayGrid({
                         ? onOpenTask(b.task.id)
                         : onOpenEntry(b.entry!.id)
                   }
-                  onDragStart={() => (b.todo ? onDragTodo(b.todo) : b.entry && onDragEntry(b.entry))}
+                  onDragStart={() =>
+                    b.todo
+                      ? onDragTodo(b.todo)
+                      : b.task && b.employeeId
+                        ? onDragTask(b.task, b.employeeId)
+                        : b.entry && onDragEntry(b.entry)
+                  }
                   onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
                   onContext={(x, y) =>
                     onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
@@ -822,11 +866,13 @@ function MonthGrid({
   onOpenEntry,
   onOpenTask,
   onCreate,
+  onOpenDay,
   justDragged,
   onToggleDone,
   onBlockContext,
   onDragTodo,
   onDragEntry,
+  onDragTask,
 }: {
   days: Date[]
   cursor: Date
@@ -838,11 +884,13 @@ function MonthGrid({
   onOpenEntry: (id: string) => void
   onOpenTask: (id: string) => void
   onCreate: (day: string) => void
+  onOpenDay: (day: Date) => void
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
+  onDragTask: (task: Task, employeeId: string) => void
 }) {
   return (
     <div className="grid grid-cols-7 gap-px bg-border rounded-xl overflow-hidden border border-border">
@@ -867,13 +915,17 @@ function MonthGrid({
             } ${dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''}`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span
-                className={`text-[11px] w-5 h-5 flex items-center justify-center rounded-full ${
-                  key === today ? 'bg-primary text-white font-semibold' : 'text-text-muted'
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpenDay(day) }}
+                title={`Open ${format(day, 'EEEE d MMMM')}`}
+                className={`text-[11px] w-5 h-5 flex items-center justify-center rounded-full transition-colors ${
+                  key === today
+                    ? 'bg-primary text-white font-semibold'
+                    : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
                 }`}
               >
                 {format(day, 'd')}
-              </span>
+              </button>
             </div>
 
             <div className="space-y-1">
@@ -889,7 +941,13 @@ function MonthGrid({
                         ? onOpenTask(b.task.id)
                         : onOpenEntry(b.entry!.id)
                   }
-                  onDragStart={() => (b.todo ? onDragTodo(b.todo) : b.entry && onDragEntry(b.entry))}
+                  onDragStart={() =>
+                    b.todo
+                      ? onDragTodo(b.todo)
+                      : b.task && b.employeeId
+                        ? onDragTask(b.task, b.employeeId)
+                        : b.entry && onDragEntry(b.entry)
+                  }
                   onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
                   onContext={(x, y) =>
                     onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
