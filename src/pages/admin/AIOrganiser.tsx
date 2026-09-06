@@ -43,6 +43,13 @@ export function AIOrganiser() {
   const { employees } = useEmployeeStore()
   // Work is assigned to staff, not to managers.
   const staff = employees.filter((e) => e.role === 'employee')
+
+  // The manager is a name in the list like anyone else. Work assigned to them
+  // becomes a todo on their board rather than an assigned task, because that
+  // is what their board and calendar read — but choosing them is the same act
+  // as choosing anybody.
+  const me = employees.find((e) => e.id === currentUser?.id)
+  const assignable = me ? [...staff, me] : staff
   const { currentUser } = useAuthStore()
   const { todoLists, createTodo, createTodoList } = useProjectStore()
   const { t } = useT()
@@ -64,10 +71,6 @@ export function AIOrganiser() {
 
   const [description, setDescription] = useState('')
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([])
-  // Work for the team becomes assigned tasks; work for the manager becomes
-  // todos on their own board, which is a different table and a different
-  // shape, so it is a choice made before importing rather than after.
-  const [target, setTarget] = useState<'employees' | 'me'>('employees')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [generated, setGenerated] = useState<GeneratedTask[]>([])
@@ -165,10 +168,11 @@ export function AIOrganiser() {
   }
 
   /**
-   * The manager's own board. A todo carries its dates itself and lives in a
-   * list, so the batch lands as todos rather than as assigned tasks.
+   * One item on the manager's own board. Their work is a todo rather than an
+   * assigned task: a task needs somebody to assign it to and lives in another
+   * table, while a todo is what their board and their calendar actually read.
    */
-  const importToMyBoard = async () => {
+  const addToMyBoard = async (gt: GeneratedTask) => {
     let listId: string | undefined = todoLists.find((l) => l.ownerId === null)?.id
     if (!listId) {
       const made = await createTodoList(project.id, 'To do', null)
@@ -176,44 +180,23 @@ export function AIOrganiser() {
     }
     if (!listId) throw new Error(t('ai_errorNoList'))
 
-    for (const gt of generated) {
-      await createTodo(
-        project.id,
-        {
-          title: gt.title,
-          notes: gt.description,
-          listId,
-          priority: gt.priority,
-          dueDate: gt.deadline || null,
-          doDate: gt.doDate || null,
-        },
-        null,
-      )
-    }
+    await createTodo(
+      project.id,
+      {
+        title: gt.title,
+        notes: gt.description,
+        listId,
+        priority: gt.priority,
+        dueDate: gt.deadline || null,
+        doDate: gt.doDate || null,
+      },
+      null,
+    )
   }
 
   const handleImportAll = async () => {
     if (!currentUser) return
     setError('')
-
-    if (target === 'me') {
-      setImporting(true)
-      try {
-        await importToMyBoard()
-      } catch (e: any) {
-        setError(`${t('ai_errorImport')} ${e.message ?? 'Unknown error'}`)
-        return
-      } finally {
-        setImporting(false)
-      }
-      setGenerated([])
-      setExpanded(new Set())
-      setRefinement('')
-      setDescription('')
-      setImported(true)
-      setTimeout(() => setImported(false), 4000)
-      return
-    }
 
     // Nothing can be imported without someone to give it to, and failing
     // silently here read as "the button does nothing".
@@ -228,14 +211,29 @@ export function AIOrganiser() {
     let saved = 0
     setImporting(true)
     try {
-    for (const gt of generated) {
+    for (let gt of generated) {
       // Each task carries its own people now, so a single batch can be split
       // across the team rather than all landing on the same person.
       const assignees = gt._assignedTo?.length ? gt._assignedTo : selectedEmployees
       if (assignees.length === 0) continue
 
+      // The manager's share of the batch goes to their board. A single brief
+      // routinely splits this way — some of it for the team, some of it for
+      // whoever wrote it.
+      if (assignees.includes(currentUser.id)) {
+        await addToMyBoard(gt)
+        saved++
+        // Anyone else on the same item still gets it as an assigned task.
+        const others = assignees.filter((id) => id !== currentUser.id)
+        if (others.length === 0) continue
+        gt = { ...gt, _assignedTo: others }
+      }
+
+      const finalAssignees = gt._assignedTo?.length ? gt._assignedTo : selectedEmployees
+      if (finalAssignees.length === 0) continue
+
       // An employee belongs to exactly one project, so the assignees fix it.
-      const projectId = employees.find(e => e.id === assignees[0])?.projectId
+      const projectId = employees.find(e => e.id === finalAssignees[0])?.projectId
       if (!projectId) continue
 
       const catId = gt._categoryId ?? await resolveCategory(gt.categoryName)
@@ -243,7 +241,7 @@ export function AIOrganiser() {
         projectId,
         title: gt.title,
         description: gt.description,
-        assignedTo: assignees,
+        assignedTo: finalAssignees,
         frequency: gt.frequency,
         categoryId: catId,
         priority: gt.priority,
@@ -252,7 +250,7 @@ export function AIOrganiser() {
         // A do date is per person, so everyone the task goes to gets the
         // same planned day; they can move their own afterwards.
         schedules: gt.doDate
-          ? assignees.map((employeeId) => ({ employeeId, doDate: gt.doDate! }))
+          ? finalAssignees.map((employeeId) => ({ employeeId, doDate: gt.doDate! }))
           : [],
         createdBy: currentUser.id,
         isActive: true,
@@ -327,31 +325,9 @@ export function AIOrganiser() {
           />
 
           <div className="mt-4">
-            <p className="text-text-main text-xs font-medium mb-2">{t('ai_forWhom')}</p>
-            <div className="flex gap-2 mb-3">
-              {(['employees', 'me'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setTarget(k)}
-                  className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                    target === k
-                      ? 'bg-primary text-white border-primary'
-                      : 'bg-surface text-text-muted border-border hover:border-primary/50'
-                  }`}
-                >
-                  {k === 'employees' ? t('ai_forTheTeam') : t('ai_forMyBoard')}
-                </button>
-              ))}
-            </div>
-
-            {target === 'me' && (
-              <p className="text-text-muted text-xs">{t('ai_forMyBoardHint')}</p>
-            )}
-
-            {target === 'employees' && (
+            <p className="text-text-main text-xs font-medium mb-2">{t('ai_assignTo')}</p>
             <div className="flex flex-wrap gap-2">
-              {staff.map(emp => (
+              {assignable.map(emp => (
                 <button
                   key={emp.id}
                   type="button"
@@ -363,13 +339,13 @@ export function AIOrganiser() {
                   }`}
                 >
                   {emp.name}
+                  {emp.id === currentUser?.id && ` · ${t('ai_you')}`}
                 </button>
               ))}
-              {staff.length === 0 && (
+              {assignable.length === 0 && (
                 <p className="text-text-muted text-xs">{t('ai_noEmployees')}</p>
               )}
             </div>
-            )}
           </div>
 
           {error && (

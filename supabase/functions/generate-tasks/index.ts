@@ -21,7 +21,7 @@ const json = (body: unknown, status = 200) =>
 // JSON mode requires the response to be an object, not a bare array, so the
 // tasks come back wrapped and get unwrapped below. The front end still
 // receives a plain array and needs no changes.
-const SYSTEM = `You are a workforce management assistant. The user will describe what they need an employee to do. Return ONLY a valid JSON object of the form {"tasks": [...]} — no markdown, no explanation, no code blocks. Each task object in the array must have these exact fields: title (string), description (string), frequency (object with type being one of 'daily', 'weekly', 'monthly', or 'one-off'; for weekly include days as an array of numbers 0-6 where 1=Mon…5=Fri; for monthly include weekOfMonth 1-4 and dayOfWeek 1-5; for one-off include date as an ISO string), categoryName (string), priority (one of 'low', 'medium', 'high'), estimatedMinutes (number), suggestedAssignees (array of strings — the names of the people this task should go to, chosen from the team list given below; use an empty array if the brief gives no basis to choose), deadline (the hard due date as YYYY-MM-DD, or null when the brief gives none), doDate (the day the work should actually be done as YYYY-MM-DD, or null; never later than deadline). Be thorough — extract every distinct task. When the brief names people or describes roles, route each task to whoever it belongs to rather than assigning everything to everyone. When it gives a date, a deadline or a day, fill deadline and doDate rather than leaving them null. Today's date appears in the user message; resolve anything relative against it. The brief may be written in English or Portuguese; understand either. Whatever language it arrives in, write every title and description in European Portuguese (pt-PT, as spoken in Portugal — not Brazilian), because the people who will read these tasks work in Portuguese. categoryName is Portuguese too. Do not translate people's names.`
+const SYSTEM = `You are a workforce management assistant. The user will describe what they need an employee to do. Return ONLY a valid JSON object of the form {"tasks": [...]} — no markdown, no explanation, no code blocks. Each task object in the array must have these exact fields: title (string), description (string), frequency (object with type being one of 'daily', 'weekly', 'monthly', or 'one-off'; for weekly include days as an array of numbers 0-6 where 1=Mon…5=Fri; for monthly include weekOfMonth 1-4 and dayOfWeek 1-5; for one-off include date as an ISO string), categoryName (string), priority (one of 'low', 'medium', 'high'), estimatedMinutes (number), suggestedAssignees (array of strings — the names of the people this task should go to, chosen from the team list given below; use an empty array if the brief gives no basis to choose), deadline (the hard due date as YYYY-MM-DD, or null when the brief gives none), doDate (the day the work should actually be done as YYYY-MM-DD, or null; never later than deadline). Be thorough — extract every distinct task. When the brief names people or describes roles, route each task to whoever it belongs to rather than assigning everything to everyone. The roster marks who is a manager: work the brief says the writer will do themselves, or that plainly belongs to whoever is running things rather than to staff, goes to the manager by name like any other assignment. When it gives a date, a deadline or a day, fill deadline and doDate rather than leaving them null. Today's date appears in the user message; resolve anything relative against it. The brief may be written in English or Portuguese; understand either. Whatever language it arrives in, write every title and description in European Portuguese (pt-PT, as spoken in Portugal — not Brazilian), because the people who will read these tasks work in Portuguese. categoryName is Portuguese too. Do not translate people's names.`
 
 // Refinement keeps the batch the manager is already looking at and applies
 // their comments to it, so small corrections (a typo, a stray task, a date
@@ -56,20 +56,21 @@ Deno.serve(async (req) => {
     return json({ error: `Invalid session: ${userErr?.message ?? 'no user for this token'}` }, 401)
   }
 
-  // Generating tasks is a manager action, and it spends API credit.
-  const { data: profile } = await db.from('users').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') return json({ error: 'Only managers can generate tasks.' }, 403)
-
-  // The model can only route work to people it knows about, so the team goes
-  // in with the brief. Names only — it never needs ids, and the client matches
-  // them back afterwards.
+  // Managers are in the roster too: work from one brief often splits between
+  // the team and the person writing it, and the model cannot route to anybody
+  // it has not been told about.
   const { data: team } = await db
     .from('users')
-    .select('name, job_title, department')
-    .eq('role', 'employee')
+    .select('name, role, job_title, department')
   const roster = (team ?? [])
-    .map((p: any) =>
-      `- ${p.name}${p.job_title ? ` (${p.job_title}${p.department ? `, ${p.department}` : ''})` : ''}`)
+    .map((p: any) => {
+      const role = p.job_title
+        ? ` (${p.job_title}${p.department ? `, ${p.department}` : ''})`
+        : ''
+      // Marked, so the model can tell whose work is whose when the brief
+      // says "I will do this myself".
+      return `- ${p.name}${role}${p.role === 'admin' ? ' — manager' : ''}`
+    })
     .join('\n')
 
   // Without today's date the model cannot turn "next Friday" or "end of
