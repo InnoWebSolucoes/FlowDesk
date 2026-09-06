@@ -462,23 +462,22 @@ function raiseWhatsapp() {
  * tab used to clear only `claudeDocked`, so the now-uncollapsed pane fell
  * through to the split layout and Claude reappeared as a column down the side
  * of the window — which is not a thing anybody asked for by pressing another
- * tab. Whatever the pane was before docking is remembered and put back.
+ * tab. Leaving the tab now collapses the pane outright.
  */
-let claudeCollapsedBeforeDock = null
-
 function setClaudeDocked(docked) {
   if (!win || win.isDestroyed()) return
   endDrag()
 
   if (docked) {
-    if (!settings.claudeDocked) claudeCollapsedBeforeDock = settings.claudeCollapsed
     settings.claudeCollapsed = false
     ensureClaudeLoaded()
   } else if (settings.claudeDocked) {
-    // Back to how the pane was, and collapsed by default: arriving at another
-    // tab should show that tab, not Claude beside it.
-    settings.claudeCollapsed = claudeCollapsedBeforeDock ?? true
-    claudeCollapsedBeforeDock = null
+    // Always collapsed on the way out. Restoring whatever the pane was before
+    // meant a stored `claudeCollapsed: false` — the old side-by-side layout,
+    // which nobody chose on purpose — put Claude straight back as a column
+    // beside the tab that had just been picked. Leaving the tab means leaving
+    // Claude; the split is still reachable from its own shortcut.
+    settings.claudeCollapsed = true
   }
 
   settings.claudeDocked = docked

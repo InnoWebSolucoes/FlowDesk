@@ -390,7 +390,11 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   completeTask: async (taskId, employeeId, dueDate) => {
     const now = new Date()
     const isoNow = now.toISOString()
-    const wasLate = now.getHours() >= 16
+    // Late means finished after the day it was due, not simply late in the
+    // afternoon: this used to read `getHours() >= 16`, so anything done after
+    // four was marked late even when it was not due until tomorrow.
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const wasLate = !!dueDate && todayKey > dueDate
     const timeOfDay = getTimeOfDay(isoNow)
 
     const { data, error } = await supabase
