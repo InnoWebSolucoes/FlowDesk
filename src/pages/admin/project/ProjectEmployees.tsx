@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import { Users, Plus, Trash2, X, UserPlus, LogOut, Shield } from 'lucide-react'
 import { format } from 'date-fns'
@@ -24,9 +24,9 @@ const emptyForm: FormState = { name: '', email: '', password: '', jobTitle: '', 
 
 export function ProjectEmployees() {
   const { project } = useOutletContext<Ctx>()
-  const { employees, createEmployee, deleteEmployee, updateEmployee, addToProject, removeFromProject } = useEmployeeStore()
+  const { employees, createEmployee, deleteEmployee, addToProject, removeFromProject } = useEmployeeStore()
   const { currentUser } = useAuthStore()
-  const { byProject, admins: allAdmins, load: loadAdmins, grant, revoke, setRole } = useProjectAdminStore()
+  const { setRole } = useProjectAdminStore()
   const { tasks, completionLogs } = useTaskStore()
 
   const [showForm, setShowForm] = useState(false)
@@ -52,9 +52,6 @@ export function ProjectEmployees() {
   // Only the owner hands out admin access; the policy enforces it too, this
   // just keeps the controls out of everyone else's way.
   const isOwner = !!currentUser?.isOwner
-  const projectAdminIds = byProject[project.id] ?? []
-  const admins = allAdmins.filter((u) => projectAdminIds.includes(u.id))
-  const grantable = allAdmins.filter((u) => !u.isOwner && !projectAdminIds.includes(u.id))
   // Anyone not already here can be added, including people who work elsewhere.
   const addable = staff.filter((e) => !isOn(e))
 
@@ -84,10 +81,6 @@ export function ProjectEmployees() {
     setShowForm(false)
   }
 
-  useEffect(() => {
-    if (isOwner) loadAdmins(project.id)
-  }, [isOwner, project.id, loadAdmins])
-
   const addButton = (
     <div className="flex gap-2">
       {addable.length > 0 && (
@@ -113,84 +106,6 @@ export function ProjectEmployees() {
 
       {/* Who may run this project. An admin granted here can do everything the
           owner can inside it, and nothing outside it. */}
-      {isOwner && (
-        <div className="mb-6 bg-surface rounded-xl border border-border p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <Shield size={16} className="text-primary" />
-            <h3 className="text-text-main font-semibold text-sm">Who can manage this project</h3>
-          </div>
-          <p className="text-text-muted text-xs mb-4">
-            An admin added here can do everything you can inside {project.name}, and
-            nothing outside it. Only you can change this list.
-          </p>
-
-          <div className="flex flex-wrap gap-2">
-            {admins.map((a) => (
-              <span
-                key={a.id}
-                className="flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-primary-light border border-primary/30 text-xs text-text-main"
-              >
-                {a.name}
-                <button
-                  onClick={() => revoke(project.id, a.id)}
-                  title={`Remove ${a.name}'s access`}
-                  className="p-0.5 rounded-full text-text-muted hover:text-danger transition-colors"
-                >
-                  <X size={12} />
-                </button>
-              </span>
-            ))}
-            {admins.length === 0 && (
-              <p className="text-text-subtle text-xs italic">
-                Only you can manage this project.
-              </p>
-            )}
-          </div>
-
-          {/* Every admin, whether or not they run this project — demoting is
-              not a per-project decision, so it lives on its own row. */}
-          {allAdmins.filter((a) => !a.isOwner).length > 0 && (
-            <div className="mt-3 pt-3 border-t border-border">
-              <p className="text-text-subtle text-[11px] mb-2">Admins</p>
-              <div className="flex flex-wrap gap-2">
-                {allAdmins.filter((a) => !a.isOwner).map((a) => (
-                  <span
-                    key={a.id}
-                    className="flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full border border-border text-xs text-text-muted"
-                  >
-                    {a.name}
-                    <button
-                      onClick={() => setRole(a.id, 'employee')}
-                      title={`Make ${a.name} an employee again`}
-                      className="p-0.5 rounded-full hover:text-danger transition-colors"
-                    >
-                      <LogOut size={11} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {grantable.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-border">
-              <p className="text-text-subtle text-[11px] mb-2">Give access to</p>
-              <div className="flex flex-wrap gap-2">
-                {grantable.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => grant(project.id, u.id)}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-border text-xs text-text-muted hover:border-primary hover:text-text-main transition-colors"
-                  >
-                    <UserPlus size={11} /> {u.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {members.length === 0 ? (
         <EmptyState
           icon={Users}

@@ -22,6 +22,7 @@ import { ProjectLayout } from './pages/admin/project/ProjectLayout'
 import { ProjectAbout } from './pages/admin/project/ProjectAbout'
 import { ProjectResources } from './pages/admin/project/ProjectResources'
 import { ProjectEmployees } from './pages/admin/project/ProjectEmployees'
+import { ProjectAdmins } from './pages/admin/project/ProjectAdmins'
 import { ProjectTodos } from './pages/admin/project/ProjectTodos'
 import { ProjectCalendar } from './pages/admin/project/ProjectCalendar'
 import { ProjectNotes } from './pages/admin/project/ProjectNotes'
@@ -192,6 +193,7 @@ export default function App() {
                 <Route path="tasks" element={<TaskManager />} />
                 <Route path="ai-organiser" element={<AIOrganiser />} />
                 <Route path="analytics" element={<Analytics />} />
+                <Route path="admins" element={<ProjectAdmins />} />
 
                 {/* A profile is opened from the team tab and stays inside it,
                     so the project and team tabs do not vanish underneath. */}

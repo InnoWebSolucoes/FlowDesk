@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { Outlet, useParams, Navigate } from 'react-router-dom'
+import { Outlet, useParams, useMatch, Navigate } from 'react-router-dom'
 import { Building2 } from 'lucide-react'
 import { useProjectStore } from '../../../store/projectStore'
 import { useEmployeeStore } from '../../../store/employeeStore'
@@ -13,6 +13,10 @@ export function ProjectLayout() {
   const setTaskScope = useTaskStore((s) => s.setProjectScope)
 
   const project = projectId ? getProject(projectId) : undefined
+
+  // Chat fills its own frame: a header above it and a floating hint over its
+  // message box both belong to pages that scroll, which chat does not.
+  const isChat = !!useMatch('/admin/projects/:projectId/chat')
 
   // Narrow the employee and task stores to this project, so the pages nested
   // below (Overview, Tasks, Analytics…) show only its data without each having
@@ -36,7 +40,9 @@ export function ProjectLayout() {
 
   return (
     <div className="animate-fade-in">
-      {/* Project header. The way back to the picker lives in the sidebar. */}
+      {/* Project header. The way back to the picker lives in the sidebar.
+          Hidden for chat, which owns the full height of the frame. */}
+      {!isChat && (
       <div className="mb-5">
         <div className="flex items-center gap-3">
           <div
@@ -53,11 +59,14 @@ export function ProjectLayout() {
           </div>
         </div>
       </div>
+      )}
 
       <Outlet context={{ project }} />
 
-      {/* Available from every tab inside the project. */}
-      <AssistantLauncher projectId={project.id} />
+      {/* Available from every tab inside the project. Its hint would sit on
+          top of chat's message box, so chat keeps the shortcut and loses the
+          reminder. */}
+      {!isChat && <AssistantLauncher projectId={project.id} />}
     </div>
   )
 }

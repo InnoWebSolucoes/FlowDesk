@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink, Outlet, useOutletContext } from 'react-router-dom'
-import { Users, LayoutDashboard, ListTodo, Sparkles, BarChart3 } from 'lucide-react'
+import { Users, LayoutDashboard, ListTodo, Sparkles, BarChart3, Shield } from 'lucide-react'
 import { Project } from '../../../types'
 import { useT } from '../../../i18n/useT'
 
@@ -21,6 +21,9 @@ export function ProjectTeamLayout() {
     { to: 'tasks', label: t('nav_taskManager'), icon: ListTodo },
     { to: 'ai-organiser', label: t('nav_aiOrganiser'), icon: Sparkles },
     { to: 'analytics', label: t('nav_analytics'), icon: BarChart3 },
+    // Last, because it is the one tab that is about permissions rather than
+    // about the work.
+    { to: 'admins', label: t('nav_admins'), icon: Shield },
   ]
 
   return (
