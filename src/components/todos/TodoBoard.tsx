@@ -477,7 +477,9 @@ export function TodoBoard({
   }, [searchParams, setSearchParams, todos])
 
   return (
-    <div className="max-w-5xl">
+    // The shell already caps the page at a readable width; capping again here
+    // left the rows stopping short of it with empty page beside them.
+    <div>
       {/* List tabs */}
       <div className="flex items-center gap-1 border-b border-border mb-4 overflow-x-auto">
         {lists.map((list) => {
