@@ -106,13 +106,15 @@ export function Sidebar() {
   const dockedRef = useRef({ whatsapp: false, claude: false })
   dockedRef.current = { whatsapp: whatsappDocked, claude: claudeDocked }
 
-  // Collapsed to icons only, to give the main area more room. Remembered, so
-  // the choice survives a reload.
+  // Collapsed to icons only by default, so the main area starts with the room:
+  // the tabs are one click away and the choice is remembered, so anyone who
+  // prefers them open only says so once.
   const [collapsed, setCollapsed] = useState(() => {
     try {
-      return localStorage.getItem('flowdesk.sidebarCollapsed') === '1'
+      const saved = localStorage.getItem('flowdesk.sidebarCollapsed')
+      return saved === null ? true : saved === '1'
     } catch {
-      return false
+      return true
     }
   })
 
