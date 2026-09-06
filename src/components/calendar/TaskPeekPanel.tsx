@@ -1,0 +1,166 @@
+import React from 'react'
+import { useNavigate } from 'react-router-dom'
+import { X, Clock, CalendarClock, Users, Tag, Repeat, CheckCircle2, ExternalLink } from 'lucide-react'
+import { format, parseISO } from 'date-fns'
+import { Task } from '../../types'
+import { useTaskStore } from '../../store/taskStore'
+import { useEmployeeStore } from '../../store/employeeStore'
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** How often it comes round, in the words the rest of the app uses. */
+function frequencyLabel(f: Task['frequency']): string {
+  if (!f) return '—'
+  if (f.type === 'daily') return 'Every weekday'
+  if (f.type === 'weekly') {
+    const days = (f.days ?? []).map((d: number) => DAY_NAMES[d]).join(', ')
+    return days ? `Weekly · ${days}` : 'Weekly'
+  }
+  if (f.type === 'monthly') {
+    return `Monthly · week ${f.weekOfMonth ?? 1}, ${DAY_NAMES[f.dayOfWeek ?? 1]}`
+  }
+  if (f.type === 'one-off') return f.date ? `Once, on ${f.date}` : 'One-off'
+  return String(f.type)
+}
+
+const PRIORITY_STYLE: Record<string, string> = {
+  low: 'bg-surface-2 text-text-muted border-border',
+  medium: 'bg-warning-bg text-warning border-warning/30',
+  high: 'bg-danger-bg text-danger border-danger/30',
+}
+
+/**
+ * Everything about an assigned task, read-only.
+ *
+ * Clicking a task on the calendar used to do nothing at all: the block knew it
+ * was a task, but the open handler only understood todos and calendar entries.
+ * Editing still belongs in the task manager — this is for reading what the
+ * thing actually is without leaving the week you are looking at.
+ */
+export function TaskPeekPanel({
+  task,
+  onClose,
+  basePath,
+}: {
+  task: Task
+  onClose: () => void
+  /** Where this side of the app lives, for the link out to the task manager. */
+  basePath?: string
+}) {
+  const { categories, completionLogs } = useTaskStore()
+  const { employees } = useEmployeeStore()
+  const navigate = useNavigate()
+
+  const category = categories.find((c) => c.id === task.categoryId)
+  const people = task.assignedTo
+    .map((id) => employees.find((e) => e.id === id))
+    .filter(Boolean)
+
+  // The most recent completions, so "is this actually getting done" is
+  // answerable without opening the task manager.
+  const done = completionLogs
+    .filter((l) => l.taskId === task.id)
+    .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
+    .slice(0, 5)
+
+  const row = (Icon: typeof Clock, label: string, value: React.ReactNode) => (
+    <div className="flex items-start gap-2.5 py-2 border-b border-border last:border-0">
+      <Icon size={14} className="text-text-subtle flex-shrink-0 mt-0.5" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] text-text-subtle">{label}</p>
+        <div className="text-sm text-text-main mt-0.5">{value}</div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+
+      <div className="relative w-full max-w-md bg-surface rounded-xl border border-border shadow-2xl max-h-[85vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-3 p-5 pb-3">
+          <div className="min-w-0">
+            <h2 className="text-text-main font-semibold text-base leading-snug">{task.title}</h2>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <span
+                className={`px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                  PRIORITY_STYLE[task.priority] ?? PRIORITY_STYLE.medium
+                }`}
+              >
+                {task.priority}
+              </span>
+              {!task.isActive && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] bg-surface-2 text-text-muted border border-border">
+                  Retired
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-text-subtle hover:text-text-main transition-colors flex-shrink-0"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-5 pb-5">
+          {task.description && (
+            <p className="text-sm text-text-muted whitespace-pre-wrap mb-3">{task.description}</p>
+          )}
+
+          {row(Users, 'Assigned to',
+            people.length > 0
+              ? people.map((p) => p!.name).join(', ')
+              : <span className="text-text-subtle">Nobody</span>)}
+
+          {row(Repeat, 'Repeats', frequencyLabel(task.frequency))}
+
+          {row(CalendarClock, 'Deadline',
+            task.deadline
+              ? format(parseISO(task.deadline), 'EEEE d MMMM yyyy')
+              : <span className="text-text-subtle">None</span>)}
+
+          {task.schedules.length > 0 && row(CalendarClock, 'Planned for',
+            <div className="space-y-0.5">
+              {task.schedules.filter((sc) => sc.doDate).map((sc) => {
+                const who = employees.find((e) => e.id === sc.employeeId)
+                return (
+                  <p key={sc.employeeId}>
+                    {who?.name ?? 'Someone'} · {sc.doDate}
+                  </p>
+                )
+              })}
+            </div>)}
+
+          {row(Tag, 'Category', category?.name ?? <span className="text-text-subtle">None</span>)}
+
+          {row(Clock, 'Estimated',
+            task.estimatedMinutes > 0
+              ? `${task.estimatedMinutes} min`
+              : <span className="text-text-subtle">Not estimated</span>)}
+
+          {done.length > 0 && row(CheckCircle2, 'Recently completed',
+            <div className="space-y-0.5">
+              {done.map((l) => {
+                const who = employees.find((e) => e.id === l.employeeId)
+                return (
+                  <p key={`${l.taskId}-${l.employeeId}-${l.dueDate}`} className="text-xs">
+                    {who?.name ?? 'Someone'} · {l.dueDate}
+                    {l.wasLate && <span className="text-danger"> (late)</span>}
+                  </p>
+                )
+              })}
+            </div>)}
+
+          <button
+            onClick={() => navigate(`${basePath ?? ''}/employees/tasks`)}
+            className="mt-4 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-xs text-text-muted hover:border-primary/50 hover:text-text-main transition-colors"
+          >
+            <ExternalLink size={13} /> Open in the task manager
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -39,7 +39,8 @@ export function Sidebar() {
         { to: `/admin/projects/${activeProjectId}/calendar`, label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
         { to: `/admin/projects/${activeProjectId}/employees`, label: t('nav_employees'), icon: <Users size={18} /> },
         { to: `/admin/projects/${activeProjectId}/notes`, label: t('nav_notes'), icon: <StickyNote size={18} /> },
-        { to: '/admin/chat', label: t('nav_chat'), icon: <MessageSquare size={18} /> },
+        // Inside the project, so opening chat does not leave it.
+        { to: `/admin/projects/${activeProjectId}/chat`, label: t('nav_chat'), icon: <MessageSquare size={18} /> },
       ]
     : [
         { to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> },

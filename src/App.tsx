@@ -178,6 +178,10 @@ export default function App() {
               <Route path="todos" element={<ProjectTodos />} />
               <Route path="calendar" element={<ProjectCalendar />} />
               <Route path="notes" element={<ProjectNotes />} />
+              {/* Chat inside the project, so opening it does not drop you out
+                  of the one you are working in. Same component: it works out
+                  which project a conversation belongs to on its own. */}
+              <Route path="chat" element={<Chat />} />
 
               {/* Employees: the team plus everything that used to be global,
                   scoped to this project by ProjectLayout. */}

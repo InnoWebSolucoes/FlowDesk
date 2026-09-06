@@ -13,6 +13,7 @@ import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
 import { CalendarItemPanel } from './CalendarItemPanel'
+import { TaskPeekPanel } from './TaskPeekPanel'
 import {
   KIND_STYLE, LAYERS, Layer, dayKey, dayDate, entryCoversDay,
 } from './calendarShared'
@@ -92,6 +93,9 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   const [teamOpen, setTeamOpen] = useState(false)
   const [openTodo, setOpenTodo] = useState<string | null>(null)
   const [openEntry, setOpenEntry] = useState<string | null>(null)
+  // A task block used to open nothing: the handler only knew todos and
+  // entries, so clicking assigned work silently did nothing at all.
+  const [openTask, setOpenTask] = useState<string | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const [hoverSlot, setHoverSlot] = useState<string | null>(null)
   // Where the pointer is, so the dragged item can follow it. Null until the
@@ -520,6 +524,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               dragging={!!drag}
               onOpenTodo={setOpenTodo}
               onOpenEntry={setOpenEntry}
+              onOpenTask={setOpenTask}
               onCreate={createAt}
               justDragged={justDragged}
               onToggleDone={toggleTodo}
@@ -536,6 +541,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               dragging={!!drag}
               onOpenTodo={setOpenTodo}
               onOpenEntry={setOpenEntry}
+              onOpenTask={setOpenTask}
               onCreate={createAt}
               justDragged={justDragged}
               onToggleDone={toggleTodo}
@@ -668,6 +674,7 @@ function DayGrid({
   dragging,
   onOpenTodo,
   onOpenEntry,
+  onOpenTask,
   onCreate,
   justDragged,
   onToggleDone,
@@ -682,6 +689,7 @@ function DayGrid({
   dragging: boolean
   onOpenTodo: (id: string) => void
   onOpenEntry: (id: string) => void
+  onOpenTask: (id: string) => void
   onCreate: (day: string) => void
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
@@ -728,7 +736,13 @@ function DayGrid({
                 <BlockChip
                   key={b.key}
                   block={b}
-                  onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
+                  onOpen={() =>
+                    b.todo
+                      ? onOpenTodo(b.todo.id)
+                      : b.task
+                        ? onOpenTask(b.task.id)
+                        : onOpenEntry(b.entry!.id)
+                  }
                   onDragStart={() => (b.todo ? onDragTodo(b.todo) : b.entry && onDragEntry(b.entry))}
                   onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
                   onContext={(x, y) =>
@@ -756,6 +770,7 @@ function MonthGrid({
   dragging,
   onOpenTodo,
   onOpenEntry,
+  onOpenTask,
   onCreate,
   justDragged,
   onToggleDone,
@@ -771,6 +786,7 @@ function MonthGrid({
   dragging: boolean
   onOpenTodo: (id: string) => void
   onOpenEntry: (id: string) => void
+  onOpenTask: (id: string) => void
   onCreate: (day: string) => void
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
@@ -816,7 +832,13 @@ function MonthGrid({
                   key={b.key}
                   block={b}
                   compact
-                  onOpen={() => (b.todo ? onOpenTodo(b.todo.id) : onOpenEntry(b.entry!.id))}
+                  onOpen={() =>
+                    b.todo
+                      ? onOpenTodo(b.todo.id)
+                      : b.task
+                        ? onOpenTask(b.task.id)
+                        : onOpenEntry(b.entry!.id)
+                  }
                   onDragStart={() => (b.todo ? onDragTodo(b.todo) : b.entry && onDragEntry(b.entry))}
                   onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
                   onContext={(x, y) =>
