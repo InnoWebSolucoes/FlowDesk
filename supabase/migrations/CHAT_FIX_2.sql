@@ -88,7 +88,11 @@ grant execute on function public.can_see_conversation(uuid) to authenticated;
 
 create policy "conversations_select" on public.conversations
   for select to authenticated
-  using (public.can_see_conversation(id));
+  -- created_by first, and without a lookup: PostgREST inserts with a RETURNING
+  -- clause, so this policy also runs inside the statement that creates the row
+  -- — where can_see_conversation() cannot see it yet and would refuse the
+  -- creator their own new room.
+  using (created_by = auth.uid() or public.can_see_conversation(id));
 
 -- Creating a room only has to establish that you are not doing it in someone
 -- else's name. Who may then READ it is can_see_conversation's job.

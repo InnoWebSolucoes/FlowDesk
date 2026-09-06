@@ -1038,7 +1038,12 @@ alter table public.chat_message_items enable row level security;
 -- Conversations ─────────────
 drop policy if exists "conversations_select" on public.conversations;
 create policy "conversations_select" on public.conversations
-  for select to authenticated using (public.can_see_conversation(id));
+  for select to authenticated
+  -- created_by first, and without a lookup: PostgREST inserts with a RETURNING
+  -- clause, so this policy also runs inside the statement that creates the row
+  -- — where can_see_conversation() cannot see it yet and would refuse the
+  -- creator their own new room.
+  using (created_by = auth.uid() or public.can_see_conversation(id));
 
 -- Anyone may start a conversation, but only one they are actually part of: a
 -- direct room they are in, or the room for a task they can see.
