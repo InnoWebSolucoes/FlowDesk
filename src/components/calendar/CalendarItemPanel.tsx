@@ -83,22 +83,24 @@ export function CalendarItemPanel({
     <>
       <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
         <div
-          className="bg-surface rounded-xl border border-border w-full max-w-md flex flex-col max-h-[85vh]"
+          className="bg-surface rounded-xl border border-border w-full max-w-xl flex flex-col max-h-[85vh]"
           onClick={(e) => e.stopPropagation()}
         >
           <header className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border flex-shrink-0">
             <div className="min-w-0">
               {todo ? (
-                <input
+                <textarea
                   value={todo.title}
                   onChange={(e) => updateTodo(todo.id, { title: e.target.value })}
-                  className="w-full bg-transparent text-text-main font-semibold text-base outline-none focus:bg-surface-2 rounded px-1 -ml-1"
+                  rows={Math.min(3, Math.ceil(todo.title.length / 46) || 1)}
+                  className="w-full bg-transparent text-text-main font-semibold text-base outline-none focus:bg-surface-2 rounded px-1 -ml-1 resize-none leading-snug"
                 />
               ) : (
-                <input
+                <textarea
                   value={entry!.title}
                   onChange={(e) => updateCalendarEntry(entry!.id, { title: e.target.value })}
-                  className="w-full bg-transparent text-text-main font-semibold text-base outline-none focus:bg-surface-2 rounded px-1 -ml-1"
+                  rows={Math.min(3, Math.ceil(entry!.title.length / 46) || 1)}
+                  className="w-full bg-transparent text-text-main font-semibold text-base outline-none focus:bg-surface-2 rounded px-1 -ml-1 resize-none leading-snug"
                 />
               )}
               <p className="text-text-subtle text-xs mt-0.5">

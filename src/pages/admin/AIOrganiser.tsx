@@ -38,11 +38,18 @@ export function AIOrganiser() {
   // The project the organiser is being used inside. A todo belongs to a
   // project directly, where a task reaches one through whoever it is
   // assigned to.
-  const { project } = useOutletContext<{ project: Project }>()
+  // Read defensively: useOutletContext is null until the parent route has
+  // provided it, and destructuring null throws — which is what took the whole
+  // page down to a blank screen.
+  const ctx = useOutletContext<{ project: Project } | null>()
+  const project = ctx?.project
   const { tasks, categories, addTask, addCategory } = useTaskStore()
   const { employees } = useEmployeeStore()
   // Work is assigned to staff, not to managers.
   const staff = employees.filter((e) => e.role === 'employee')
+
+  const { currentUser } = useAuthStore()
+  const { todoLists, createTodo, createTodoList } = useProjectStore()
 
   // The manager is a name in the list like anyone else. Work assigned to them
   // becomes a todo on their board rather than an assigned task, because that
@@ -50,8 +57,6 @@ export function AIOrganiser() {
   // as choosing anybody.
   const me = employees.find((e) => e.id === currentUser?.id)
   const assignable = me ? [...staff, me] : staff
-  const { currentUser } = useAuthStore()
-  const { todoLists, createTodo, createTodoList } = useProjectStore()
   const { t } = useT()
 
   const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -173,6 +178,7 @@ export function AIOrganiser() {
    * table, while a todo is what their board and their calendar actually read.
    */
   const addToMyBoard = async (gt: GeneratedTask) => {
+    if (!project) throw new Error(t('ai_errorNoList'))
     let listId: string | undefined = todoLists.find((l) => l.ownerId === null)?.id
     if (!listId) {
       const made = await createTodoList(project.id, 'To do', null)
