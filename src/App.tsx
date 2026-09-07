@@ -23,6 +23,8 @@ import { ProjectAbout } from './pages/admin/project/ProjectAbout'
 import { ProjectResources } from './pages/admin/project/ProjectResources'
 import { ProjectEmployees } from './pages/admin/project/ProjectEmployees'
 import { ProjectAdmins } from './pages/admin/project/ProjectAdmins'
+import { ProjectWorkLog } from './pages/admin/project/ProjectWorkLog'
+import { MyWorkLog } from './pages/employee/MyWorkLog'
 import { ProjectTodos } from './pages/admin/project/ProjectTodos'
 import { ProjectCalendar } from './pages/admin/project/ProjectCalendar'
 import { ProjectNotes } from './pages/admin/project/ProjectNotes'
@@ -194,6 +196,7 @@ export default function App() {
                 <Route path="ai-organiser" element={<AIOrganiser />} />
                 <Route path="analytics" element={<Analytics />} />
                 <Route path="admins" element={<ProjectAdmins />} />
+                <Route path="work-log" element={<ProjectWorkLog />} />
 
                 {/* A profile is opened from the team tab and stays inside it,
                     so the project and team tabs do not vanish underneath. */}
@@ -213,6 +216,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="tasks" replace />} />
             <Route path="tasks" element={<MyTasks />} />
+            <Route path="work-log" element={<MyWorkLog />} />
 
             {/* The employee's side of their project: the same todos, notes and
                 files the managers have, scoped to them. EmployeeWorkspace

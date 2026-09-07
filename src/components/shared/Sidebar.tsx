@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useMatch, Link, useLocation } from 'react-router-dom'
 import {
+  NotebookPen,
   ListTodo, Users, Info, FolderOpen, CalendarDays,
   CheckSquare, Wrench, BookOpen, Building2, MessageCircle, MessageSquare, StickyNote, Sparkles,
   LogOut, Menu, X, ChevronLeft, PanelLeftClose, PanelLeftOpen
@@ -52,6 +53,7 @@ export function Sidebar() {
   // their own lists and board, and the project's files.
   const employeeNav = [
     { to: '/employee/tasks', label: t('nav_myTasks'), icon: <CheckSquare size={18} /> },
+    { to: '/employee/work-log', label: t('nav_workLog'), icon: <NotebookPen size={18} /> },
     { to: '/employee/todos', label: t('nav_todos'), icon: <ListTodo size={18} /> },
     { to: '/employee/resources', label: t('nav_resources'), icon: <FolderOpen size={18} /> },
     { to: '/employee/calendar', label: t('nav_calendar'), icon: <CalendarDays size={18} /> },

@@ -382,6 +382,25 @@ export interface TaskFile {
   uploadedBy: string
 }
 
+/**
+ * Work someone did that no task covered. A short write-up, roughly how long it
+ * took, and whatever backs it up.
+ */
+export interface WorkLogEntry {
+  id: string
+  projectId: string
+  authorId: string
+  /** The day the work happened, not the day it was written up. */
+  workedOn: string
+  title: string
+  description: string
+  minutes: number | null
+  createdAt: string
+  /** Project documents attached to it. */
+  itemIds: string[]
+  links: { url: string; label: string }[]
+}
+
 export interface TaskComment {
   id: string
   taskId: string
