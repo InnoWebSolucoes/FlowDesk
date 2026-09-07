@@ -54,6 +54,8 @@ interface Block {
   ownerName?: string
   /** For a task block: whose assignment this is, so it can be rescheduled. */
   employeeId?: string
+  /** For a task block: whether that person has done it on the day shown. */
+  done?: boolean
 }
 
 interface CalendarBoardProps {
@@ -86,7 +88,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     overlayTodos, loadOverlayTodos,
   } = useProjectStore()
 
-  const { tasks, setTaskDoDate } = useTaskStore()
+  const { tasks, setTaskDoDate, completeTask, uncompleteTask, isTaskCompleted } = useTaskStore()
   const { employees } = useEmployeeStore()
 
   // Whose calendars to overlay, beyond your own. Admin-only: a manager needs
@@ -228,6 +230,9 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
             outlined: !planned,
             task,
             employeeId: empIdForCal,
+            // The day it is shown on is the day it counts for: a recurring
+            // task is done again each time it comes round.
+            done: isTaskCompleted(task.id, empIdForCal, day),
             ownerName: canOverlay ? who?.name : undefined,
           })
         }
@@ -392,6 +397,23 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
 
   /** Clicking a date opens that day on its own, which is what someone is
    *  asking for when they click it in a week or a month. */
+  /**
+   * Tick an assigned task off from the calendar. A todo is simply toggled; a
+   * task is completed for one person on one day, so it needs both.
+   */
+  const toggleTaskDone = async (taskId: string, employeeId: string, day: string) => {
+    setError('')
+    try {
+      if (isTaskCompleted(taskId, employeeId, day)) {
+        await uncompleteTask(taskId, employeeId, day)
+      } else {
+        await completeTask(taskId, employeeId, day)
+      }
+    } catch (e) {
+      setError((e as Error).message || 'That could not be updated.')
+    }
+  }
+
   const openDay = (day: Date) => {
     setCursor(day)
     setView('day')
@@ -591,6 +613,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
               justDragged={justDragged}
               onToggleDone={toggleTodo}
+              onToggleTask={toggleTaskDone}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
@@ -613,6 +636,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
               justDragged={justDragged}
               onToggleDone={toggleTodo}
+              onToggleTask={toggleTaskDone}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
@@ -781,6 +805,7 @@ function DayGrid({
   onDayContext,
   justDragged,
   onToggleDone,
+  onToggleTask,
   onBlockContext,
   onDragTodo,
   onDragEntry,
@@ -799,6 +824,7 @@ function DayGrid({
   onDayContext: (x: number, y: number, day: string) => void
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
+  onToggleTask: (taskId: string, employeeId: string, day: string) => void
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
@@ -864,7 +890,13 @@ function DayGrid({
                         ? onDragTask(b.task, b.employeeId)
                         : b.entry && onDragEntry(b.entry)
                   }
-                  onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
+                  onToggleDone={
+                    b.todo
+                      ? () => onToggleDone(b.todo!.id)
+                      : b.task && b.employeeId
+                        ? () => onToggleTask(b.task!.id, b.employeeId!, key)
+                        : undefined
+                  }
                   onContext={(x, y) =>
                     onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
                   }
@@ -895,6 +927,7 @@ function MonthGrid({
   onDayContext,
   justDragged,
   onToggleDone,
+  onToggleTask,
   onBlockContext,
   onDragTodo,
   onDragEntry,
@@ -913,6 +946,7 @@ function MonthGrid({
   onDayContext: (x: number, y: number, day: string) => void
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
+  onToggleTask: (taskId: string, employeeId: string, day: string) => void
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
@@ -977,7 +1011,13 @@ function MonthGrid({
                         ? onDragTask(b.task, b.employeeId)
                         : b.entry && onDragEntry(b.entry)
                   }
-                  onToggleDone={b.todo ? () => onToggleDone(b.todo!.id) : undefined}
+                  onToggleDone={
+                    b.todo
+                      ? () => onToggleDone(b.todo!.id)
+                      : b.task && b.employeeId
+                        ? () => onToggleTask(b.task!.id, b.employeeId!, key)
+                        : undefined
+                  }
                   onContext={(x, y) =>
                     onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
                   }
@@ -1015,6 +1055,7 @@ function BlockChip({
   onToggleDone?: () => void
   onContext?: (x: number, y: number) => void
 }) {
+  const { t } = useT()
   const moved = useRef(false)
 
   return (
@@ -1056,7 +1097,7 @@ function BlockChip({
       title={block.ownerName ? `${block.label} — ${block.ownerName}` : block.label}
       className={`relative rounded-md text-[11px] leading-tight truncate cursor-grab active:cursor-grabbing select-none shadow-sm ${
         compact ? 'px-1.5 py-1' : 'px-2 py-1 h-full overflow-hidden'
-      } ${block.todo?.isCompleted ? 'line-through opacity-60' : ''}`}
+      } ${block.todo?.isCompleted || block.done ? 'line-through opacity-60' : ''}`}
       style={
         block.outlined
           ? { border: `1px solid ${block.color}66`, color: block.color }
@@ -1076,9 +1117,9 @@ function BlockChip({
           onPointerDown={(e) => { e.stopPropagation(); moved.current = true }}
           onClick={(e) => { e.stopPropagation(); onToggleDone() }}
           className="float-left mr-1 mt-[1px] hover:opacity-100 opacity-70"
-          title={block.todo?.isCompleted ? 'Mark as not done' : 'Mark as done'}
+          title={block.todo?.isCompleted || block.done ? t('cal_markNotDone') : t('cal_markDone')}
         >
-          {block.todo?.isCompleted ? <CheckCircle2 size={11} /> : <Circle size={11} />}
+          {block.todo?.isCompleted || block.done ? <CheckCircle2 size={11} /> : <Circle size={11} />}
         </button>
       )}
       {block.label}
