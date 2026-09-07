@@ -272,13 +272,20 @@ export function AIOrganiser() {
     }
 
     let saved = 0
+    // Why anything was skipped. Every `continue` below used to be silent, so a
+    // batch that imported nothing was indistinguishable from a dead button —
+    // which is exactly how it looked for several rounds of this.
+    const skipped: string[] = []
     setImporting(true)
     try {
     for (let gt of generated) {
       // Each task carries its own people now, so a single batch can be split
       // across the team rather than all landing on the same person.
       const assignees = gt._assignedTo?.length ? gt._assignedTo : selectedEmployees
-      if (assignees.length === 0) continue
+      if (assignees.length === 0) {
+        skipped.push(`"${gt.title}": nobody assigned`)
+        continue
+      }
 
       // The manager's share of the batch goes to their board. A single brief
       // routinely splits this way — some of it for the team, some of it for
@@ -293,14 +300,20 @@ export function AIOrganiser() {
       }
 
       const finalAssignees = gt._assignedTo?.length ? gt._assignedTo : selectedEmployees
-      if (finalAssignees.length === 0) continue
+      if (finalAssignees.length === 0) {
+        skipped.push(`"${gt.title}": no one left after the manager's share`)
+        continue
+      }
 
       // The project the organiser was opened in. Employees can be on several
       // projects now, so the first assignee no longer identifies one — and
       // their legacy project_id is null whenever they were added through
       // project_members, which skipped every task without saying so.
       const projectId = project?.id
-      if (!projectId) continue
+      if (!projectId) {
+        skipped.push(`"${gt.title}": the page has no project`)
+        continue
+      }
 
       const catId = gt._categoryId ?? await resolveCategory(gt.categoryName)
       const task: Omit<Task, 'id' | 'createdAt'> = {
@@ -339,7 +352,10 @@ export function AIOrganiser() {
     // skipped, and the button just looked broken. Say so rather than clearing
     // the screen as though it had worked.
     if (saved === 0) {
-      setError(t('ai_errorImportedNothing'))
+      console.error('[import] nothing saved. Skipped:', skipped)
+      setError(
+        `${t('ai_errorImportedNothing')}${skipped.length ? ` — ${skipped.join('; ')}` : ''}`,
+      )
       return
     }
 

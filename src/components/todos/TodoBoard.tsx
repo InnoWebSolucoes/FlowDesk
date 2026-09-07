@@ -241,11 +241,15 @@ export function TodoBoard({
   }
 
   const handleAddList = async () => {
-    const created = await createTodoList(project.id, `List ${lists.length + 1}`, ownerId)
-    if (created) {
-      selectList(created.id)
-      setRenamingListId(created.id)
-      setListNameDraft(created.name)
+    try {
+      const created = await createTodoList(project.id, `List ${lists.length + 1}`, ownerId)
+      if (created) {
+        selectList(created.id)
+        setRenamingListId(created.id)
+        setListNameDraft(created.name)
+      }
+    } catch (e) {
+      setError((e as Error).message || 'That list could not be created.')
     }
   }
 

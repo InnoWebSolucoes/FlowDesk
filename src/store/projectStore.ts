@@ -1357,7 +1357,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       .select()
       .single()
 
-    if (error || !data) return null
+    if (error || !data) {
+      // Returning a bare null threw the reason away, and every caller then
+      // reported its own generic "no list" — so an RLS refusal, a failed
+      // connection and a genuine empty board all looked identical.
+      console.error('[createTodoList] failed:', error)
+      throw new Error(error?.message ?? 'The list could not be created.')
+    }
     const list = toTodoList(data)
     set((s) => ({ todoLists: [...s.todoLists, list] }))
     return list
