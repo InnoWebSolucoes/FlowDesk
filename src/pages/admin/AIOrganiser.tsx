@@ -291,8 +291,16 @@ export function AIOrganiser() {
       // routinely splits this way — some of it for the team, some of it for
       // whoever wrote it.
       if (assignees.includes(currentUser.id)) {
-        await addToMyBoard(gt)
-        saved++
+        // The manager's board is a separate table with its own RLS. A refusal
+        // there used to throw out of the whole loop, so one blocked todo took
+        // the entire batch with it — the staff tasks after it were never even
+        // attempted. It is recorded and the rest of the batch goes on.
+        try {
+          await addToMyBoard(gt)
+          saved++
+        } catch (e) {
+          skipped.push(`"${gt.title}" (yours): ${(e as Error).message}`)
+        }
         // Anyone else on the same item still gets it as an assigned task.
         const others = assignees.filter((id) => id !== currentUser.id)
         if (others.length === 0) continue
@@ -315,7 +323,13 @@ export function AIOrganiser() {
         continue
       }
 
-      const catId = gt._categoryId ?? await resolveCategory(gt.categoryName)
+      let catId: string
+      try {
+        catId = gt._categoryId ?? (await resolveCategory(gt.categoryName))
+      } catch (e) {
+        skipped.push(`"${gt.title}": category "${gt.categoryName}" — ${(e as Error).message}`)
+        continue
+      }
       const task: Omit<Task, 'id' | 'createdAt'> = {
         projectId,
         title: gt.title,
@@ -334,8 +348,12 @@ export function AIOrganiser() {
         createdBy: currentUser.id,
         isActive: true,
       }
-      await addTask(task)
-      saved++
+      try {
+        await addTask(task)
+        saved++
+      } catch (e) {
+        skipped.push(`"${gt.title}": ${(e as Error).message}`)
+      }
     }
     } catch (e: any) {
       // addTask throws on a failed save. Say which one broke and how many
@@ -359,7 +377,10 @@ export function AIOrganiser() {
       return
     }
 
-    if (unassigned.length > 0) {
+    if (skipped.length > 0) {
+      console.error('[import] some rows were skipped:', skipped)
+      setError(`${skipped.length} não importada(s) — ${skipped.join('; ')}`)
+    } else if (unassigned.length > 0) {
       setError(t('ai_errorSomeUnassigned').replace('{n}', String(unassigned.length)))
     }
 
