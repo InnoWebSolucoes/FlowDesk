@@ -1,47 +1,63 @@
 -- ============================================================================
--- Why the import writes nothing.
+-- Why project_todos still refuses the insert (Postgres 42501).
 --
--- Result set 4 already showed it: InnoWeb Admin has no project membership and
--- no legacy project_id. Every write the organiser makes is gated on
--- is_project_admin(project_id), which is true only for the owner or for an
--- admin listed in project_admins for that exact project. If neither holds,
--- RLS refuses the insert.
+-- The insert sends owner_id = null, so the policy that must pass is
+--   owner_id is null and public.is_project_admin(project_id)
+-- You now have is_owner = true, which should make is_project_admin true for
+-- every project. So either a different policy is live than the migration
+-- files say, or the functions do not agree.
 --
--- Read-only. Run it and send back the three result sets.
+-- Read-only. Run it and send back all three result sets.
 -- ============================================================================
 
--- ─── 1. Are you the owner, and are you a project admin anywhere? ────────────
--- is_owner true makes is_project_admin true everywhere and the whole problem
--- disappears. If it is false, the project_admins rows are what matter.
+-- ─── 1. The policies actually live on project_todos ─────────────────────────
+-- This is the authority. The migration files are only what was *meant* to be
+-- applied; this is what Postgres is enforcing right now.
 
 select
-  u.id,
-  u.name,
-  u.role,
-  u.is_owner,
-  (select count(*) from project_admins pa where pa.user_id = u.id) as project_admin_rows
-from users u
-order by u.role, u.name;
+  policyname,
+  cmd,
+  qual        as using_expression,
+  with_check  as with_check_expression
+from pg_policies
+where schemaname = 'public' and tablename = 'project_todos'
+order by cmd, policyname;
 
 
--- ─── 2. Who is granted what ─────────────────────────────────────────────────
+-- ─── 2. What the gate functions return for the signed-in account ────────────
+-- The SQL editor runs as postgres, not as you, so auth.uid() is null here and
+-- these would all read false. Impersonate the account instead.
 
-select
-  pa.project_id,
-  p.name as project,
-  u.name as admin,
-  u.is_owner
-from project_admins pa
-join users u   on u.id = pa.user_id
-join projects p on p.id = pa.project_id
-order by p.name, u.name;
-
-
--- ─── 3. The verdict, as the database sees it for the signed-in user ─────────
--- Run this while signed in as InnoWeb Admin (the SQL editor runs as postgres,
--- so these will read as the service role — what matters is column 1 and 2
--- being true for your account in result set 1 above).
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"1e2001c5-72b2-44a6-9605-9954db51908e","role":"authenticated"}';
 
 select
-  (select name from projects order by created_at limit 1) as first_project,
-  (select id   from projects order by created_at limit 1) as first_project_id;
+  auth.uid()                                                    as acting_as,
+  public.is_owner()                                             as is_owner,
+  public.is_admin()                                             as is_admin,
+  public.is_any_admin()                                         as is_any_admin,
+  (select public.is_project_admin(id) from projects limit 1)     as is_project_admin_on_first_project;
+
+reset role;
+
+
+-- ─── 3. The project the app is writing into ─────────────────────────────────
+-- is_project_admin is checked against the project_id on the row being
+-- inserted. If the app sends a project the account was never granted, the
+-- check fails however correct the account looks.
+
+select
+  p.id,
+  p.name,
+  exists (
+    select 1 from project_admins pa
+    where pa.project_id = p.id
+      and pa.user_id = '1e2001c5-72b2-44a6-9605-9954db51908e'
+  ) as account_granted_here,
+  exists (
+    select 1 from project_members m
+    where m.project_id = p.id
+      and m.user_id = '1e2001c5-72b2-44a6-9605-9954db51908e'
+  ) as account_member_here
+from projects p
+order by p.created_at;
