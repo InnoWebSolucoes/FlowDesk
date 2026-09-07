@@ -12,6 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
+import { personColor } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
 import {
@@ -181,10 +182,14 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       if (visible('do')) {
         for (const t of todos) {
           if (t.doDate !== day) continue
+          // Whose board this is. The fetch is scoped, but the store holds
+          // whatever was loaded last, so opening the managers' board and then
+          // an employee's calendar put the manager's todos on it.
+          if ((t.ownerId ?? null) !== ownerId) continue
           blocks.push({
             key: `todo-${t.id}`,
             label: t.title,
-            color: '#1A5C3A',
+            color: personColor(t.ownerId ?? t.assigneeId ?? ownerId),
             todo: t,
           })
         }
@@ -198,7 +203,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `overlay-todo-${t.id}`,
             label: t.title,
-            color: '#1A5C3A',
+            color: personColor(t.ownerId),
             todo: t,
             ownerName: employees.find((e) => e.id === t.ownerId)?.name,
           })
@@ -226,7 +231,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `task-${task.id}-${empIdForCal}`,
             label: task.title,
-            color: '#6366f1',
+            color: personColor(empIdForCal),
             outlined: !planned,
             task,
             employeeId: empIdForCal,

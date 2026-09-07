@@ -8,6 +8,7 @@ import { TaskTimestampLog } from '../../components/charts/TaskTimestampLog'
 import { Badge } from '../../components/shared/Badge'
 import { getTasksDueOnDate } from '../../utils/taskScheduler'
 import { useT } from '../../i18n/useT'
+import { Avatar } from '../../components/shared/Avatar'
 
 export function Overview() {
   const { tasks, completionLogs, categories } = useTaskStore()
@@ -199,9 +200,7 @@ export function Overview() {
                   <div key={emp.id}>
                     <div className="flex justify-between items-center mb-1">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">{emp.avatarInitials}</span>
-                        </div>
+                        <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={24} />
                         <span className="text-sm text-text-main">{emp.name}</span>
                       </div>
                       <span className="text-xs text-text-muted">{done}/{due.length}</span>

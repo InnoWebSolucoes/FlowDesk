@@ -14,6 +14,7 @@ import { FileKindIcon, formatFileSize } from '../components/resources/ResourceTh
 import { Conversation, ResourceItem } from '../types'
 import { withHighlight } from '../lib/highlight'
 import { useT } from '../i18n/useT'
+import { Avatar } from '../components/shared/Avatar'
 import type { TranslationKey } from '../i18n/translations'
 
 /** Where a document sent in chat should be filed, beyond the room's own folder. */
@@ -583,11 +584,13 @@ export function Chat() {
                       )}
                       <div className={`flex gap-2 ${mine ? 'justify-end' : 'justify-start'} ${grouped ? 'mt-0.5' : 'mt-3'}`}>
                         {!mine && (
-                          <div className={`w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0 ${grouped ? 'invisible' : ''}`}>
-                            <span className="text-white text-[9px] font-bold">
-                              {initials(nameOf(m.authorId))}
-                            </span>
-                          </div>
+                          <Avatar
+                            id={m.authorId}
+                            initials={initials(nameOf(m.authorId))}
+                            name={nameOf(m.authorId)}
+                            size={28}
+                            className={grouped ? 'invisible' : ''}
+                          />
                         )}
                         <div className={`max-w-[70%] group ${mine ? 'items-end' : 'items-start'} flex flex-col`}>
                           {!grouped && (

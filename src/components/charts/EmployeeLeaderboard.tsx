@@ -2,6 +2,7 @@ import React from 'react'
 import { DailyStats } from '../../types'
 import { format, startOfWeek, subWeeks } from 'date-fns'
 import { useT } from '../../i18n/useT'
+import { Avatar } from '../shared/Avatar'
 
 interface EmployeeRow {
   employeeId: string
@@ -83,9 +84,7 @@ export function EmployeeLeaderboard({ employees }: Props) {
               </td>
               <td className="py-3 px-3">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                    <span className="text-white text-xs font-bold">{row.avatarInitials}</span>
-                  </div>
+                  <Avatar id={row.employeeId} initials={row.avatarInitials} name={row.name} size={28} />
                   <span className="font-medium text-text-main">{row.name}</span>
                 </div>
               </td>

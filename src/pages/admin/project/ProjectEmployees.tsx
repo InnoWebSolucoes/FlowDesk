@@ -10,6 +10,7 @@ import { useProjectAdminStore } from '../../../store/projectAdminStore'
 import { EmptyState } from '../../../components/shared/EmptyState'
 import { getTasksDueOnDate } from '../../../utils/taskScheduler'
 import { useT } from '../../../i18n/useT'
+import { Avatar } from '../../../components/shared/Avatar'
 
 interface Ctx { project: Project }
 
@@ -135,9 +136,7 @@ export function ProjectEmployees() {
             return (
               <div key={emp.id} className="bg-surface rounded-xl border border-border p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                    <span className="text-white font-bold text-base">{emp.avatarInitials}</span>
-                  </div>
+                  <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={48} />
                   <div className="flex-1 min-w-0">
                     <h3 className="text-text-main font-semibold text-sm truncate">{emp.name}</h3>
                     <p className="text-text-muted text-xs mt-0.5 truncate">{emp.jobTitle}</p>
@@ -266,9 +265,7 @@ export function ProjectEmployees() {
                   }}
                   className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-border hover:border-primary hover:bg-surface-2 transition-colors text-left"
                 >
-                  <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                    <span className="text-white text-xs font-bold">{emp.avatarInitials}</span>
-                  </div>
+                  <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={36} />
                   <div className="min-w-0">
                     <p className="text-text-main text-sm font-medium truncate">{emp.name}</p>
                     <p className="text-text-subtle text-xs truncate">

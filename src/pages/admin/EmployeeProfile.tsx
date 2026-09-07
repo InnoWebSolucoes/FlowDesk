@@ -15,6 +15,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Bold, Italic, List, ListOrdered, Heading2 } from 'lucide-react'
 import { useT } from '../../i18n/useT'
+import { Avatar } from '../../components/shared/Avatar'
 import { WorkLog } from '../../components/worklog/WorkLog'
 
 const TABS = ['tasks', 'analytics', 'worklog', 'todos', 'notes', 'toolbox', 'guidelines'] as const
@@ -96,9 +97,7 @@ export function EmployeeProfile() {
 
       <div className="bg-surface rounded-xl border border-border p-5 mb-5">
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-xl">{emp.avatarInitials}</span>
-          </div>
+          <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={64} />
           <div className="flex-1">
             <h2 className="text-text-main font-bold text-lg">{emp.name}</h2>
             <p className="text-text-muted text-sm">{emp.jobTitle} · {emp.department}</p>

@@ -11,6 +11,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useLanguageStore } from '../../store/languageStore'
 import { useChatStore } from '../../store/chatStore'
 import { useT } from '../../i18n/useT'
+import { Avatar } from './Avatar'
 import {
   canDockWhatsapp, setWhatsappTab, onWhatsappState,
   canDockClaude, setClaudeTab, onClaudeState, setSidebarWidth,
@@ -341,15 +342,29 @@ export function Sidebar() {
             title={`${currentUser?.name}, log out`}
             className="w-full flex justify-center py-1 rounded-lg hover:bg-surface-2 transition-colors group"
           >
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center group-hover:bg-danger transition-colors">
-              <span className="text-white text-xs font-bold">{currentUser?.avatarInitials}</span>
+            <div className="relative w-8 h-8">
+              <Avatar
+                id={currentUser?.id}
+                initials={currentUser?.avatarInitials}
+                name={currentUser?.name}
+                size={32}
+                className="group-hover:opacity-0 transition-opacity"
+              />
+              {/* The avatar's colour is an inline style, which no class can
+                  override, so the sign-out state is a layer over it. */}
+              <div className="absolute inset-0 rounded-full bg-danger flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <LogOut size={14} className="text-white" />
+              </div>
             </div>
           </button>
         ) : (
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg">
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-            <span className="text-white text-xs font-bold">{currentUser?.avatarInitials}</span>
-          </div>
+          <Avatar
+            id={currentUser?.id}
+            initials={currentUser?.avatarInitials}
+            name={currentUser?.name}
+            size={32}
+          />
           <div className="flex-1 min-w-0">
             <p className="text-text-main text-sm font-medium truncate">{currentUser?.name}</p>
             <p className="text-text-subtle text-xs capitalize">{currentUser?.role}</p>
