@@ -33,6 +33,13 @@ const PALETTE = [
 ] as const
 
 /**
+ * How far apart two colours must be to read as different once the calendar
+ * has diluted them into block backgrounds. Out of a possible 441; the
+ * palette above was spaced so its closest pair clears it.
+ */
+const MIN_DISTANCE = 32
+
+/**
  * Colours chosen for a particular person, which win over the derived one.
  *
  * The palette exists so nobody has to be assigned a colour by hand, but a
@@ -89,18 +96,117 @@ function hash(id: string): number {
   return Math.abs(h)
 }
 
-/** The person's colour, as a hex string. */
-export function personColor(id: string | null | undefined): string {
+/** #rgb or #rrggbb to its three channels. Null if it is neither. */
+function channels(hex: string): [number, number, number] | null {
+  const h = hex.trim().replace(/^#/, '')
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null
+  const n = parseInt(full, 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+const hex2 = (n: number) => Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, '0')
+
+/**
+ * How far apart two colours are, summed over the channels. The same crude
+ * measure the palette was spaced by, and crude is the point: it is what
+ * survives being diluted into a calendar block background.
+ */
+function distance(a: string, b: string): number {
+  const x = channels(a)
+  const y = channels(b)
+  if (!x || !y) return 441
+  return Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) + Math.abs(x[2] - y[2])
+}
+
+/**
+ * The entity's colour first, then the palette, skipping anything too close to it.
+ *
+ * Stepping along the brand hue was the obvious idea and it does not survive
+ * the edges: a midnight-blue or near-white brand has no room in one
+ * direction, and its people collapse into the same near-black. So only the
+ * first person wears the brand colour itself, and the rest come from the
+ * palette that was already spaced to stay apart — minus any entry that would
+ * be mistaken for the brand colour beside it.
+ */
+function brandRamp(brand: string): string[] {
+  const rest = PALETTE.filter((c) => distance(c, brand) >= MIN_DISTANCE)
+  return [brand, ...rest]
+}
+
+/**
+ * The person's colour, as a hex string.
+ *
+ * A hand-picked colour wins; then the entity's brand colour, so people read
+ * as belonging to the company they work for; then the neutral palette, for
+ * anyone whose entity has not set one.
+ *
+ * `roster` is the ids of everyone on the project. Given it, colours are
+ * handed out by position, which is the only way to guarantee two people on
+ * one calendar never share one — hashing each id independently collides
+ * however well spaced the palette is. Without it the hash is used, so every
+ * existing caller keeps working unchanged.
+ */
+export function personColor(
+  id: string | null | undefined,
+  brand?: string | null,
+  roster?: readonly string[] | null,
+): string {
   if (!id) return PALETTE[0]
-  return CHOSEN[id] ?? PALETTE[hash(id) % PALETTE.length]
+  const chosen = CHOSEN[id]
+  if (chosen) return chosen
+
+  const ramp = brand && channels(brand) ? brandRamp(brand) : [...PALETTE]
+
+  if (roster && roster.length > 0) {
+    // Sorted so the order is the roster's membership, not the order it
+    // happened to load in; a colour must not change between renders.
+    const ordered = [...new Set(roster)].sort()
+    const seat = ordered.indexOf(id)
+    if (seat >= 0) {
+      // Anyone with a hand-picked colour does not consume a ramp seat, so
+      // the people who need one get as far through the ramp as possible
+      // before it has to wrap.
+      const seatsUsed = ordered.slice(0, seat).filter((x) => !CHOSEN[x]).length
+      return ramp[seatsUsed % ramp.length]
+    }
+  }
+
+  return ramp[hash(id) % ramp.length]
 }
 
 /**
  * The same colour at low opacity, for a background that has to sit behind
  * ordinary body text rather than white.
  */
-export function personTint(id: string | null | undefined, alpha = 0.14): string {
-  const hex = personColor(id)
-  const n = parseInt(hex.slice(1), 16)
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
+export function personTint(
+  id: string | null | undefined,
+  alpha = 0.14,
+  brand?: string | null,
+): string {
+  const c = channels(personColor(id, brand))
+  if (!c) return `rgba(0, 0, 0, ${alpha})`
+  return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})`
+}
+
+/** Exported so the spacing rule can be checked, not for rendering. */
+export const __test = { brandRamp, distance, PALETTE, MIN_DISTANCE }
+
+/**
+ * The ids of everyone on a project, in the order colours are handed out in.
+ *
+ * Both the calendar and the team page need this list and they must agree: a
+ * different roster gives the same person a different seat, and their avatar
+ * would stop matching their blocks. Membership is `projectIds` where the
+ * record carries it and the legacy single `projectId` where it does not.
+ */
+export function projectRoster(
+  people: readonly { id: string; projectId?: string | null; projectIds?: string[] }[],
+  projectId: string | null | undefined,
+): string[] {
+  if (!projectId) return []
+  return people
+    .filter((p) => (p.projectIds?.length ? p.projectIds.includes(projectId) : p.projectId === projectId))
+    .map((p) => p.id)
+    .sort()
 }

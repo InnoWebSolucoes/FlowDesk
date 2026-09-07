@@ -12,7 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
-import { personColor, personHasStars } from '../../lib/personColor'
+import { personColor, personHasStars, projectRoster } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
 import {
@@ -172,6 +172,10 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     else setCursor((c) => addWeeks(c, 4 * dir))
   }
 
+  // Everyone whose colour this board might draw, so the colours are handed
+  // out by seat rather than by hash and two people here cannot share one.
+  const roster = useMemo(() => projectRoster(employees, project.id), [employees, project.id])
+
   // ── Blocks per day ───────────────────────────────────────────────────────
   // The calendar is organised by day: everything on a day is one flat list,
   // in the order it was added to it.
@@ -189,7 +193,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `todo-${t.id}`,
             label: t.title,
-            color: personColor(t.assigneeId ?? t.ownerId ?? ownerId),
+            color: personColor(t.assigneeId ?? t.ownerId ?? ownerId, project.color, roster),
             todo: t,
           })
         }
@@ -203,7 +207,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `overlay-todo-${t.id}`,
             label: t.title,
-            color: personColor(t.ownerId),
+            color: personColor(t.ownerId, project.color, roster),
             todo: t,
             ownerName: employees.find((e) => e.id === t.ownerId)?.name,
           })
@@ -231,7 +235,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `task-${task.id}-${empIdForCal}`,
             label: task.title,
-            color: personColor(empIdForCal),
+            color: personColor(empIdForCal, project.color, roster),
             outlined: !planned,
             task,
             employeeId: empIdForCal,
@@ -277,7 +281,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       return blocks
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay],
+    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay, project.color, roster],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
