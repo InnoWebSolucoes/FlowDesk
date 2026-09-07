@@ -42,6 +42,11 @@ interface ChatState {
   deleteMessage: (messageId: string, conversationId: string) => Promise<void>
   /** Hides every message in the room. The record survives for managers. */
   clearConversation: (conversationId: string) => Promise<void>
+  /**
+   * Marks a discussion finished. It leaves the list and the record stays, so a
+   * manager can go back to it; nothing is deleted.
+   */
+  setResolved: (conversationId: string, resolved: boolean) => Promise<void>
 
   /** The direct room with this person, opening one if it does not exist yet. */
   openDirect: (otherUserId: string) => Promise<Conversation | null>
@@ -66,6 +71,7 @@ function toConversation(row: any): Conversation {
     createdAt: row.created_at,
     lastMessageAt: row.last_message_at,
     memberIds: (row.conversation_members ?? []).map((m: any) => m.user_id),
+    resolvedAt: row.resolved_at ?? null,
     lastReadAt: null,
     unread: 0,
   }
@@ -406,6 +412,29 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           m.id === messageId ? { ...m, deletedAt: now } : m,
         ),
       },
+    }))
+  },
+
+  setResolved: async (conversationId, resolved) => {
+    const { data: auth } = await supabase.auth.getUser()
+    const { error } = await supabase
+      .from('conversations')
+      .update({
+        resolved_at: resolved ? new Date().toISOString() : null,
+        resolved_by: resolved ? auth.user?.id ?? null : null,
+      })
+      .eq('id', conversationId)
+
+    if (error) {
+      console.error('[chat] resolve failed:', error.message)
+      set({ error: error.message })
+      return
+    }
+    const now = resolved ? new Date().toISOString() : null
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId ? { ...c, resolvedAt: now } : c,
+      ),
     }))
   },
 

@@ -435,6 +435,8 @@ export interface Conversation {
   lastMessageAt: string
   /** Members of a direct room. Empty for a task room, whose audience is derived. */
   memberIds: string[]
+  /** Set when the discussion was finished with. Archived, not deleted. */
+  resolvedAt?: string | null
   /** When the signed-in user last read this room. */
   lastReadAt: string | null
   /**

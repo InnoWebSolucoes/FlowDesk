@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Paperclip, Link2, X, Clock, Trash2, Loader2, NotebookPen,
 } from 'lucide-react'
-import { format, parseISO, startOfWeek, startOfMonth, isSameWeek, isSameMonth } from 'date-fns'
+import { format, parseISO, startOfWeek, startOfMonth } from 'date-fns'
 import { Project } from '../../types'
 import { useWorkLogStore } from '../../store/workLogStore'
 import { useProjectStore } from '../../store/projectStore'
@@ -170,14 +170,31 @@ export function WorkLog({ project }: { project: Project }) {
       {open && (
         <div className="mb-5 bg-surface border border-border rounded-xl p-4 space-y-3">
           <input
+            autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter saves: a log entry is usually one line typed in passing,
+              // and reaching for the mouse to file it is most of the friction.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                submit()
+              }
+            }}
             placeholder={t('worklog_titlePlaceholder')}
             className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary"
           />
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            onKeyDown={(e) => {
+              // Ctrl+Enter here: plain Enter has to stay a new line in a
+              // box meant for more than one.
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault()
+                submit()
+              }
+            }}
             rows={3}
             placeholder={t('worklog_descriptionPlaceholder')}
             className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main resize-none focus:outline-none focus:border-primary"

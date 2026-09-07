@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Send, Paperclip, Search, MessageSquare, CheckSquare, Trash2, Download,
+  Send, Paperclip, Search, MessageSquare, CheckSquare, Trash2, Download, CheckCircle2,
   FolderOpen, X, Link2, ArrowRight,
 } from 'lucide-react'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
@@ -45,7 +45,7 @@ export function Chat() {
   const { currentUser } = useAuthStore()
   const { allTasks } = useTaskStore()
   const {
-    conversations, messages, loadMessages, sendMessage, deleteMessage, clearConversation,
+    conversations, messages, loadMessages, sendMessage, deleteMessage, clearConversation, setResolved,
     openDirect, openTaskRoom, ensureCluster, markRead, unreadCount, loadedRooms,
     people, error, clearError,
   } = useChatStore()
@@ -53,9 +53,9 @@ export function Chat() {
     items, createItem, setItemClusters, loadResources, resourcesLoadedFor, getFileUrl,
   } = useProjectStore()
 
-  const [activeId, setActiveId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [query, setQuery] = useState('')
+  const [showResolved, setShowResolved] = useState(false)
   const [pendingItems, setPendingItems] = useState<ResourceItem[]>([])
   const [uploading, setUploading] = useState(false)
   const [picking, setPicking] = useState(false)
@@ -70,14 +70,28 @@ export function Chat() {
   const isAdmin = currentUser?.role === 'admin'
 
   // ─── Which room is open ───────────────────────────────────────────────────
-  // ?conversation=<id> is how a notification lands on the room it is about.
-  useEffect(() => {
-    const wanted = searchParams.get('conversation')
-    if (!wanted) return
-    setActiveId(wanted)
-    searchParams.delete('conversation')
-    setSearchParams(searchParams, { replace: true })
-  }, [searchParams, setSearchParams])
+  // The open room lives in the URL rather than in state, so reloading leaves
+  // you in the conversation you were reading instead of back at the empty
+  // list. It is also how a notification lands on the room it is about, and it
+  // makes a room something you can link to.
+  const activeId = searchParams.get('conversation')
+
+  const setActiveId = useCallback(
+    (id: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          if (id) next.set('conversation', id)
+          else next.delete('conversation')
+          return next
+        },
+        // Replace rather than push: flicking between rooms should not fill the
+        // back button with every one you looked at.
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
 
   // ?task=<id> opens (or starts) that task's room, which is how the task card's
   // discussion button gets here.
@@ -169,13 +183,21 @@ export function Chat() {
 
   const q = query.trim().toLowerCase()
 
-  const directRooms = conversations
-    .filter((c) => c.kind === 'direct')
-    .filter((c) => !q || titleOf(c).toLowerCase().includes(q))
+  // A finished discussion leaves the list rather than sitting among the ones
+  // that still matter. It is archived, not deleted, and the archive is one
+  // click away.
+  const matches = (c: typeof conversations[number]) =>
+    !q || titleOf(c).toLowerCase().includes(q)
 
-  const taskRooms = conversations
-    .filter((c) => c.kind === 'task')
-    .filter((c) => !q || titleOf(c).toLowerCase().includes(q))
+  const directRooms = conversations.filter((c) => c.kind === 'direct' && matches(c))
+
+  const taskRooms = conversations.filter(
+    (c) => c.kind === 'task' && !c.resolvedAt && matches(c),
+  )
+
+  const resolvedRooms = conversations.filter(
+    (c) => c.kind === 'task' && c.resolvedAt && matches(c),
+  )
 
   /**
    * Everyone you could start a chat with who you have no room with yet. A
@@ -382,6 +404,29 @@ export function Chat() {
             </Section>
           )}
 
+          {resolvedRooms.length > 0 && (
+            <Section label={`${t('chat_resolved')} (${resolvedRooms.length})`}>
+              {showResolved
+                ? resolvedRooms.map((c) => <RoomRow key={c.id} c={c} />)
+                : (
+                  <button
+                    onClick={() => setShowResolved(true)}
+                    className="w-full px-3 py-2 text-left text-xs text-text-subtle hover:text-text-main transition-colors"
+                  >
+                    {t('chat_showResolved')}
+                  </button>
+                )}
+              {showResolved && (
+                <button
+                  onClick={() => setShowResolved(false)}
+                  className="w-full px-3 py-1.5 text-left text-xs text-text-subtle hover:text-text-main transition-colors"
+                >
+                  {t('chat_hideResolved')}
+                </button>
+              )}
+            </Section>
+          )}
+
           {startable.length > 0 && (
             <Section label={t('chat_startChat')}>
               {startable.map((p) => (
@@ -434,6 +479,21 @@ export function Chat() {
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                {active.kind === 'task' && (
+                  <button
+                    onClick={() => setResolved(active.id, !active.resolvedAt)}
+                    title={active.resolvedAt ? t('chat_reopen') : t('chat_resolveHint')}
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors font-medium ${
+                      active.resolvedAt
+                        ? 'bg-success/10 text-success hover:bg-success/20'
+                        : 'text-text-muted hover:text-success hover:bg-surface-2'
+                    }`}
+                  >
+                    <CheckCircle2 size={13} />
+                    {active.resolvedAt ? t('chat_resolved') : t('chat_resolve')}
+                  </button>
+                )}
+
                 {roomMessages.length > 0 && (
                   <button
                     onClick={() => clearConversation(active.id)}
