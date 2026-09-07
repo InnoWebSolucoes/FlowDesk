@@ -666,6 +666,17 @@ function buildMenu() {
         // app root, which reads as being logged out.
         { label: 'Reload FlowDesk', accelerator: 'CmdOrCtrl+R', click: () => flowView.webContents.reload() },
         {
+          // A plain reload serves whatever index-*.js the cache already holds,
+          // so a deployed fix can sit there unseen while the site itself is
+          // current. There was no way to clear it: Ctrl+Shift+R is Claude's.
+          label: 'Reload FlowDesk (Clear Cache)',
+          accelerator: 'CmdOrCtrl+Shift+F5',
+          click: async () => {
+            await flowView.webContents.session.clearCache()
+            flowView.webContents.reloadIgnoringCache()
+          },
+        },
+        {
           label: 'Reload Claude',
           accelerator: 'CmdOrCtrl+Shift+R',
           // Reloading a view that was never loaded leaves it blank, so load it.
