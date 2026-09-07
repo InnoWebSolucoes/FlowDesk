@@ -8,6 +8,8 @@
 -- manager can still go back to it. Anyone in the room may resolve it — the
 -- person who did the work usually knows first that the discussion is over.
 
+set search_path = public;
+
 alter table public.conversations
   add column if not exists resolved_at timestamptz,
   add column if not exists resolved_by uuid references public.users(id) on delete set null;

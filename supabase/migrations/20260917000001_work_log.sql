@@ -10,6 +10,12 @@
 -- Managers are told when one arrives, and can read the day, the week or the
 -- month.
 
+-- Some SQL editors run with a search_path that does not include public, and a
+-- "public.projects does not exist" from a reference that plainly does exist is
+-- that, not a missing table. Set it for this session and the rest reads the
+-- schema it names.
+set search_path = public;
+
 create table if not exists public.work_log_entries (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
