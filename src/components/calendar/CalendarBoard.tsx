@@ -77,6 +77,17 @@ interface CalendarBoardProps {
  * One component for the managers' board and each employee's, so the planning
  * view is the same tool on both sides.
  */
+/**
+ * Todos on your own board all belong to you, so the person's colour says
+ * nothing and every block came out the same. Priority is the distinction that
+ * matters there, and matches the badge on the todo board itself.
+ */
+const TODO_PRIORITY_COLOR: Record<string, string> = {
+  high: '#B91C1C',
+  medium: '#B45309',
+  low: '#475569',
+}
+
 export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps) {
   const { t } = useT()
   const {
@@ -189,7 +200,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `todo-${t.id}`,
             label: t.title,
-            color: personColor(t.ownerId ?? t.assigneeId ?? ownerId),
+            color: TODO_PRIORITY_COLOR[t.priority] ?? TODO_PRIORITY_COLOR.medium,
             todo: t,
           })
         }
