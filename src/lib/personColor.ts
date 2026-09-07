@@ -10,22 +10,71 @@
  */
 
 /**
- * Picked to stay legible as a small block of colour with white text on it, and
- * to be distinguishable from each other — including for the commonest forms of
- * colour blindness, which is why there is no red/green pair among them.
+ * Picked to stay legible as a small block of colour with white text on it.
+ *
+ * The calendar draws blocks as a 14% tint of these, which flattens hue
+ * differences hard — two cool colours become the same pale wash. So the order
+ * alternates warm and cool, since neighbours in this list are the ones most
+ * likely to end up side by side, and the hues are spaced widely enough to
+ * survive being diluted.
  */
 const PALETTE = [
   '#1B4F8A', // blue
-  '#7A2E6B', // plum
-  '#0F6E63', // teal
-  '#8A4B0A', // amber
-  '#4B3A8A', // indigo
-  '#2A6B1E', // green
-  '#8A2020', // brick
-  '#155E75', // cyan
-  '#6B3FA0', // violet
-  '#7A5C0A', // olive
+  '#C2410C', // orange
+  '#0F766E', // teal
+  '#A21CAF', // magenta
+  '#B45309', // amber
+  '#4338CA', // indigo
+  '#B91C1C', // red
+  '#15803D', // green
+  '#7C3AED', // violet
+  '#0E7490', // cyan
 ] as const
+
+/**
+ * Colours chosen for a particular person, which win over the derived one.
+ *
+ * The palette exists so nobody has to be assigned a colour by hand, but a
+ * specific request beats a hash, and asking for one is a perfectly good
+ * reason to have it.
+ */
+const CHOSEN: Record<string, string> = {
+  // Kasim — midnight blue.
+  '5719747f-ccc2-4e4e-8b10-13bb026fe725': '#0B1E3D',
+}
+
+/**
+ * Whose avatar gets a starfield over its colour. Purely decorative, and drawn
+ * as a background layer so it costs nothing where it is not wanted.
+ */
+const STARRED = new Set<string>([
+  '5719747f-ccc2-4e4e-8b10-13bb026fe725', // Kasim
+])
+
+/** Does this person's colour carry stars? */
+export function personHasStars(id: string | null | undefined): boolean {
+  return !!id && STARRED.has(id)
+}
+
+/**
+ * A scattering of stars as a CSS background, layered over the flat colour.
+ * Fixed positions rather than random ones, so the avatar does not change
+ * between renders.
+ */
+export function personStarLayer(id: string | null | undefined): string | undefined {
+  if (!personHasStars(id)) return undefined
+  const star = (x: number, y: number, r: number, a: number) =>
+    `radial-gradient(circle ${r}px at ${x}% ${y}%, rgba(255,255,255,${a}) 0%, rgba(255,255,255,0) 100%)`
+  return [
+    star(18, 22, 1.1, 0.95),
+    star(72, 16, 0.8, 0.75),
+    star(38, 62, 0.9, 0.85),
+    star(84, 58, 1.1, 0.9),
+    star(58, 84, 0.7, 0.7),
+    star(12, 78, 0.8, 0.8),
+    star(90, 34, 0.6, 0.6),
+  ].join(', ')
+}
 
 /**
  * Stable across runs, unlike a string hash built on anything host-specific.
@@ -42,7 +91,7 @@ function hash(id: string): number {
 /** The person's colour, as a hex string. */
 export function personColor(id: string | null | undefined): string {
   if (!id) return PALETTE[0]
-  return PALETTE[hash(id) % PALETTE.length]
+  return CHOSEN[id] ?? PALETTE[hash(id) % PALETTE.length]
 }
 
 /**

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
-  Circle, CheckCircle2, Users, X,
+  Circle, CheckCircle2, Users, X, Star,
 } from 'lucide-react'
 import {
   addDays, addWeeks, format,
@@ -12,7 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
-import { personColor } from '../../lib/personColor'
+import { personColor, personHasStars } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
 import {
@@ -1111,13 +1111,20 @@ function BlockChip({
             ? {
                 // color-mix keeps the tint while staying fully opaque, so the
                 // hour rules behind the column do not show through the block.
-                backgroundColor: `color-mix(in srgb, ${block.color} 14%, #FFFFFF)`,
-                color: block.color,
-                borderLeft: `3px solid ${block.color}`,
+                backgroundColor: `color-mix(in srgb, ${block.color} 30%, #FFFFFF)`,
+                // Darkened against the stronger tint, so the label stays
+                // readable rather than sitting at low contrast on its own hue.
+                color: `color-mix(in srgb, ${block.color} 80%, #000000)`,
+                borderLeft: `4px solid ${block.color}`,
               }
-            : { backgroundColor: `color-mix(in srgb, ${block.color} 12%, #FFFFFF)`, color: block.color }
+            : { backgroundColor: `color-mix(in srgb, ${block.color} 26%, #FFFFFF)`, color: `color-mix(in srgb, ${block.color} 80%, #000000)` }
       }
     >
+      {personHasStars(block.employeeId ?? block.todo?.ownerId) && (
+        <span className="float-left mr-1 mt-[1px] leading-none" aria-hidden>
+          <Star size={9} fill="currentColor" strokeWidth={0} />
+        </span>
+      )}
       {onToggleDone && (
         <button
           onPointerDown={(e) => { e.stopPropagation(); moved.current = true }}
