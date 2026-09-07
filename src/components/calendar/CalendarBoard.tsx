@@ -1122,13 +1122,14 @@ function BlockChip({
             ? {
                 // color-mix keeps the tint while staying fully opaque, so the
                 // hour rules behind the column do not show through the block.
-                backgroundColor: `color-mix(in srgb, ${block.color} 30%, #FFFFFF)`,
-                // Darkened against the stronger tint, so the label stays
-                // readable rather than sitting at low contrast on its own hue.
-                color: `color-mix(in srgb, ${block.color} 80%, #000000)`,
+                backgroundColor: `color-mix(in srgb, ${block.color} 55%, #FFFFFF)`,
+                // Near-black in the block's own hue. At 55% the background
+                // carries real colour, so the label has to go much darker than
+                // the block to stay readable on it.
+                color: `color-mix(in srgb, ${block.color} 35%, #000000)`,
                 borderLeft: `4px solid ${block.color}`,
               }
-            : { backgroundColor: `color-mix(in srgb, ${block.color} 26%, #FFFFFF)`, color: `color-mix(in srgb, ${block.color} 80%, #000000)` }
+            : { backgroundColor: `color-mix(in srgb, ${block.color} 50%, #FFFFFF)`, color: `color-mix(in srgb, ${block.color} 35%, #000000)` }
       }
     >
       {personHasStars(block.employeeId ?? block.todo?.ownerId) && (

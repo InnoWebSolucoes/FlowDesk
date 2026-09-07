@@ -10,25 +10,26 @@
  */
 
 /**
- * Picked to stay legible as a small block of colour with white text on it.
+ * Eight hues spaced around the wheel, and eight rather than ten deliberately.
  *
- * The calendar draws blocks as a 14% tint of these, which flattens hue
- * differences hard — two cool colours become the same pale wash. So the order
- * alternates warm and cool, since neighbours in this list are the ones most
- * likely to end up side by side, and the hues are spaced widely enough to
- * survive being diluted.
+ * The list used to hold near-duplicates — orange beside amber, teal beside
+ * cyan — and once the calendar diluted them into block backgrounds those pairs
+ * were 7 units apart in RGB out of a possible 441. Indistinguishable. Dropping
+ * indigo and cyan, whose neighbours already covered them, and pushing the rest
+ * apart takes the closest pair to 32.
+ *
+ * Warm and cool alternate, because consecutive entries are what two people
+ * added one after another will get.
  */
 const PALETTE = [
-  '#1B4F8A', // blue
-  '#C2410C', // orange
-  '#0F766E', // teal
-  '#A21CAF', // magenta
-  '#B45309', // amber
-  '#4338CA', // indigo
-  '#B91C1C', // red
-  '#15803D', // green
+  '#1D4ED8', // blue
+  '#EA580C', // orange
+  '#0D9488', // teal
+  '#DB2777', // magenta
+  '#CA8A04', // amber
   '#7C3AED', // violet
-  '#0E7490', // cyan
+  '#DC2626', // red
+  '#16A34A', // green
 ] as const
 
 /**
