@@ -287,8 +287,11 @@ export function AIOrganiser() {
       const finalAssignees = gt._assignedTo?.length ? gt._assignedTo : selectedEmployees
       if (finalAssignees.length === 0) continue
 
-      // An employee belongs to exactly one project, so the assignees fix it.
-      const projectId = employees.find(e => e.id === finalAssignees[0])?.projectId
+      // The project the organiser was opened in. Employees can be on several
+      // projects now, so the first assignee no longer identifies one — and
+      // their legacy project_id is null whenever they were added through
+      // project_members, which skipped every task without saying so.
+      const projectId = project?.id
       if (!projectId) continue
 
       const catId = gt._categoryId ?? await resolveCategory(gt.categoryName)
@@ -323,6 +326,15 @@ export function AIOrganiser() {
     } finally {
       setImporting(false)
     }
+
+    // A batch that saved nothing without throwing means every task was
+    // skipped, and the button just looked broken. Say so rather than clearing
+    // the screen as though it had worked.
+    if (saved === 0) {
+      setError(t('ai_errorImportedNothing'))
+      return
+    }
+
     if (unassigned.length > 0) {
       setError(t('ai_errorSomeUnassigned').replace('{n}', String(unassigned.length)))
     }
@@ -579,13 +591,10 @@ export function AIOrganiser() {
                               // A manager has no project of their own, and does
                               // not need one: their share goes to their board,
                               // not to a project roster.
-                              const noProject = emp.id !== me?.id && !emp.projectId
                               return (
                                 <button
                                   key={emp.id}
                                   type="button"
-                                  disabled={noProject}
-                                  title={noProject ? `${emp.name} is not on a project yet` : undefined}
                                   onClick={() =>
                                     setTaskAssignees(
                                       i,
@@ -595,11 +604,9 @@ export function AIOrganiser() {
                                     )
                                   }
                                   className={`px-2 py-1 rounded-full text-[11px] font-medium border transition-all ${
-                                    noProject
-                                      ? 'bg-surface-2 text-text-subtle border-border cursor-not-allowed opacity-60'
-                                      : picked
-                                        ? 'bg-primary text-white border-primary'
-                                        : 'bg-surface text-text-muted border-border hover:border-primary/50'
+                                    picked
+                                      ? 'bg-primary text-white border-primary'
+                                      : 'bg-surface text-text-muted border-border hover:border-primary/50'
                                   }`}
                                 >
                                   {emp.name}
