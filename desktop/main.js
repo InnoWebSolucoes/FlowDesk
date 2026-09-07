@@ -271,14 +271,33 @@ function attachNavPolicy(view, allowDomains) {
     openExternal(url)
     return { action: 'deny' }
   })
-  if (allowDomains) {
-    wc.on('will-navigate', (event, url) => {
-      if (!hostAllowed(url, allowDomains)) {
-        event.preventDefault()
-        openExternal(url)
-      }
-    })
+  // Passing no domains used to mean no guard at all, which left the FlowDesk
+  // pane free to navigate away from the app: opening a document sent in chat
+  // replaced the whole window with the file's storage URL, and the shell has
+  // no address bar or back button to return with. The pane's own origin is
+  // the fallback, so a file opens in the browser and the app stays put.
+  wc.on('will-navigate', (event, url) => {
+    const domains = allowDomains ?? defaultNavDomains(wc)
+    // No known host means no opinion: better to allow than to strand the pane
+    // the other way round, unable to reach its own sign-in.
+    if (domains.length === 0) return
+    if (!hostAllowed(url, domains)) {
+      event.preventDefault()
+      openExternal(url)
+    }
+  })
+}
+
+/** The host the pane is meant to stay on, read from where it was pointed. */
+function defaultNavDomains(wc) {
+  for (const candidate of [wc.getURL(), flowdeskUrl()]) {
+    try {
+      if (candidate) return [new URL(candidate).hostname]
+    } catch {
+      // Not a URL yet — the view may not have loaded. Try the next.
+    }
   }
+  return []
 }
 
 // Borrows the current Supabase access token from the logged-in FlowDesk pane.

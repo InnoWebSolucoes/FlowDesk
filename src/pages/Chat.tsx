@@ -310,7 +310,15 @@ export function Chat() {
     const a = document.createElement('a')
     a.href = url
     a.download = item.fileName ?? item.title
+    // Without a target the browser is free to navigate to the file instead of
+    // saving it, for anything it can render itself — a PDF, an image. In the
+    // desktop shell that replaced the whole app with the document and there
+    // was no way back.
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    document.body.appendChild(a)
     a.click()
+    a.remove()
   }
 
   /** Take the reader from a task room to the task it is about. */
