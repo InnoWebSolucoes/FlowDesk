@@ -631,6 +631,8 @@ const en = {
 
   // Labels and messages the first pass did not reach
   cal_deadline: 'Deadline',
+  cal_due: 'due',
+  cal_unscheduledHint: 'Drag onto a day to set when you will do it, or back here to unschedule it.',
   cal_descriptionLabel: 'Description',
   cal_doDateLabel: 'Do date, when you\'ll work on it',
   cal_firstDay: 'First day',
@@ -670,6 +672,7 @@ const en = {
   taskpeek_someone: 'Someone',
   // The day's other work
   nav_workLog: 'Work log',
+  profile_notOnProject: 'They are not on a project yet, so there is nothing here.',
   worklog_add: 'Log work',
   worklog_byDay: 'By day',
   worklog_byWeek: 'By week',
@@ -1321,6 +1324,8 @@ const pt: typeof en = {
 
   // Labels and messages the first pass did not reach
   cal_deadline: 'Prazo',
+  cal_due: 'prazo',
+  cal_unscheduledHint: 'Arraste para um dia para definir quando o vai fazer, ou de volta para aqui para desagendar.',
   cal_descriptionLabel: 'Descrição',
   cal_doDateLabel: 'Dia de execução, quando vai fazer',
   cal_firstDay: 'Primeiro dia',
@@ -1360,6 +1365,7 @@ const pt: typeof en = {
   taskpeek_someone: 'Alguém',
   // The day's other work
   nav_workLog: 'Registo de trabalho',
+  profile_notOnProject: 'Ainda não está num projeto, por isso não há nada aqui.',
   worklog_add: 'Registar trabalho',
   worklog_byDay: 'Por dia',
   worklog_byWeek: 'Por semana',

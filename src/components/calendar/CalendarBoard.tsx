@@ -654,6 +654,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           dropActive={overUnscheduled}
           onDragStart={(id, label) => setDrag({ kind: 'unscheduled', id, label })}
           onOpen={setOpenTodo}
+          onToggleDone={toggleTodo}
         />
       </div>
 
@@ -1140,6 +1141,7 @@ function Unscheduled({
   dropActive,
   onDragStart,
   onOpen,
+  onToggleDone,
 }: {
   todos: ProjectTodo[]
   lists: { id: string; name: string }[]
@@ -1148,8 +1150,10 @@ function Unscheduled({
   dropActive?: boolean
   onDragStart: (id: string, label: string) => void
   onOpen: (id: string) => void
+  onToggleDone: (id: string) => void
 }) {
-  const { t } = useT()
+  // `t` is the todo inside the list below, so the translator is `tr` here.
+  const { t: tr } = useT()
   // Only the main list, as asked — otherwise every list's backlog piles in here.
   const mainListId = lists[0]?.id ?? null
   const pending = todos.filter(
@@ -1164,18 +1168,15 @@ function Unscheduled({
       }`}
     >
       <h3 className="text-text-main font-medium text-sm flex items-center gap-1.5">
-        <CalendarClock size={14} className="text-text-muted" />{t('cal_notScheduled')}</h3>
-      <p className="text-text-subtle text-[11px] mt-0.5 mb-3">
-        {lists[0] ? `From "${lists[0].name}".` : ''} Drag onto a day to set its do
-        date, or back here to unschedule it.
-      </p>
+        <CalendarClock size={14} className="text-text-muted" />{tr('cal_notScheduled')}</h3>
+      <p className="text-text-subtle text-[11px] mt-0.5 mb-3">{tr('cal_unscheduledHint')}</p>
 
       {dropActive && (
-        <p className="text-[11px] text-primary font-medium mb-2">{t('cal_dropToUnschedule')}</p>
+        <p className="text-[11px] text-primary font-medium mb-2">{tr('cal_dropToUnschedule')}</p>
       )}
 
       {pending.length === 0 ? (
-        <p className="text-xs text-text-subtle italic">{t('cal_everythingHasADoDate')}</p>
+        <p className="text-xs text-text-subtle italic">{tr('cal_everythingHasADoDate')}</p>
       ) : (
         <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
           {pending.map((t) => (
@@ -1193,9 +1194,23 @@ function Unscheduled({
               }`}
             >
               <GripVertical size={12} className="text-text-subtle mt-0.5 flex-shrink-0" />
+              {/* Ticking it off here: something can be finished without ever
+                  having been given a day. */}
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onToggleDone(t.id) }}
+                title={tr('cal_markDone')}
+                className="text-text-subtle hover:text-success mt-0.5 flex-shrink-0"
+              >
+                <Circle size={12} />
+              </button>
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-text-main leading-snug">{t.title}</p>
-                {t.dueDate && <p className="text-[10px] text-danger mt-0.5">due {t.dueDate}</p>}
+                {t.dueDate && (
+                  <p className="text-[10px] text-danger mt-0.5">
+                    {tr('cal_due')} {t.dueDate}
+                  </p>
+                )}
               </div>
             </div>
           ))}

@@ -20,7 +20,20 @@ type Grouping = 'day' | 'week' | 'month'
  * manager reads it to understand where the time went, it groups by day, week
  * or month rather than being one long list.
  */
-export function WorkLog({ project }: { project: Project }) {
+export function WorkLog({
+  project,
+  authorId,
+  readOnly,
+}: {
+  project: Project
+  /**
+   * Whose log this is. Omitted, it is the signed-in person's own — which is
+   * how an employee sees it. A manager reading someone's profile passes their
+   * id and gets that person's record, read-only.
+   */
+  authorId?: string
+  readOnly?: boolean
+}) {
   const { t } = useT()
   const { entries, loadedFor, loading, load, add, remove } = useWorkLogStore()
   const { createItem } = useProjectStore()
@@ -45,6 +58,11 @@ export function WorkLog({ project }: { project: Project }) {
     if (loadedFor !== project.id) load(project.id)
   }, [project.id, loadedFor, load])
 
+  // One person's entries. The store holds the project's, because a manager
+  // moving between profiles should not refetch on every click.
+  const who = authorId ?? currentUser?.id
+  const mine = entries.filter((e) => e.authorId === who)
+
   const isAdmin = currentUser?.role === 'admin'
   const nameOf = (id: string) =>
     id === currentUser?.id ? t('worklog_you') : employees.find((e) => e.id === id)?.name ?? '—'
@@ -52,7 +70,7 @@ export function WorkLog({ project }: { project: Project }) {
   // Grouped by the period the work happened in, newest first.
   const groups = useMemo(() => {
     const out = new Map<string, { label: string; entries: typeof entries }>()
-    for (const e of entries) {
+    for (const e of mine) {
       const d = parseISO(e.workedOn)
       const key =
         grouping === 'day'
@@ -70,7 +88,7 @@ export function WorkLog({ project }: { project: Project }) {
       out.get(key)!.entries.push(e)
     }
     return [...out.entries()].sort((a, b) => b[0].localeCompare(a[0]))
-  }, [entries, grouping])
+  }, [mine, grouping])
 
   const totalOf = (list: typeof entries) =>
     list.reduce((sum, e) => sum + (e.minutes ?? 0), 0)
@@ -153,12 +171,14 @@ export function WorkLog({ project }: { project: Project }) {
           ))}
         </div>
 
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors"
-        >
-          <Plus size={15} /> {t('worklog_add')}
-        </button>
+        {!readOnly && (
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors"
+          >
+            <Plus size={15} /> {t('worklog_add')}
+          </button>
+        )}
       </div>
 
       {error && (
@@ -283,11 +303,11 @@ export function WorkLog({ project }: { project: Project }) {
         </div>
       )}
 
-      {loading && entries.length === 0 && (
+      {loading && mine.length === 0 && (
         <p className="text-text-muted text-sm py-8 text-center">{t('emp_loading')}</p>
       )}
 
-      {!loading && entries.length === 0 && (
+      {!loading && mine.length === 0 && (
         <EmptyState
           icon={NotebookPen}
           title={t('worklog_emptyTitle')}

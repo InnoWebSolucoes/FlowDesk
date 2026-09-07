@@ -15,8 +15,9 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Bold, Italic, List, ListOrdered, Heading2 } from 'lucide-react'
 import { useT } from '../../i18n/useT'
+import { WorkLog } from '../../components/worklog/WorkLog'
 
-const TABS = ['tasks', 'analytics', 'todos', 'notes', 'toolbox', 'guidelines'] as const
+const TABS = ['tasks', 'analytics', 'worklog', 'todos', 'notes', 'toolbox', 'guidelines'] as const
 type Tab = typeof TABS[number]
 
 export function EmployeeProfile() {
@@ -66,6 +67,7 @@ export function EmployeeProfile() {
   const tabLabels: Record<Tab, string> = {
     tasks: t('profile_tabTasks'),
     analytics: t('profile_tabAnalytics'),
+    worklog: t('nav_workLog'),
     todos: t('nav_todos'),
     notes: t('nav_notes'),
     toolbox: t('profile_tabToolbox'),
@@ -120,6 +122,16 @@ export function EmployeeProfile() {
 
       {tab === 'analytics' && (
         <Analytics forEmployeeId={emp.id} />
+      )}
+
+      {tab === 'worklog' && (
+        !empProject ? (
+          <p className="text-text-muted text-sm py-8">{t('profile_notOnProject')}</p>
+        ) : (
+          // Read-only: this is their record of their own work, and a manager
+          // reads it rather than writes into it.
+          <WorkLog project={empProject} authorId={emp.id} readOnly />
+        )
       )}
 
       {(tab === 'todos' || tab === 'notes') && (

@@ -23,7 +23,6 @@ import { ProjectAbout } from './pages/admin/project/ProjectAbout'
 import { ProjectResources } from './pages/admin/project/ProjectResources'
 import { ProjectEmployees } from './pages/admin/project/ProjectEmployees'
 import { ProjectAdmins } from './pages/admin/project/ProjectAdmins'
-import { ProjectWorkLog } from './pages/admin/project/ProjectWorkLog'
 import { MyWorkLog } from './pages/employee/MyWorkLog'
 import { ProjectTodos } from './pages/admin/project/ProjectTodos'
 import { ProjectCalendar } from './pages/admin/project/ProjectCalendar'
@@ -196,7 +195,6 @@ export default function App() {
                 <Route path="ai-organiser" element={<AIOrganiser />} />
                 <Route path="analytics" element={<Analytics />} />
                 <Route path="admins" element={<ProjectAdmins />} />
-                <Route path="work-log" element={<ProjectWorkLog />} />
 
                 {/* A profile is opened from the team tab and stays inside it,
                     so the project and team tabs do not vanish underneath. */}
