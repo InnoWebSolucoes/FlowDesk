@@ -548,9 +548,12 @@ export function AIOrganiser() {
                         <div className="sm:col-span-2">
                           <label className="text-xs font-medium text-text-muted mb-1 block">{t('ai_assignThisTask')}</label>
                           <div className="flex flex-wrap gap-1.5">
-                            {staff.map(emp => {
+                            {assignable.map(emp => {
                               const picked = (gt._assignedTo ?? []).includes(emp.id)
-                              const noProject = !emp.projectId
+                              // A manager has no project of their own, and does
+                              // not need one: their share goes to their board,
+                              // not to a project roster.
+                              const noProject = emp.id !== me?.id && !emp.projectId
                               return (
                                 <button
                                   key={emp.id}

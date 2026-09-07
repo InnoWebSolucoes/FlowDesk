@@ -11,15 +11,17 @@ import { useT } from '../../../i18n/useT'
 interface Ctx { project: Project }
 
 /**
- * Who may run this project, and who is an admin at all.
+ * Who can manage this project.
  *
- * Both are the owner's to decide, and the policies enforce it — this page just
- * keeps the controls somewhere they can be found, rather than buried above the
- * team list where they had nothing to do with the people below them.
+ * This was two panels — one for which projects an admin reaches, another for
+ * who is an admin at all. They are different questions, but with every admin
+ * reaching every project they showed the same names twice and the distinction
+ * landed as a duplicate. One list now: everybody who can manage this project,
+ * with the two ways off it told apart by what they actually do.
  */
 export function ProjectAdmins() {
   const { t } = useT()
-  const { project } = useOutletContext<Ctx>()
+  const ctx = useOutletContext<Ctx | null>()
   const { currentUser } = useAuthStore()
   const { employees } = useEmployeeStore()
   const {
@@ -27,15 +29,13 @@ export function ProjectAdmins() {
   } = useProjectAdminStore()
 
   const isOwner = !!currentUser?.isOwner
+  const project = ctx?.project
 
   useEffect(() => {
-    if (isOwner) loadAdmins(project.id)
-  }, [isOwner, project.id, loadAdmins])
+    if (isOwner && project) loadAdmins(project.id)
+  }, [isOwner, project, loadAdmins])
 
-  const projectAdminIds = byProject[project.id] ?? []
-  const admins = allAdmins.filter((u) => projectAdminIds.includes(u.id))
-  const grantable = allAdmins.filter((u) => !u.isOwner && !projectAdminIds.includes(u.id))
-  const staff = employees.filter((e) => e.role === 'employee')
+  if (!project) return null
 
   if (!isOwner) {
     return (
@@ -47,45 +47,72 @@ export function ProjectAdmins() {
     )
   }
 
+  const projectAdminIds = byProject[project.id] ?? []
+  // On this project: the owner, who reaches everything, and whoever has been
+  // granted it.
+  const here = allAdmins.filter((u) => u.isOwner || projectAdminIds.includes(u.id))
+  // An admin elsewhere who has not been given this one.
+  const elsewhere = allAdmins.filter((u) => !u.isOwner && !projectAdminIds.includes(u.id))
+  const staff = employees.filter((e) => e.role === 'employee')
+
   return (
     <div className="space-y-6 max-w-2xl">
-      {/* Who runs this project. */}
       <div className="bg-surface rounded-xl border border-border p-5">
         <div className="flex items-center gap-2 mb-1">
           <Shield size={16} className="text-primary" />
-          <h3 className="text-text-main font-semibold text-sm">Who can manage {project.name}</h3>
+          <h3 className="text-text-main font-semibold text-sm">
+            {t('proj_whoCanManage')} {project.name}
+          </h3>
         </div>
-        <p className="text-text-muted text-xs mb-4">
-          An admin added here can do everything you can inside this project — create
-          and delete tasks, people and documents — and nothing outside it.
-        </p>
+        <p className="text-text-muted text-xs mb-4">{t('proj_whoCanManageHint')}</p>
 
         <div className="flex flex-wrap gap-2">
-          {admins.map((a) => (
+          {here.map((a) => (
             <span
               key={a.id}
-              className="flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-primary-light border border-primary/30 text-xs text-text-main"
+              className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full border text-xs ${
+                a.isOwner
+                  ? 'bg-surface-2 border-border text-text-main'
+                  : 'bg-primary-light border-primary/30 text-text-main'
+              }`}
             >
               {a.name}
-              <button
-                onClick={() => revoke(project.id, a.id)}
-                title={`Remove ${a.name}'s access to this project`}
-                className="p-0.5 rounded-full text-text-muted hover:text-danger transition-colors"
-              >
-                <X size={12} />
-              </button>
+              {a.isOwner ? (
+                <span className="text-[10px] text-text-subtle pr-1">{t('proj_owner')}</span>
+              ) : (
+                <>
+                  {/* Two different acts, so two buttons: taking away this one
+                      project, or taking away being an admin at all. */}
+                  <button
+                    onClick={() => revoke(project.id, a.id)}
+                    title={t('proj_removeFromProject')}
+                    className="p-0.5 rounded-full text-text-muted hover:text-danger transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                  <button
+                    onClick={() => setRole(a.id, 'employee')}
+                    title={t('proj_makeEmployeeAgain')}
+                    className="p-0.5 rounded-full text-text-muted hover:text-danger transition-colors"
+                  >
+                    <LogOut size={11} />
+                  </button>
+                </>
+              )}
             </span>
           ))}
-          {admins.length === 0 && (
-            <p className="text-text-subtle text-xs italic">{t('proj_onlyYouCanManageThisProject')}</p>
+          {here.length <= 1 && (
+            <p className="text-text-subtle text-xs italic self-center">
+              {t('proj_onlyYouCanManageThisProject')}
+            </p>
           )}
         </div>
 
-        {grantable.length > 0 && (
+        {elsewhere.length > 0 && (
           <div className="mt-3 pt-3 border-t border-border">
             <p className="text-text-subtle text-[11px] mb-2">{t('proj_giveAccessTo')}</p>
             <div className="flex flex-wrap gap-2">
-              {grantable.map((u) => (
+              {elsewhere.map((u) => (
                 <button
                   key={u.id}
                   onClick={() => grant(project.id, u.id)}
@@ -97,39 +124,6 @@ export function ProjectAdmins() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* Who is an admin at all. Not a per-project decision, so it stands apart
-          from the panel above. */}
-      <div className="bg-surface rounded-xl border border-border p-5">
-        <h3 className="text-text-main font-semibold text-sm mb-1">{t('proj_admins')}</h3>
-        <p className="text-text-muted text-xs mb-4">{t('proj_beingAnAdminIsCompanyWide')}</p>
-
-        <div className="flex flex-wrap gap-2">
-          {allAdmins.map((a) => (
-            <span
-              key={a.id}
-              className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full border text-xs ${
-                a.isOwner
-                  ? 'bg-surface-2 border-border text-text-main'
-                  : 'border-border text-text-muted'
-              }`}
-            >
-              {a.name}
-              {a.isOwner ? (
-                <span className="text-[10px] text-text-subtle pr-1">owner</span>
-              ) : (
-                <button
-                  onClick={() => setRole(a.id, 'employee')}
-                  title={`Make ${a.name} an employee again`}
-                  className="p-0.5 rounded-full hover:text-danger transition-colors"
-                >
-                  <LogOut size={11} />
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
 
         {staff.length > 0 && (
           <div className="mt-3 pt-3 border-t border-border">
