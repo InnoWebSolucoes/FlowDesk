@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Sparkles, Loader2, Download, AlertCircle, Clock, ChevronDown, ChevronUp, Wand2, X } from 'lucide-react'
 import { generateTasks } from '../../lib/anthropic'
@@ -53,7 +53,7 @@ export function AIOrganiser() {
   const staff = employees.filter((e) => e.role === 'employee')
 
   const { currentUser } = useAuthStore()
-  const { todoLists, createTodo, createTodoList } = useProjectStore()
+  const { todoLists, todosLoadedFor, loadTodos, createTodo, createTodoList } = useProjectStore()
 
   // The manager is a name in the list like anyone else. Work assigned to them
   // becomes a todo on their board rather than an assigned task, because that
@@ -78,6 +78,14 @@ export function AIOrganiser() {
   // The manager's own lists. Which one the batch lands in is a choice: a
   // week's work usually belongs somewhere more specific than whichever list
   // happens to be first.
+  // The organiser never loaded these. todoLists was empty unless the manager
+  // had opened their board first, which hid the list picker and sent every
+  // imported todo into a newly created "To do" rather than a real list.
+  const boardKey = project ? `${project.id}:shared` : null
+  useEffect(() => {
+    if (project && todosLoadedFor !== boardKey) loadTodos(project.id, null)
+  }, [project, boardKey, todosLoadedFor, loadTodos])
+
   const myLists = todoLists.filter((l) => l.ownerId === null)
   const [targetListId, setTargetListId] = useState<string>('')
   const { t } = useT()
@@ -409,8 +417,17 @@ export function AIOrganiser() {
                   {emp.id === currentUser?.id && ` · ${t('ai_you')}`}
                 </button>
               ))}
-              {myLists.length > 0 && me && selectedEmployees.includes(me.id) && (
-              <div className="mt-3">
+            {assignable.length === 0 && (
+                <p className="text-text-muted text-xs">{t('ai_noEmployees')}</p>
+              )}
+            </div>
+
+            {/* Where the manager's share of the batch lands. Shown whenever
+                they have boards: the organiser routes work to them on its own
+                now, so waiting for them to tick themselves first hid the
+                choice exactly when it mattered. */}
+            {myLists.length > 0 && (
+              <div className="mt-4">
                 <p className="text-text-main text-xs font-medium mb-1.5">{t('ai_myListLabel')}</p>
                 <select
                   value={targetListId || myLists[0]?.id || ''}
@@ -421,13 +438,9 @@ export function AIOrganiser() {
                     <option key={l.id} value={l.id}>{l.name}</option>
                   ))}
                 </select>
+                <p className="text-text-subtle text-[11px] mt-1">{t('ai_myListHint')}</p>
               </div>
             )}
-
-            {assignable.length === 0 && (
-                <p className="text-text-muted text-xs">{t('ai_noEmployees')}</p>
-              )}
-            </div>
           </div>
 
           {error && (
