@@ -55,7 +55,20 @@ export function AIOrganiser() {
   // becomes a todo on their board rather than an assigned task, because that
   // is what their board and calendar read — but choosing them is the same act
   // as choosing anybody.
-  const me = employees.find((e) => e.id === currentUser?.id)
+  // Looked up in the roster when they are on the project, and built from the
+  // session when they are not: an admin manages a project without necessarily
+  // being a member of it, so scoping by membership hid them from their own
+  // assignee list.
+  const me =
+    employees.find((e) => e.id === currentUser?.id) ??
+    (currentUser
+      ? ({
+          id: currentUser.id,
+          name: currentUser.name,
+          email: currentUser.email,
+          role: currentUser.role,
+        } as (typeof employees)[number])
+      : undefined)
   const assignable = me ? [...staff, me] : staff
 
   // The manager's own lists. Which one the batch lands in is a choice: a
