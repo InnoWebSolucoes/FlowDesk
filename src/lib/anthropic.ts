@@ -16,6 +16,13 @@ export async function generateTasks(
    * manager can fix a typo or drop a task without re-describing the job.
    */
   currentTasks?: any[],
+  /**
+   * The titles of the manager's own boards. The function cannot work these
+   * out — they belong to one person on one project — and without them the
+   * model has nothing to match a task's kind against when it routes work to
+   * the manager.
+   */
+  lists?: string[],
 ): Promise<any[]> {
   // Refresh an expired access token before calling, or a long editing session
   // fails with "Invalid session" rather than generating.
@@ -24,7 +31,11 @@ export async function generateTasks(
 
   const { data, error } = await supabase.functions.invoke('generate-tasks', {
     headers: { Authorization: `Bearer ${session.access_token}` },
-    body: currentTasks?.length ? { description, tasks: currentTasks } : { description },
+    body: {
+      description,
+      ...(currentTasks?.length ? { tasks: currentTasks } : {}),
+      ...(lists?.length ? { lists } : {}),
+    },
   })
 
   // On a non-2xx, supabase-js throws away the body and hands back a

@@ -32,6 +32,10 @@ interface GeneratedTask {
   deadline?: string | null
   /** The day the work should be done, YYYY-MM-DD. */
   doDate?: string | null
+  /** The board the model thinks a manager's task belongs on, by title. */
+  suggestedList?: string | null
+  /** That board resolved to a real list, per task. */
+  _listId?: string
 }
 
 export function AIOrganiser() {
@@ -125,7 +129,7 @@ export function AIOrganiser() {
     setImported(false)
     setGenerated([])
     try {
-      const result = await generateTasks(description)
+      const result = await generateTasks(description, undefined, myLists.map((l) => l.name))
       if (!Array.isArray(result)) throw new Error('Invalid response format')
       setGenerated(result.map(withSuggested))
     } catch (e: any) {
@@ -144,7 +148,7 @@ export function AIOrganiser() {
     setError('')
     setRefining(true)
     try {
-      const result = await generateTasks(refinement, generated)
+      const result = await generateTasks(refinement, generated, myLists.map((l) => l.name))
       if (!Array.isArray(result)) throw new Error('Invalid response format')
       // Category choices the manager already made are per-index and don't
       // survive a reshuffle, so let them resolve again from categoryName.
@@ -163,12 +167,16 @@ export function AIOrganiser() {
    * names, and matching is loose because it will not reproduce them exactly.
    */
   const withSuggested = (task: GeneratedTask): GeneratedTask => {
-    if (task._assignedTo?.length) return task
+    const listId = resolveList(task.suggestedList)
+    if (task._assignedTo?.length) return { ...task, _listId: listId }
     const names = task.suggestedAssignees ?? []
     const ids = names
       .map((n) => {
         const needle = n.trim().toLowerCase()
-        return employees.find(
+        // Against everyone who can be assigned, the manager included. Matching
+        // only staff here meant a task the model routed to the manager
+        // resolved to nobody and quietly fell back to the batch default.
+        return assignable.find(
           (e) =>
             e.name.toLowerCase() === needle ||
             e.name.toLowerCase().startsWith(needle) ||
@@ -177,7 +185,21 @@ export function AIOrganiser() {
       })
       .filter((id): id is string => !!id)
 
-    return { ...task, _assignedTo: ids.length ? ids : selectedEmployees }
+    return { ...task, _assignedTo: ids.length ? ids : selectedEmployees, _listId: listId }
+  }
+
+  /**
+   * The board title the model chose, matched to a real list. Loose, like the
+   * name matching above: it is picking from titles it was shown, but it will
+   * not reproduce them character for character.
+   */
+  const resolveList = (title?: string | null): string | undefined => {
+    if (!title?.trim()) return undefined
+    const needle = title.trim().toLowerCase()
+    return (
+      myLists.find((l) => l.name.toLowerCase() === needle) ??
+      myLists.find((l) => l.name.toLowerCase().includes(needle) || needle.includes(l.name.toLowerCase()))
+    )?.id
   }
 
   const setTaskAssignees = (index: number, ids: string[]) =>
@@ -198,9 +220,13 @@ export function AIOrganiser() {
    */
   const addToMyBoard = async (gt: GeneratedTask) => {
     if (!project) throw new Error(t('ai_errorNoList'))
-    // What was picked, or the first list, or one made on the spot for a
-    // project whose board is still empty.
+    // The board this task was routed to, then the one picked for the batch,
+    // then the first — and one made on the spot for a project whose board is
+    // still empty. Per-task first: a brief covering several kinds of work
+    // should land on several boards, which is the whole point of matching on
+    // the title.
     let listId: string | undefined =
+      gt._listId ??
       (targetListId && myLists.some((l) => l.id === targetListId) ? targetListId : undefined) ??
       myLists[0]?.id
     if (!listId) {
