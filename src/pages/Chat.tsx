@@ -56,6 +56,9 @@ export function Chat() {
   const [draft, setDraft] = useState('')
   const [query, setQuery] = useState('')
   const [showResolved, setShowResolved] = useState(false)
+  // Dismissed per room, so declining once does not mean being asked again on
+  // the next message.
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null)
   const [pendingItems, setPendingItems] = useState<ResourceItem[]>([])
   const [uploading, setUploading] = useState(false)
   const [picking, setPicking] = useState(false)
@@ -152,6 +155,18 @@ export function Chat() {
   // Stay pinned to the newest message, the way a chat should — but only when
   // one arrives. The count also changes when a message is deleted, and being
   // thrown to the bottom after tidying something near the top is maddening.
+  // Offered when the last thing said in an open task thread came from the
+  // other person: they have reported back, and whoever asked can decide the
+  // discussion is finished.
+  const lastMessage = roomMessages[roomMessages.length - 1]
+  const suggestResolve =
+    !!active &&
+    active.kind === 'task' &&
+    !active.resolvedAt &&
+    !!lastMessage &&
+    lastMessage.authorId !== me &&
+    dismissedSuggestion !== active.id
+
   const lastCount = useRef(0)
   useEffect(() => {
     const grew = roomMessages.length > lastCount.current
@@ -637,6 +652,29 @@ export function Chat() {
                   )
                 })
               )}
+              {/* An employee reporting back is usually the end of it, but only
+                  usually — so this offers to close the thread rather than
+                  closing it and cutting the conversation short. */}
+              {suggestResolve && (
+                <div className="flex items-center justify-between gap-3 mx-5 my-3 px-3 py-2.5 rounded-lg bg-surface border border-border">
+                  <p className="text-xs text-text-muted">{t('chat_suggestResolve')}</p>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => setResolved(active!.id, true)}
+                      className="text-xs font-medium px-2.5 py-1 rounded-md bg-success/10 text-success hover:bg-success/20 transition-colors"
+                    >
+                      {t('chat_resolve')}
+                    </button>
+                    <button
+                      onClick={() => setDismissedSuggestion(active!.id)}
+                      className="text-xs text-text-subtle hover:text-text-main px-2 py-1"
+                    >
+                      {t('chat_notYet')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div ref={endRef} />
             </div>
 
