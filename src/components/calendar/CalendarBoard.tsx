@@ -77,17 +77,6 @@ interface CalendarBoardProps {
  * One component for the managers' board and each employee's, so the planning
  * view is the same tool on both sides.
  */
-/**
- * Todos on your own board all belong to you, so the person's colour says
- * nothing and every block came out the same. Priority is the distinction that
- * matters there, and matches the badge on the todo board itself.
- */
-const TODO_PRIORITY_COLOR: Record<string, string> = {
-  high: '#B91C1C',
-  medium: '#B45309',
-  low: '#475569',
-}
-
 export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps) {
   const { t } = useT()
   const {
@@ -200,7 +189,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `todo-${t.id}`,
             label: t.title,
-            color: TODO_PRIORITY_COLOR[t.priority] ?? TODO_PRIORITY_COLOR.medium,
+            color: personColor(t.assigneeId ?? t.ownerId ?? ownerId),
             todo: t,
           })
         }
@@ -1122,14 +1111,13 @@ function BlockChip({
             ? {
                 // color-mix keeps the tint while staying fully opaque, so the
                 // hour rules behind the column do not show through the block.
-                backgroundColor: `color-mix(in srgb, ${block.color} 55%, #FFFFFF)`,
-                // Near-black in the block's own hue. At 55% the background
-                // carries real colour, so the label has to go much darker than
-                // the block to stay readable on it.
-                color: `color-mix(in srgb, ${block.color} 35%, #000000)`,
+                backgroundColor: `color-mix(in srgb, ${block.color} 38%, #FFFFFF)`,
+                // Deep version of the block's own hue, dark enough to read
+                // against it without going to flat black.
+                color: `color-mix(in srgb, ${block.color} 45%, #000000)`,
                 borderLeft: `4px solid ${block.color}`,
               }
-            : { backgroundColor: `color-mix(in srgb, ${block.color} 50%, #FFFFFF)`, color: `color-mix(in srgb, ${block.color} 35%, #000000)` }
+            : { backgroundColor: `color-mix(in srgb, ${block.color} 34%, #FFFFFF)`, color: `color-mix(in srgb, ${block.color} 45%, #000000)` }
       }
     >
       {personHasStars(block.employeeId ?? block.todo?.ownerId) && (

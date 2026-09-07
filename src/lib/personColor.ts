@@ -23,13 +23,13 @@
  */
 const PALETTE = [
   '#1D4ED8', // blue
-  '#EA580C', // orange
-  '#0D9488', // teal
-  '#DB2777', // magenta
-  '#CA8A04', // amber
-  '#7C3AED', // violet
   '#DC2626', // red
-  '#16A34A', // green
+  '#0891B2', // cyan
+  '#B8860B', // gold
+  '#7C3AED', // violet
+  '#3F9142', // green
+  '#DB2777', // magenta
+  '#334155', // slate
 ] as const
 
 /**
