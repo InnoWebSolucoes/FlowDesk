@@ -615,13 +615,26 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id), resource_item_access(user_id)')
       .single()
 
-    if (error || !data) return null
+    if (error || !data) {
+      // Returning null made a refused insert indistinguishable from nothing
+      // happening: a file sent in chat simply never appeared, with no error
+      // anywhere to say the row had been rejected.
+      console.error('[createItem] failed:', error)
+      throw new Error(error?.message ?? 'The document could not be created.')
+    }
     let item = toItem(data)
 
     if (file) {
       const path = resourcePath(projectId, item.id, file.name)
       const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true })
-      if (!upErr) {
+      if (upErr) {
+        // The row exists but its bytes do not, which is a document that opens
+        // to nothing. Take the row back out and say so.
+        console.error('[createItem] upload failed:', upErr)
+        await supabase.from('resource_items').delete().eq('id', item.id)
+        throw new Error(upErr.message)
+      }
+      {
         const filePatch = {
           storage_path: path,
           file_name: file.name,

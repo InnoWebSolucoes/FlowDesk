@@ -229,6 +229,12 @@ export function Chat() {
         }
         setPendingItems((prev) => [...prev, created])
       }
+    } catch (e) {
+      // createItem throws now; without this the file vanished and the composer
+      // simply carried on as if nothing had been attached.
+      useChatStore.setState({
+        error: (e as Error).message || 'That file could not be attached.',
+      })
     } finally {
       setUploading(false)
       setChoosingTarget(null)
