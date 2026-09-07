@@ -57,6 +57,12 @@ export function AIOrganiser() {
   // as choosing anybody.
   const me = employees.find((e) => e.id === currentUser?.id)
   const assignable = me ? [...staff, me] : staff
+
+  // The manager's own lists. Which one the batch lands in is a choice: a
+  // week's work usually belongs somewhere more specific than whichever list
+  // happens to be first.
+  const myLists = todoLists.filter((l) => l.ownerId === null)
+  const [targetListId, setTargetListId] = useState<string>('')
   const { t } = useT()
 
   const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -179,7 +185,11 @@ export function AIOrganiser() {
    */
   const addToMyBoard = async (gt: GeneratedTask) => {
     if (!project) throw new Error(t('ai_errorNoList'))
-    let listId: string | undefined = todoLists.find((l) => l.ownerId === null)?.id
+    // What was picked, or the first list, or one made on the spot for a
+    // project whose board is still empty.
+    let listId: string | undefined =
+      (targetListId && myLists.some((l) => l.id === targetListId) ? targetListId : undefined) ??
+      myLists[0]?.id
     if (!listId) {
       const made = await createTodoList(project.id, 'To do', null)
       listId = made?.id
@@ -348,7 +358,22 @@ export function AIOrganiser() {
                   {emp.id === currentUser?.id && ` · ${t('ai_you')}`}
                 </button>
               ))}
-              {assignable.length === 0 && (
+              {myLists.length > 0 && me && selectedEmployees.includes(me.id) && (
+              <div className="mt-3">
+                <p className="text-text-main text-xs font-medium mb-1.5">{t('ai_myListLabel')}</p>
+                <select
+                  value={targetListId || myLists[0]?.id || ''}
+                  onChange={(e) => setTargetListId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm text-text-main focus:outline-none focus:border-primary"
+                >
+                  {myLists.map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {assignable.length === 0 && (
                 <p className="text-text-muted text-xs">{t('ai_noEmployees')}</p>
               )}
             </div>
