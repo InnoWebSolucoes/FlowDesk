@@ -26,7 +26,7 @@ function fileIcon(type: string): string {
 
 export function Toolbox() {
   const { currentUser } = useAuthStore()
-  const { websites, documents, folders, uploadDocument, deleteDocument, createFolder, deleteFolder, getDocumentUrl } = useToolStore()
+  const { websites, documents, folders, uploadDocument, deleteDocument, updateDocument, addWebsite, createFolder, deleteFolder, getDocumentUrl } = useToolStore()
   const { t, dateLocale } = useT()
 
   const [tab, setTab] = useState<Tab>('websites')
@@ -36,6 +36,18 @@ export function Toolbox() {
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Renaming a document in place: click the title, type, Enter or blur.
+  const [renamingDoc, setRenamingDoc] = useState<string | null>(null)
+  const [titleDraft, setTitleDraft] = useState('')
+
+  // Adding a website to your own list.
+  const [addingSite, setAddingSite] = useState(false)
+  const [siteName, setSiteName] = useState('')
+  const [siteUrl, setSiteUrl] = useState('')
+  const [siteDesc, setSiteDesc] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
   const empId = currentUser!.id
   const myWebsites = websites.filter(w => w.assignedTo.includes(empId))
   const myDocs = documents.filter(d => d.uploadedBy === empId)
@@ -44,6 +56,43 @@ export function Toolbox() {
   const displayedDocs = selectedFolder === null
     ? myDocs
     : myDocs.filter(d => d.folderId === selectedFolder)
+
+  const saveTitle = async (id: string) => {
+    const next = titleDraft.trim()
+    setRenamingDoc(null)
+    const doc = documents.find((d) => d.id === id)
+    // An empty title would leave the row with nothing to show, so it falls
+    // back to the filename rather than being accepted.
+    if (!doc || next === doc.title) return
+    try {
+      await updateDocument(id, { title: next || doc.name })
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  const addSite = async () => {
+    const url = siteUrl.trim()
+    if (!url) return
+    // A bare domain is what people type; without a scheme the link opens
+    // relative to the app and goes nowhere.
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`
+    setSaving(true)
+    setError('')
+    try {
+      await addWebsite({
+        name: siteName.trim() || new URL(href).hostname.replace(/^www\./, ''),
+        url: href,
+        description: siteDesc.trim(),
+        assignedTo: [empId],
+      })
+      setSiteName(''); setSiteUrl(''); setSiteDesc(''); setAddingSite(false)
+    } catch (err) {
+      setError((err as Error).message || 'That could not be added.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -99,6 +148,64 @@ export function Toolbox() {
 
       {tab === 'websites' && (
         <div>
+          {error && (
+            <div className="mb-3 text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          {/* Adding a site puts it on your own list and nobody else's. */}
+          <div className="mb-4">
+            {!addingSite ? (
+              <button
+                onClick={() => setAddingSite(true)}
+                className="inline-flex items-center gap-1.5 text-sm font-medium bg-primary text-white px-3 py-2 rounded-lg hover:bg-primary-dark transition-colors"
+              >
+                <Globe size={14} /> {t('toolbox_addWebsite')}
+              </button>
+            ) : (
+              <div className="bg-surface rounded-xl border border-border p-4 space-y-2">
+                <input
+                  autoFocus
+                  value={siteUrl}
+                  onChange={(e) => setSiteUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addSite() }}
+                  placeholder={t('toolbox_websiteUrl')}
+                  className="w-full text-sm bg-surface-2 border border-border rounded-lg px-3 py-2"
+                />
+                <input
+                  value={siteName}
+                  onChange={(e) => setSiteName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addSite() }}
+                  placeholder={t('toolbox_websiteName')}
+                  className="w-full text-sm bg-surface-2 border border-border rounded-lg px-3 py-2"
+                />
+                <input
+                  value={siteDesc}
+                  onChange={(e) => setSiteDesc(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addSite() }}
+                  placeholder={t('toolbox_websiteDesc')}
+                  className="w-full text-sm bg-surface-2 border border-border rounded-lg px-3 py-2"
+                />
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={addSite}
+                    disabled={saving || !siteUrl.trim()}
+                    className="text-sm font-medium bg-primary text-white px-3 py-1.5 rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                  >
+                    {t('toolbox_add')}
+                  </button>
+                  <button
+                    onClick={() => { setAddingSite(false); setError('') }}
+                    className="text-sm text-text-muted px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors"
+                  >
+                    {t('ui_cancel')}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {myWebsites.length === 0 ? (
             <EmptyState
               icon={Globe}
@@ -227,9 +334,40 @@ export function Toolbox() {
               <div className="space-y-2">
                 {displayedDocs.map(doc => (
                   <div key={doc.id} className="bg-surface rounded-lg border border-border px-4 py-3 flex items-center gap-3">
-                    <span className="text-xl flex-shrink-0">{fileIcon(doc.type)}</span>
+                    {/* The site's own favicon where the document is a link,
+                        the file-type glyph otherwise. */}
+                    {doc.iconUrl ? (
+                      <img
+                        src={doc.iconUrl}
+                        alt=""
+                        className="w-6 h-6 rounded flex-shrink-0 object-contain bg-surface-2 p-0.5"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                    ) : (
+                      <span className="text-xl flex-shrink-0">{fileIcon(doc.type)}</span>
+                    )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-text-main truncate">{doc.name}</p>
+                      {renamingDoc === doc.id ? (
+                        <input
+                          autoFocus
+                          value={titleDraft}
+                          onChange={(e) => setTitleDraft(e.target.value)}
+                          onBlur={() => saveTitle(doc.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveTitle(doc.id)
+                            if (e.key === 'Escape') setRenamingDoc(null)
+                          }}
+                          className="w-full text-sm font-medium text-text-main bg-surface-2 border border-border rounded px-1.5 py-0.5"
+                        />
+                      ) : (
+                        <p
+                          className="text-sm font-medium text-text-main truncate cursor-text"
+                          title={doc.name}
+                          onClick={() => { setRenamingDoc(doc.id); setTitleDraft(doc.title) }}
+                        >
+                          {doc.title}
+                        </p>
+                      )}
                       <p className="text-xs text-text-subtle">
                         {formatFileSize(doc.size)} · {format(parseISO(doc.uploadedAt), 'EEE d MMM yyyy', dateLocale)}
                       </p>

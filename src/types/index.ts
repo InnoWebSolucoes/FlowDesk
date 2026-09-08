@@ -316,7 +316,15 @@ export interface Website {
 
 export interface Document {
   id: string
+  /** The filename as uploaded. Kept so the file downloads under its own name. */
   name: string
+  /**
+   * What it is called in the list. Defaults to the filename, because a scan
+   * called IMG_20260908_112233.pdf tells nobody anything.
+   */
+  title: string
+  /** Favicon or thumbnail to show beside it, when there is one. */
+  iconUrl?: string | null
   type: string
   size: number
   uploadedAt: string

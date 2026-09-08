@@ -18,6 +18,8 @@ interface ToolState {
 
   uploadDocument: (employeeId: string, file: File, folderId?: string) => Promise<void>
   deleteDocument: (id: string) => Promise<void>
+  /** What the document is called in the list, and the icon beside it. */
+  updateDocument: (id: string, patch: { title?: string; iconUrl?: string | null }) => Promise<void>
   getDocumentUrl: (storagePath: string) => Promise<string | null>
 
   createFolder: (name: string, ownerId: string) => Promise<void>
@@ -42,6 +44,10 @@ function toDocument(row: any): Document {
   return {
     id: row.id,
     name: row.name,
+    // Rows uploaded before titles existed have none; the filename is what
+    // they were shown as, so it stays what they are shown as.
+    title: row.title || row.name,
+    iconUrl: row.icon_url ?? null,
     type: row.type,
     size: row.size,
     uploadedAt: row.uploaded_at,
@@ -142,6 +148,7 @@ export const useToolStore = create<ToolState>()((set, get) => ({
       .from('documents')
       .insert({
         name: file.name,
+        title: file.name,
         type: file.type || file.name.split('.').pop() || 'unknown',
         size: file.size,
         uploaded_by: employeeId,
@@ -153,6 +160,27 @@ export const useToolStore = create<ToolState>()((set, get) => ({
 
     if (error || !data) return
     set((s) => ({ documents: [...s.documents, toDocument(data)] }))
+  },
+
+  updateDocument: async (id, patch) => {
+    const row: Record<string, unknown> = {}
+    if (patch.title !== undefined) row.title = patch.title
+    if (patch.iconUrl !== undefined) row.icon_url = patch.iconUrl
+    if (Object.keys(row).length === 0) return
+
+    const { error } = await supabase.from('documents').update(row).eq('id', id)
+    if (error) {
+      console.error('[updateDocument] failed:', error)
+      throw new Error(error.message)
+    }
+    set((s) => ({
+      documents: s.documents.map((d) =>
+        d.id === id
+          ? { ...d, ...(patch.title !== undefined ? { title: patch.title } : {}),
+              ...(patch.iconUrl !== undefined ? { iconUrl: patch.iconUrl } : {}) }
+          : d,
+      ),
+    }))
   },
 
   deleteDocument: async (id) => {
