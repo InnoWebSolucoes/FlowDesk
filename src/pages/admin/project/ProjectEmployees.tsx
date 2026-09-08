@@ -1,12 +1,10 @@
 import React, { useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
-import { Users, Plus, Trash2, X, UserPlus, LogOut, Shield } from 'lucide-react'
+import { Users, Plus, Trash2, X, UserPlus, LogOut } from 'lucide-react'
 import { format } from 'date-fns'
 import { Project, Employee } from '../../../types'
 import { useEmployeeStore } from '../../../store/employeeStore'
 import { useTaskStore } from '../../../store/taskStore'
-import { useAuthStore } from '../../../store/authStore'
-import { useProjectAdminStore } from '../../../store/projectAdminStore'
 import { EmptyState } from '../../../components/shared/EmptyState'
 import { getTasksDueOnDate } from '../../../utils/taskScheduler'
 import { useT } from '../../../i18n/useT'
@@ -28,8 +26,6 @@ export function ProjectEmployees() {
   const { t } = useT()
   const { project } = useOutletContext<Ctx>()
   const { employees, createEmployee, deleteEmployee, addToProject, removeFromProject } = useEmployeeStore()
-  const { currentUser } = useAuthStore()
-  const { setRole } = useProjectAdminStore()
   const { tasks, completionLogs } = useTaskStore()
 
   const [showForm, setShowForm] = useState(false)
@@ -38,6 +34,7 @@ export function ProjectEmployees() {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Employee | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
@@ -54,7 +51,6 @@ export function ProjectEmployees() {
 
   // Only the owner hands out admin access; the policy enforces it too, this
   // just keeps the controls out of everyone else's way.
-  const isOwner = !!currentUser?.isOwner
   // Anyone not already here can be added, including people who work elsewhere.
   const addable = staff.filter((e) => !isOn(e))
 
@@ -143,17 +139,11 @@ export function ProjectEmployees() {
                     <p className="text-text-subtle text-xs truncate">{emp.department}</p>
                   </div>
                   <div className="flex flex-col gap-1 flex-shrink-0">
-                    {/* Promoting is the owner's call: only they can then grant
-                        the projects a new admin would need. */}
-                    {isOwner && (
-                      <button
-                        onClick={() => setRole(emp.id, 'admin')}
-                        className="text-text-subtle hover:text-primary transition-colors p-1 rounded"
-                        title={`Make ${emp.name} an admin`}
-                      >
-                        <Shield size={14} />
-                      </button>
-                    )}
+                    {/* No "make an admin" here any more. The admin tier was
+                        removed — one owner, everybody else an employee — so
+                        promoting would grant nothing the app honours, while
+                        still setting the role = 'admin' that the
+                        delete-employee function checks. */}
                     <button
                       onClick={() => removeFromProject(emp.id, project.id)}
                       className="text-text-subtle hover:text-warning transition-colors p-1 rounded"
@@ -286,11 +276,36 @@ export function ProjectEmployees() {
           <div className="bg-surface rounded-xl border border-border w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-text-main font-semibold text-base mb-2">Delete {pendingDelete.name}?</h3>
             <p className="text-text-muted text-sm mb-4">{t('proj_thisPermanentlyDeletesTheirAccount')}</p>
+            {error && (
+              <p className="text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2 mb-3">
+                {error}
+              </p>
+            )}
             <div className="flex gap-2">
               <button
-                onClick={async () => { await deleteEmployee(pendingDelete.id); setPendingDelete(null) }}
+                disabled={deleting}
+                onClick={async () => {
+                  // The result was thrown away and the dialog closed either
+                  // way, so a refusal — forbidden, or the account being your
+                  // own — was indistinguishable from the button doing
+                  // nothing at all. Say what happened instead.
+                  setDeleting(true)
+                  setError('')
+                  try {
+                    const res = await deleteEmployee(pendingDelete.id)
+                    if (res?.success === false) {
+                      setError(res.error || 'That employee could not be deleted.')
+                      return
+                    }
+                    setPendingDelete(null)
+                  } catch (e) {
+                    setError((e as Error).message || 'That employee could not be deleted.')
+                  } finally {
+                    setDeleting(false)
+                  }
+                }}
                 className="flex-1 bg-danger text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity"
-              >{t('ui_delete')}</button>
+              >{deleting ? t('ui_deleting') : t('ui_delete')}</button>
               <button
                 onClick={() => setPendingDelete(null)}
                 className="flex-1 border border-border text-text-muted text-sm px-4 py-2 rounded-lg hover:bg-surface-2 transition-colors"
