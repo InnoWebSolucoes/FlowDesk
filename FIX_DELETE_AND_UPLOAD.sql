@@ -45,13 +45,13 @@ order by u.is_owner desc, u.name;
 -- the person is on that project is a project_members question. The legacy
 -- users.project_id names only one project and is no longer maintained.
 
+-- Every name these have carried, including the ones this script creates, so
+-- running it twice replaces its own output instead of colliding with it.
 drop policy if exists "attachments_insert_resources"           on storage.objects;
 drop policy if exists "attachments_insert_resources_employee"  on storage.objects;
+drop policy if exists "attachments_update_resources"           on storage.objects;
 drop policy if exists "attachments_update_resources_employee"  on storage.objects;
 drop policy if exists "attachments_delete_resources"           on storage.objects;
--- Added by the employee-workspace migration, so the first run of this script
--- left it behind: it gates deletes on my_project_id() too, and deleting a
--- resource file is the owner's now.
 drop policy if exists "attachments_delete_resources_employee"  on storage.objects;
 
 -- Uploading into a project you are on, or anywhere if you are the owner.
@@ -104,6 +104,48 @@ create policy "attachments_delete_resources" on storage.objects
     bucket_id = 'attachments'
     and (storage.foldername(name))[1] = 'resources'
     and public.is_owner()
+  );
+
+
+-- Downloading, too. The select policy asks ri.project_id = my_project_id(),
+-- which names one project — so somebody on two could not open files in the
+-- second. in_project() answers the same question against real membership,
+-- and already falls back to the legacy column for rows that predate it.
+
+drop policy if exists "attachments_select_resources" on storage.objects;
+
+create policy "attachments_select_resources" on storage.objects
+  for select to authenticated using (
+    bucket_id = 'attachments'
+    and (storage.foldername(name))[1] = 'resources'
+    and (
+      public.is_owner()
+      or exists (
+        select 1 from public.resource_items ri
+        where ri.storage_path = storage.objects.name
+          and public.in_project(ri.project_id)
+          and (
+            ri.access = 'everyone'
+            or ri.access = 'employees'
+            or (ri.access = 'specific' and public.can_access_resource_item(ri.id))
+          )
+          and public.item_clusters_allow(ri.id)
+      )
+      -- Earlier versions of a file, which live at their own paths.
+      or exists (
+        select 1
+        from public.resource_item_versions v
+        join public.resource_items ri on ri.id = v.item_id
+        where v.storage_path = storage.objects.name
+          and public.in_project(ri.project_id)
+          and (
+            ri.access = 'everyone'
+            or ri.access = 'employees'
+            or (ri.access = 'specific' and public.can_access_resource_item(ri.id))
+          )
+          and public.item_clusters_allow(ri.id)
+      )
+    )
   );
 
 
