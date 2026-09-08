@@ -302,6 +302,7 @@ function toTodo(row: any): ProjectTodo {
     sharedWith: (row.project_todo_shares ?? []).map((s: any) => s.user_id),
     sortOrder: row.sort_order ?? 0,
     createdAt: row.created_at,
+    createdBy: row.created_by ?? null,
     links: (row.project_todo_links ?? []).map(toTodoLink),
   }
 }
@@ -1432,11 +1433,16 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       (max, t) => (t.listId === (input.listId ?? null) ? Math.max(max, t.sortOrder) : max),
       -1
     )
+    // Who is adding it. A todo on the shared board has no owner, so without
+    // this there is nothing on the row saying whose it is.
+    const { data: auth } = await supabase.auth.getUser()
+
     const base = {
       project_id: projectId,
       // A todo belongs to whoever owns the list it lands in; RLS checks the
       // two agree, so this must match the list being written into.
       owner_id: ownerId,
+      created_by: auth.user?.id ?? null,
       list_id: input.listId ?? null,
       title: input.title ?? 'New todo',
       notes: input.notes ?? '',

@@ -12,7 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
-import { personColor, personHasStars } from '../../lib/personColor'
+import { personColor, personHasStars, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
 import {
@@ -197,7 +197,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `todo-${t.id}`,
             label: t.title,
-            color: personColor(t.assigneeId ?? t.ownerId ?? ownerId, nameOf(t.assigneeId ?? t.ownerId ?? ownerId)),
+            color: personColor(todoOwner(t) ?? ownerId, nameOf(todoOwner(t) ?? ownerId)),
             todo: t,
           })
         }
@@ -211,7 +211,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `overlay-todo-${t.id}`,
             label: t.title,
-            color: personColor(t.ownerId, nameOf(t.ownerId)),
+            color: personColor(todoOwner(t), nameOf(todoOwner(t))),
             todo: t,
             ownerName: employees.find((e) => e.id === t.ownerId)?.name,
           })
@@ -1125,7 +1125,7 @@ function BlockChip({
             }
       }
     >
-      {personHasStars(block.employeeId ?? block.todo?.ownerId) && (
+      {personHasStars(block.employeeId ?? (block.todo ? todoOwner(block.todo) : null)) && (
         <span className="float-left mr-1 mt-[1px] leading-none" aria-hidden>
           <Star size={9} fill="currentColor" strokeWidth={0} />
         </span>

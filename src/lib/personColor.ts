@@ -131,3 +131,22 @@ export function personColor(
   if (!id) return FALLBACK[0]
   return FALLBACK[hash(id) % FALLBACK.length]
 }
+
+/**
+ * Whose todo this is: explicitly assigned, else whose list it sits on, else
+ * whoever added it.
+ *
+ * A todo on the shared board has no owner, and one nobody has been assigned
+ * has no assignee, so the pair alone left todos belonging to nobody — which
+ * on the calendar meant a block with no one's colour. Every todo is created
+ * by somebody, so the creator is the answer whenever the other two are
+ * silent: if you added it to your own list it is yours, and it stops being
+ * yours only when it is assigned to someone else.
+ */
+export function todoOwner(todo: {
+  assigneeId?: string | null
+  ownerId?: string | null
+  createdBy?: string | null
+}): string | null {
+  return todo.assigneeId ?? todo.ownerId ?? todo.createdBy ?? null
+}

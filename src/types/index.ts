@@ -210,6 +210,12 @@ export interface ProjectTodo {
   sharedWith: string[]
   sortOrder: number
   createdAt: string
+  /**
+   * Who added it. A todo on the shared board has no owner, so without this
+   * there was nobody it belonged to at all — it is the last fallback for
+   * whose todo this is. Null on rows created before this was recorded.
+   */
+  createdBy: string | null
   links: ProjectTodoLink[]
 }
 
