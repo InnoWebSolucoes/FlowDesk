@@ -22,6 +22,22 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 
+/**
+ * A priority the check constraint on tasks/project_todos will accept.
+ *
+ * The tool schemas declare an enum, but the same request tells the model to
+ * write in European Portuguese and it generalises that over the enum too,
+ * answering 'alta' or 'média'. The generate-tasks path was refused five rows
+ * that way. Cheaper to translate here than to rely on the model honouring the
+ * enum every time.
+ */
+const toPriority = (value: unknown): 'low' | 'medium' | 'high' => {
+  const key = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (key === 'low' || key === 'baixa' || key === 'baixo') return 'low'
+  if (key === 'high' || key === 'alta' || key === 'alto' || key === 'urgente' || key === 'urgent') return 'high'
+  return 'medium'
+}
+
 const tools: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: 'function',
@@ -653,7 +669,7 @@ How to behave:
                 list_id: listId,
                 title: args.title,
                 notes: args.notes ?? '',
-                priority: args.priority ?? 'medium',
+                priority: toPriority(args.priority),
                 due_date: args.due_date ?? null,
                 do_date: args.do_date ?? null,
                 assignee_id: args.assignee_id ?? null,
@@ -673,7 +689,10 @@ How to behave:
               ['due_date', 'due_date'], ['do_date', 'do_date'],
               ['assignee_id', 'assignee_id'],
             ] as const) {
-              if (args[k] !== undefined) patch[col] = args[k]
+              // Same normalising as on insert: an edit can set priority too.
+              if (args[k] !== undefined) {
+                patch[col] = col === 'priority' ? toPriority(args[k]) : args[k]
+              }
             }
             if (args.is_completed !== undefined) {
               patch.is_completed = args.is_completed
@@ -799,7 +818,7 @@ How to behave:
                 description: args.description ?? '',
                 frequency,
                 category_id: categoryId,
-                priority: args.priority ?? 'medium',
+                priority: toPriority(args.priority),
                 estimated_minutes: args.estimated_minutes ?? 0,
                 deadline: args.deadline ?? null,
                 created_by: user.id,
@@ -832,7 +851,10 @@ How to behave:
               ['deadline', 'deadline'], ['estimated_minutes', 'estimated_minutes'],
               ['is_active', 'is_active'],
             ] as const) {
-              if (args[k] !== undefined) patch[col] = args[k]
+              // Same normalising as on insert: an edit can set priority too.
+              if (args[k] !== undefined) {
+                patch[col] = col === 'priority' ? toPriority(args[k]) : args[k]
+              }
             }
             const { data, error } = await db
               .from('tasks').update(patch).eq('id', args.task_id).select('id,title').single()
