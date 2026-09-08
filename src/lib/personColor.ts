@@ -21,10 +21,15 @@ const FLOWDESK_GREEN = '#1A5C3A'
  * the next person to edit this needs to know whose colour they are changing.
  */
 const CHOSEN: Record<string, string> = {
-  // InnoWeb Admin — FlowDesk's green, the same one as the logo.
+  // InnoWeb Admin (innowebsolucoes@gmail.com) — FlowDesk's green, the same
+  // one as the logo.
   '1e2001c5-72b2-44a6-9605-9954db51908e': FLOWDESK_GREEN,
-  // Kasim — dark blue.
+  // Kasim (kasimcustodio@gmail.com) — dark blue.
   '5719747f-ccc2-4e4e-8b10-13bb026fe725': '#1B3A8A',
+  // Rafael (rafamdann@gmail.com) — green, but a yellower one than FlowDesk's
+  // deep forest green: the two sat 52 apart out of 441 and read as the same
+  // colour side by side on a week.
+  'b63d846e-1780-4040-9a3a-468fb9bfb683': '#4D7C0F',
 }
 
 /**
@@ -37,12 +42,9 @@ const CHOSEN: Record<string, string> = {
  * the better home for them.
  */
 const CHOSEN_BY_NAME: Record<string, string> = {
-  // Green, but a yellower one than FlowDesk's deep forest green: the two sat
-  // 52 apart out of 441 and read as the same colour side by side on a week.
-  rafa: '#4D7C0F',
-  rafael: '#4D7C0F',
-  esmael: '#6B21A8', // purple
-  kasim: '#1B3A8A', // dark blue
+  // Esmael is not an admin, so he was not in the account listing the other
+  // ids came from. Purple.
+  esmael: '#6B21A8',
 }
 
 /**
