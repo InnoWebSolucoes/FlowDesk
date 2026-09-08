@@ -180,6 +180,13 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     [employees],
   )
 
+  // The lists on this board. The store holds whatever was loaded last, so
+  // without this the panel can be handed another owner's lists.
+  const boardLists = useMemo(
+    () => todoLists.filter((l) => l.projectId === project.id && (l.ownerId ?? null) === ownerId),
+    [todoLists, project.id, ownerId],
+  )
+
   // ── Blocks per day ───────────────────────────────────────────────────────
   // The calendar is organised by day: everything on a day is one flat list,
   // in the order it was added to it.
@@ -662,7 +669,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
 
         <Unscheduled
           todos={todos}
-          lists={todoLists}
+          lists={boardLists}
           dragging={drag?.kind === 'unscheduled' ? drag.id : null}
           dropActive={overUnscheduled}
           onDragStart={(id, label) => setDrag({ kind: 'unscheduled', id, label })}
@@ -1171,10 +1178,19 @@ function Unscheduled({
 }) {
   // `t` is the todo inside the list below, so the translator is `tr` here.
   const { t: tr } = useT()
-  // Only the main list, as asked — otherwise every list's backlog piles in here.
-  const mainListId = lists[0]?.id ?? null
+  // Everything on this board that has no day yet.
+  //
+  // This used to show only lists[0], which meant a todo added to any other
+  // tab never appeared here — and lists[0] was whichever list the store had
+  // loaded first, not necessarily one on this board at all. The point of the
+  // panel is that nothing waiting to be scheduled is invisible, so it reads
+  // every list rather than one.
+  const listIds = new Set(lists.map((l) => l.id))
   const pending = todos.filter(
-    (t) => !t.isCompleted && !t.doDate && (mainListId === null || t.listId === mainListId),
+    (t) =>
+      !t.isCompleted &&
+      !t.doDate &&
+      (t.listId === null || listIds.size === 0 || listIds.has(t.listId)),
   )
 
   return (

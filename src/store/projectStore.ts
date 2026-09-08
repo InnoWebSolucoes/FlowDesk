@@ -1428,10 +1428,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   createTodo: async (projectId, input, ownerId = null) => {
-    // Order is per-list, so only siblings in the target list matter.
-    const maxOrder = get().todos.reduce(
-      (max, t) => (t.listId === (input.listId ?? null) ? Math.max(max, t.sortOrder) : max),
-      -1
+    // Order is per-list, so only siblings in the target list matter. A new
+    // todo goes above them rather than below: manual order sorts ascending,
+    // so one less than the current smallest puts it at the top, which is
+    // where you look for the thing you just typed.
+    const minOrder = get().todos.reduce(
+      (min, t) => (t.listId === (input.listId ?? null) ? Math.min(min, t.sortOrder) : min),
+      0
     )
     // Who is adding it. A todo on the shared board has no owner, so without
     // this there is nothing on the row saying whose it is.
@@ -1448,7 +1451,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       notes: input.notes ?? '',
       priority: input.priority ?? 'medium',
       due_date: input.dueDate ?? null,
-      sort_order: maxOrder + 1,
+      sort_order: minOrder - 1,
     }
     // Columns the do-dates migration adds. Dropped on retry if it hasn't run.
     const scheduling = {
