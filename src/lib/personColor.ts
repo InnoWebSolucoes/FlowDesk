@@ -30,21 +30,8 @@ const CHOSEN: Record<string, string> = {
   // deep forest green: the two sat 52 apart out of 441 and read as the same
   // colour side by side on a week.
   'b63d846e-1780-4040-9a3a-468fb9bfb683': '#4D7C0F',
-}
-
-/**
- * Colours for people whose id is not known here, matched on name instead.
- *
- * Ids live in the database and are not to hand, but names are on screen. A
- * name is a weaker key than an id — two people could share one, and renaming
- * somebody drops them back to the fallback — so it is only consulted after
- * the id lookup above. Moving somebody into CHOSEN once their id is known is
- * the better home for them.
- */
-const CHOSEN_BY_NAME: Record<string, string> = {
-  // Esmael is not an admin, so he was not in the account listing the other
-  // ids came from. Purple.
-  esmael: '#6B21A8',
+  // Esmael (esmaelinnoweb@gmail.com) — purple.
+  'ce6f98bd-3d55-412f-96fc-9ffe88340b2d': '#6B21A8',
 }
 
 /**
@@ -116,29 +103,16 @@ function hash(id: string): number {
   return Math.abs(h)
 }
 
-/** The first word of a name, lowercased — how CHOSEN_BY_NAME is keyed. */
-function firstName(name: string): string {
-  return name.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
-}
-
 /**
  * The person's colour, as an opaque hex string.
  *
- * `name` is optional and only consulted for people who have an assigned
- * colour but whose id is not recorded here yet. Work belonging to nobody
- * comes back grey.
+ * Everyone who has been given a colour is keyed by id. Matching on name was
+ * a stopgap while some ids were not to hand; a name is the weaker key, since
+ * renaming somebody silently changed their colour and two people sharing a
+ * first name shared a colour. Work belonging to nobody comes back grey.
  */
-export function personColor(
-  id: string | null | undefined,
-  name?: string | null,
-): string {
+export function personColor(id: string | null | undefined): string {
   if (id && CHOSEN[id]) return CHOSEN[id]
-
-  if (name) {
-    const byName = CHOSEN_BY_NAME[firstName(name)]
-    if (byName) return byName
-  }
-
   // No person at all, rather than a person we have no colour for.
   if (!id) return UNASSIGNED
   return FALLBACK[hash(id) % FALLBACK.length]

@@ -172,14 +172,6 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     else setCursor((c) => addWeeks(c, 4 * dir))
   }
 
-  // Colours can be assigned by name for people whose id is not recorded, so
-  // the name has to travel with the id to every place a colour is picked.
-  const nameOf = useCallback(
-    (personId: string | null | undefined) =>
-      personId ? employees.find((e) => e.id === personId)?.name : undefined,
-    [employees],
-  )
-
   // The lists on this board. The store holds whatever was loaded last, so
   // without this the panel can be handed another owner's lists.
   const boardLists = useMemo(
@@ -204,7 +196,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `todo-${t.id}`,
             label: t.title,
-            color: personColor(todoOwner(t) ?? ownerId, nameOf(todoOwner(t) ?? ownerId)),
+            color: personColor(todoOwner(t) ?? ownerId),
             todo: t,
           })
         }
@@ -218,7 +210,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `overlay-todo-${t.id}`,
             label: t.title,
-            color: personColor(todoOwner(t), nameOf(todoOwner(t))),
+            color: personColor(todoOwner(t)),
             todo: t,
             ownerName: employees.find((e) => e.id === t.ownerId)?.name,
           })
@@ -246,7 +238,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `task-${task.id}-${empIdForCal}`,
             label: task.title,
-            color: personColor(empIdForCal, who?.name),
+            color: personColor(empIdForCal),
             outlined: !planned,
             task,
             employeeId: empIdForCal,
@@ -292,7 +284,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       return blocks
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay, nameOf],
+    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────

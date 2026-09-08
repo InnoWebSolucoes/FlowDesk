@@ -6,8 +6,8 @@ import { personColor, personStarLayer } from '../../lib/personColor'
  *
  * Every avatar in the app used to be the same green, so a list of people was a
  * column of identical circles and only the letters told them apart. The colour
- * comes from the person's id — or their name, for whoever is coloured by
- * name — so it is the same here as on their blocks in the calendar.
+ * comes from the person's id, so it is the same here as on their blocks in
+ * the calendar.
  */
 export function Avatar({
   id,
@@ -49,7 +49,7 @@ export function Avatar({
       style={{
         width: size,
         height: size,
-        backgroundColor: personColor(id, name),
+        backgroundColor: personColor(id),
         // A starfield over the colour, for whoever has one. backgroundImage is
         // painted above backgroundColor, so the two layer without a wrapper.
         backgroundImage: personStarLayer(id),
