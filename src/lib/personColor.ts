@@ -48,6 +48,14 @@ const CHOSEN_BY_NAME: Record<string, string> = {
 }
 
 /**
+ * Nobody. Work that resolves to no person at all — unassigned, on no board,
+ * with no recorded creator — is grey rather than a colour, because a colour
+ * reads as belonging to someone. Dark enough to carry white text like the
+ * rest.
+ */
+const UNASSIGNED = '#6B7280'
+
+/**
  * Everyone else, in a fixed order, so two people without an assigned colour
  * still look different from each other. Spaced around the wheel and all dark
  * enough for white text.
@@ -117,7 +125,8 @@ function firstName(name: string): string {
  * The person's colour, as an opaque hex string.
  *
  * `name` is optional and only consulted for people who have an assigned
- * colour but whose id is not recorded here yet.
+ * colour but whose id is not recorded here yet. Work belonging to nobody
+ * comes back grey.
  */
 export function personColor(
   id: string | null | undefined,
@@ -130,7 +139,8 @@ export function personColor(
     if (byName) return byName
   }
 
-  if (!id) return FALLBACK[0]
+  // No person at all, rather than a person we have no colour for.
+  if (!id) return UNASSIGNED
   return FALLBACK[hash(id) % FALLBACK.length]
 }
 
