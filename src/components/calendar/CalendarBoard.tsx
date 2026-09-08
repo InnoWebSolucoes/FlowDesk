@@ -491,7 +491,10 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
         : format(cursor, 'MMMM yyyy')
 
   return (
-    <div className="animate-fade-in">
+    // Full viewport height minus the page chrome, so the grid can fill what
+    // is left rather than stopping halfway down. min-h-0 on the row below is
+    // what lets a flex child actually shrink and scroll.
+    <div className="animate-fade-in flex flex-col h-[calc(100vh-7rem)]">
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
         <div className="flex items-center gap-1">
@@ -635,8 +638,8 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
         </div>
       </div>
 
-      <div className="flex gap-4 items-start">
-        <div className="flex-1 min-w-0" ref={gridRef}>
+      <div className="flex gap-4 items-stretch flex-1 min-h-0">
+        <div className="flex-1 min-w-0 flex flex-col min-h-0" ref={gridRef}>
           {view === 'month' ? (
             <MonthGrid
               days={days}
@@ -864,9 +867,15 @@ function DayGrid({
 }) {
   const { t } = useT()
   return (
+    // Two rows: the day names at their natural height, and the days taking
+    // everything left over. Without the explicit rows the grid sizes itself
+    // to its content and the cells cannot be told to fill or to scroll.
     <div
-      className="grid gap-px bg-border rounded-xl overflow-hidden border border-border"
-      style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+      className="grid gap-px bg-border rounded-xl overflow-hidden border border-border flex-1 min-h-0"
+      style={{
+        gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`,
+        gridTemplateRows: 'auto minmax(0, 1fr)',
+      }}
     >
       {days.map((day) => {
         const key = dayKey(day)
@@ -899,11 +908,13 @@ function DayGrid({
             data-day={key}
             onClick={() => { if (!justDragged.current) onCreate(key) }}
             onContextMenu={(e) => { e.preventDefault(); onDayContext(e.clientX, e.clientY, key) }}
-            className={`bg-surface min-h-[320px] p-2 cursor-pointer transition-colors hover:bg-surface-2/40 ${
+            className={`bg-surface p-2 cursor-pointer transition-colors hover:bg-surface-2/40 min-h-0 overflow-y-auto ${
               dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''
             }`}
           >
-            <div className="space-y-1">
+            {/* Scrolls within the day rather than stretching it, so one busy
+                day does not set the height of the whole week. */}
+            <div className="space-y-1.5">
               {blocks.map((b) => (
                 <BlockChip
                   key={b.key}
@@ -990,7 +1001,10 @@ function MonthGrid({
   onDragEntry: (entry: CalendarEntry) => void
 }) {
   return (
-    <div className="grid grid-cols-7 gap-px bg-border rounded-xl overflow-hidden border border-border">
+    <div
+      className="grid grid-cols-7 gap-px bg-border rounded-xl overflow-hidden border border-border flex-1 min-h-0"
+      style={{ gridTemplateRows: 'auto repeat(4, minmax(0, 1fr))' }}
+    >
       {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
         <div key={d} className="bg-surface-2 px-2 py-1.5 text-[11px] font-medium text-text-muted text-center">
           {d}
@@ -1010,7 +1024,7 @@ function MonthGrid({
             data-day={key}
             onClick={() => { if (!justDragged.current) onCreate(key) }}
             onContextMenu={(e) => { e.preventDefault(); onDayContext(e.clientX, e.clientY, key) }}
-            className={`bg-surface min-h-[112px] p-1.5 cursor-pointer transition-colors hover:bg-surface-2/40 ${
+            className={`bg-surface min-h-[112px] p-1.5 cursor-pointer transition-colors hover:bg-surface-2/40 overflow-y-auto ${
               outside ? 'opacity-40' : ''
             } ${dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''}`}
           >
@@ -1029,7 +1043,7 @@ function MonthGrid({
             </div>
 
             <div className="space-y-1">
-              {all.slice(0, 4).map((b) => (
+              {all.map((b) => (
                 <BlockChip
                   key={b.key}
                   block={b}
@@ -1067,9 +1081,8 @@ function MonthGrid({
                   }
                 />
               ))}
-              {all.length > 4 && (
-                <p className="text-[10px] text-text-subtle pl-1">+{all.length - 4} more</p>
-              )}
+              {/* No "+N more" count: the cell scrolls, so everything on the
+                  day is reachable without leaving the month view. */}
             </div>
           </div>
         )
@@ -1137,8 +1150,11 @@ function BlockChip({
         onContext(e.clientX, e.clientY)
       }}
       title={block.ownerName ? `${block.label} — ${block.ownerName}` : block.label}
-      className={`relative rounded-md text-[11px] leading-tight truncate cursor-grab active:cursor-grabbing select-none shadow-sm ${
-        compact ? 'px-1.5 py-1' : 'px-2 py-1 h-full overflow-hidden'
+      className={`relative rounded-md text-xs leading-snug truncate cursor-grab active:cursor-grabbing select-none shadow-sm ${
+        // Month cells stay tight — there are 28 of them on screen. A week or
+        // a day has the room, and 11px text in a 1-unit padding was a sliver
+        // that was hard to read and harder to hit.
+        compact ? 'px-1.5 py-1 text-[11px]' : 'px-2.5 py-2'
       } ${
         // Done work fades and strikes through, whichever kind it is.
         block.todo?.isCompleted || block.done ? 'line-through opacity-45' : ''
@@ -1178,7 +1194,7 @@ function BlockChip({
       }
     >
       {personHasStars(block.employeeId ?? (block.todo ? todoOwner(block.todo) : null)) && (
-        <span className="float-left mr-1 mt-[1px] leading-none" aria-hidden>
+        <span className="float-left mr-1 mt-[3px] leading-none" aria-hidden>
           <Star size={9} fill="currentColor" strokeWidth={0} />
         </span>
       )}
@@ -1186,7 +1202,7 @@ function BlockChip({
         <button
           onPointerDown={(e) => { e.stopPropagation(); moved.current = true }}
           onClick={(e) => { e.stopPropagation(); onToggleDone() }}
-          className="float-left mr-1 mt-[1px] hover:opacity-100 opacity-70"
+          className="float-left mr-1 mt-[2px] hover:opacity-100 opacity-70"
           title={block.todo?.isCompleted || block.done ? t('cal_markNotDone') : t('cal_markDone')}
         >
           {block.todo?.isCompleted || block.done ? <CheckCircle2 size={11} /> : <Circle size={11} />}
@@ -1241,13 +1257,13 @@ function Unscheduled({
   return (
     <aside
       data-unscheduled
-      className={`w-60 flex-shrink-0 rounded-xl border bg-surface p-3 hidden lg:block transition-colors ${
+      className={`w-60 flex-shrink-0 rounded-xl border bg-surface p-3 hidden lg:flex lg:flex-col min-h-0 transition-colors ${
         dropActive ? 'border-primary ring-2 ring-primary/30' : 'border-border'
       }`}
     >
-      <h3 className="text-text-main font-medium text-sm flex items-center gap-1.5">
+      <h3 className="text-text-main font-medium text-sm flex items-center gap-1.5 flex-shrink-0">
         <CalendarClock size={14} className="text-text-muted" />{tr('cal_notScheduled')}</h3>
-      <p className="text-text-subtle text-[11px] mt-0.5 mb-3">{tr('cal_unscheduledHint')}</p>
+      <p className="text-text-subtle text-[11px] mt-0.5 mb-3 flex-shrink-0">{tr('cal_unscheduledHint')}</p>
 
       {dropActive && (
         <p className="text-[11px] text-primary font-medium mb-2">{tr('cal_dropToUnschedule')}</p>
@@ -1256,7 +1272,7 @@ function Unscheduled({
       {pending.length === 0 ? (
         <p className="text-xs text-text-subtle italic">{tr('cal_everythingHasADoDate')}</p>
       ) : (
-        <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+        <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto">
           {pending.map((t) => (
             <div
               key={t.id}
