@@ -49,6 +49,10 @@ drop policy if exists "attachments_insert_resources"           on storage.object
 drop policy if exists "attachments_insert_resources_employee"  on storage.objects;
 drop policy if exists "attachments_update_resources_employee"  on storage.objects;
 drop policy if exists "attachments_delete_resources"           on storage.objects;
+-- Added by the employee-workspace migration, so the first run of this script
+-- left it behind: it gates deletes on my_project_id() too, and deleting a
+-- resource file is the owner's now.
+drop policy if exists "attachments_delete_resources_employee"  on storage.objects;
 
 -- Uploading into a project you are on, or anywhere if you are the owner.
 create policy "attachments_insert_resources" on storage.objects
