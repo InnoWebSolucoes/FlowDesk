@@ -11,7 +11,6 @@ import { EmptyState } from '../../../components/shared/EmptyState'
 import { getTasksDueOnDate } from '../../../utils/taskScheduler'
 import { useT } from '../../../i18n/useT'
 import { Avatar } from '../../../components/shared/Avatar'
-import { projectRoster } from '../../../lib/personColor'
 
 interface Ctx { project: Project }
 
@@ -51,10 +50,6 @@ export function ProjectEmployees() {
   // The store now carries managers too, because their calendars are needed
   // elsewhere. This page is about staff, so it narrows again here.
   const staff = employees.filter((e) => e.role === 'employee')
-
-  // Everyone on this project, so each avatar takes its own seat in the
-  // project's colours and matches the same person on the calendar.
-  const roster = projectRoster(employees, project.id)
   const members = staff.filter(isOn)
 
   // Only the owner hands out admin access; the policy enforces it too, this
@@ -141,7 +136,7 @@ export function ProjectEmployees() {
             return (
               <div key={emp.id} className="bg-surface rounded-xl border border-border p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
-                  <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={48} brand={project.color} roster={roster} />
+                  <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={48} />
                   <div className="flex-1 min-w-0">
                     <h3 className="text-text-main font-semibold text-sm truncate">{emp.name}</h3>
                     <p className="text-text-muted text-xs mt-0.5 truncate">{emp.jobTitle}</p>
@@ -270,7 +265,7 @@ export function ProjectEmployees() {
                   }}
                   className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-border hover:border-primary hover:bg-surface-2 transition-colors text-left"
                 >
-                  <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={36} brand={project.color} roster={roster} />
+                  <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={36} />
                   <div className="min-w-0">
                     <p className="text-text-main text-sm font-medium truncate">{emp.name}</p>
                     <p className="text-text-subtle text-xs truncate">

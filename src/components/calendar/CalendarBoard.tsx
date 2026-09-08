@@ -12,7 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
-import { personColor, personHasStars, projectRoster } from '../../lib/personColor'
+import { personColor, personHasStars } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
 import {
@@ -172,9 +172,13 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     else setCursor((c) => addWeeks(c, 4 * dir))
   }
 
-  // Everyone whose colour this board might draw, so the colours are handed
-  // out by seat rather than by hash and two people here cannot share one.
-  const roster = useMemo(() => projectRoster(employees, project.id), [employees, project.id])
+  // Colours can be assigned by name for people whose id is not recorded, so
+  // the name has to travel with the id to every place a colour is picked.
+  const nameOf = useCallback(
+    (personId: string | null | undefined) =>
+      personId ? employees.find((e) => e.id === personId)?.name : undefined,
+    [employees],
+  )
 
   // ── Blocks per day ───────────────────────────────────────────────────────
   // The calendar is organised by day: everything on a day is one flat list,
@@ -193,7 +197,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `todo-${t.id}`,
             label: t.title,
-            color: personColor(t.assigneeId ?? t.ownerId ?? ownerId, project.color, roster),
+            color: personColor(t.assigneeId ?? t.ownerId ?? ownerId, nameOf(t.assigneeId ?? t.ownerId ?? ownerId)),
             todo: t,
           })
         }
@@ -207,7 +211,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `overlay-todo-${t.id}`,
             label: t.title,
-            color: personColor(t.ownerId, project.color, roster),
+            color: personColor(t.ownerId, nameOf(t.ownerId)),
             todo: t,
             ownerName: employees.find((e) => e.id === t.ownerId)?.name,
           })
@@ -235,7 +239,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `task-${task.id}-${empIdForCal}`,
             label: task.title,
-            color: personColor(empIdForCal, project.color, roster),
+            color: personColor(empIdForCal, who?.name),
             outlined: !planned,
             task,
             employeeId: empIdForCal,
@@ -281,7 +285,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       return blocks
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay, project.color, roster],
+    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay, nameOf],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -1050,7 +1054,6 @@ function MonthGrid({
  */
 function BlockChip({
   block,
-  filled,
   compact,
   onOpen,
   onDragStart,
@@ -1058,7 +1061,6 @@ function BlockChip({
   onContext,
 }: {
   block: Block
-  filled?: boolean
   compact?: boolean
   onOpen: () => void
   onDragStart: () => void
@@ -1110,18 +1112,17 @@ function BlockChip({
       } ${block.todo?.isCompleted || block.done ? 'line-through opacity-60' : ''}`}
       style={
         block.outlined
-          ? { border: `1px solid ${block.color}66`, color: block.color }
-          : filled
-            ? {
-                // color-mix keeps the tint while staying fully opaque, so the
-                // hour rules behind the column do not show through the block.
-                backgroundColor: `color-mix(in srgb, ${block.color} 38%, #FFFFFF)`,
-                // Deep version of the block's own hue, dark enough to read
-                // against it without going to flat black.
-                color: `color-mix(in srgb, ${block.color} 45%, #000000)`,
-                borderLeft: `4px solid ${block.color}`,
-              }
-            : { backgroundColor: `color-mix(in srgb, ${block.color} 34%, #FFFFFF)`, color: `color-mix(in srgb, ${block.color} 45%, #000000)` }
+          ? // Unplanned work is outlined rather than filled, so it reads as
+            // provisional. The colour is still the person's, at full strength.
+            { border: `2px solid ${block.color}`, color: block.color, backgroundColor: '#FFFFFF' }
+          : // Everything else is the person's colour exactly as it is — no
+            // mix into white. Diluting it made every block a pale wash and
+            // two people's work hard to tell apart at a glance. White text
+            // is what makes the solid colour readable.
+            {
+              backgroundColor: block.color,
+              color: '#FFFFFF',
+            }
       }
     >
       {personHasStars(block.employeeId ?? block.todo?.ownerId) && (
