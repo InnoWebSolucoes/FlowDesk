@@ -6,6 +6,7 @@ import { useToolStore } from '../../store/toolStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskManager } from './TaskManager'
 import { Analytics } from './Analytics'
+import { AppUsagePanel } from '../../components/charts/AppUsagePanel'
 import { EmptyState } from '../../components/shared/EmptyState'
 import { TodoBoard } from '../../components/todos/TodoBoard'
 import { NoteBoard } from '../../components/notes/NoteBoard'
@@ -120,7 +121,11 @@ export function EmployeeProfile() {
       )}
 
       {tab === 'analytics' && (
-        <Analytics forEmployeeId={emp.id} />
+        <div className="space-y-4">
+          {/* Owner-only, and renders nothing for anyone else. */}
+          <AppUsagePanel employeeId={emp.id} />
+          <Analytics forEmployeeId={emp.id} />
+        </div>
       )}
 
       {tab === 'worklog' && (

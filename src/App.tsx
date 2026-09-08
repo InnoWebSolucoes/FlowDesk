@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { startTracking, stopTracking } from './lib/sessionTracker'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
 import { useTaskStore } from './store/taskStore'
@@ -128,6 +129,9 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
       // Chat is per-person — whose rooms these are decides what comes back —
       // so it needs the id, not just the fact that someone is signed in.
       if (currentUserId) initChat(currentUserId)
+      // How often the app is opened and for how long. Recorded for everyone;
+      // only the owner can read it back.
+      if (currentUserId) startTracking(currentUserId)
       return
     }
 
@@ -144,6 +148,7 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
     tearDownNotifications()
     tearDownProjects()
     tearDownChat()
+    stopTracking()
   }, [authStatus, currentUserId])
 
   if (authStatus === 'loading') return <LoadingScreen />
