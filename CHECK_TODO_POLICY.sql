@@ -17,7 +17,25 @@
 -- section 4 says can_write_here false, the policy is fine and the account
 -- simply lacks the grant.
 --
--- Sections 1-4 are read-only. Section 5 is the fix, commented out.
+-- One more thing narrows it. Reading the shared board and writing to it are
+-- gated differently:
+--
+--   read  project_todo_lists_select  ... is_admin()                -- owner only
+--   write project_todos_insert       ... is_project_admin(project) -- owner OR
+--                                                                  -- a project_admins row
+--
+-- is_admin() is the stricter of the two: it requires role = 'admin' AND
+-- is_owner. The screenshot shows 16 todos loading on the shared board, so the
+-- read passed, so is_owner is already true for this account — and
+-- is_project_admin() returns true for the owner unconditionally.
+--
+-- Which means the write should pass and does not. So either the deployed
+-- functions are not the ones in these files (an earlier session ran
+-- migrations against the wrong project), or the account the app is signed in
+-- as is not the account those reads succeeded for. Section 6 settles which.
+--
+-- Sections 1-4, 6 and 7 are read-only. Section 5 is the fix, commented out.
+-- Run 1-4, 6 and 7 first and send the results; do not run 5 until then.
 -- ============================================================================
 
 -- ─── 1. Is the third branch there? ──────────────────────────────────────────
@@ -123,3 +141,54 @@ order by p.name;
 -- -- Confirm: can_write_here must now be true everywhere.
 -- select p.name as project, public.is_project_admin(p.id) as can_write_here
 -- from public.projects p order by p.name;
+
+
+-- ─── 6. Are the deployed functions the ones in these files? ─────────────────
+-- Run this BEFORE section 5. If the bodies below do not match, the database
+-- is running older definitions and granting the account will not help —
+-- rerunning 20260911000000 and 20260918000000 is what is needed instead.
+--
+-- Expected:
+--   is_owner          ... where id = auth.uid() and is_owner
+--   is_admin          ... where id = auth.uid() and role = 'admin' and is_owner
+--   is_project_admin  ... is_owner() OR a project_admins row for this project
+--
+-- is_project_admin must contain "is_owner()" — without that call the owner
+-- has no path through it at all, which would produce exactly this symptom:
+-- reads pass on is_admin(), writes fail on is_project_admin().
+
+select
+  p.proname,
+  pg_get_functiondef(p.oid) as definition
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname in ('is_owner', 'is_admin', 'is_project_admin', 'todo_list_owner')
+order by p.proname;
+
+
+-- ─── 7. The direct answer ───────────────────────────────────────────────────
+-- What the failing insert actually evaluates, without inserting anything.
+-- Run it while signed in as the account that sees the error.
+--
+-- Read it with section 6:
+--   would_be_allowed true, but the app still errors -> the deployed policy is
+--     not the one in the files; rerun 20260918000000 and 20260919000000.
+--   would_be_allowed false, is_owner true -> is_project_admin is not calling
+--     is_owner(); section 6 shows its body, and rerunning 20260918000000
+--     restates it.
+--   would_be_allowed false, is_owner false -> the account lacks the grant,
+--     and section 5 is the fix. Note is_admin true with is_owner false is
+--     impossible in these files, so that combination also means the deployed
+--     functions are stale.
+
+select
+  p.name as project,
+  public.is_owner()                as is_owner,
+  public.is_admin()                as is_admin,
+  -- The shared-board branch is "owner_id is null and is_project_admin(...)".
+  -- owner_id is null by construction on this board, so this call alone
+  -- decides whether the insert is allowed.
+  public.is_project_admin(p.id)    as would_be_allowed
+from public.projects p
+order by p.name;
