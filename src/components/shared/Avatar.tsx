@@ -1,5 +1,5 @@
 import React from 'react'
-import { personColor, personStarLayer } from '../../lib/personColor'
+import { personColor } from '../../lib/personColor'
 
 /**
  * Somebody's initials on their own colour.
@@ -50,9 +50,6 @@ export function Avatar({
         width: size,
         height: size,
         backgroundColor: personColor(id),
-        // A starfield over the colour, for whoever has one. backgroundImage is
-        // painted above backgroundColor, so the two layer without a wrapper.
-        backgroundImage: personStarLayer(id),
       }}
     >
       <span

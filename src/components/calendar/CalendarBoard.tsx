@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
-  Circle, CheckCircle2, Users, X, Star,
+  Circle, CheckCircle2, Users, X,
 } from 'lucide-react'
 import {
   addDays, addWeeks, format,
@@ -12,7 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
-import { personColor, personHasStars, todoOwner } from '../../lib/personColor'
+import { personColor, todoOwner, DEADLINE_RED } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
 import {
@@ -261,7 +261,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `task-${task.id}-${empIdForCal}`,
             label: task.title,
-            color: isDeadlineMarker ? '#DC2626' : personColor(empIdForCal),
+            color: isDeadlineMarker ? DEADLINE_RED : personColor(empIdForCal),
             deadline: isDeadlineMarker,
             task,
             employeeId: empIdForCal,
@@ -281,7 +281,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `due-${t.id}`,
             label: `Due: ${t.title}`,
-            color: '#DC2626',
+            color: DEADLINE_RED,
             deadline: true,
             todo: t,
           })
@@ -1193,11 +1193,6 @@ function BlockChip({
             }
       }
     >
-      {personHasStars(block.employeeId ?? (block.todo ? todoOwner(block.todo) : null)) && (
-        <span className="float-left mr-1 mt-[3px] leading-none" aria-hidden>
-          <Star size={9} fill="currentColor" strokeWidth={0} />
-        </span>
-      )}
       {onToggleDone && (
         <button
           onPointerDown={(e) => { e.stopPropagation(); moved.current = true }}

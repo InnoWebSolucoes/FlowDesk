@@ -1,121 +1,51 @@
 /**
- * A colour per person, the same one everywhere they appear.
+ * What colour a piece of work is drawn in.
  *
- * These are assigned by hand, not derived. A hash spread people across a
- * palette without anyone choosing which person got which colour, so nobody
- * matched their own branding and the only way to change a colour was to
- * change the person's id. The list below is the whole of it: to give somebody
- * a colour, add them to it.
+ * This used to be a colour per person, so a week with several people's work
+ * on it could be read at a glance. There is one manager now and the people
+ * whose work appears on a calendar are the employees, so the useful question
+ * is no longer "whose is this" but "is this ours or theirs" — two colours
+ * rather than eight, and no hashing to decide which.
+ */
+
+/** The one account that manages everything. */
+const INNOWEB_ID = '1e2001c5-72b2-44a6-9605-9954db51908e'
+
+/**
+ * Employees' work. One purple for all of them: any given calendar shows a
+ * single employee's week, so a colour each distinguished nothing the board
+ * was not already saying.
+ */
+const EMPLOYEE = '#6B21A8'
+
+/**
+ * InnoWeb's own. Grey, because the manager's todos sit alongside the work
+ * they have handed out, and the work handed out is what should stand out.
+ */
+const INNOWEB = '#6B7280'
+
+/**
+ * A deadline: when something is due, rather than when it is meant to be
+ * done. Drawn as a faded outline rather than filled, so a week of due dates
+ * does not read as a week of work.
+ */
+export const DEADLINE_RED = '#DC2626'
+
+/**
+ * The colour for whoever this work belongs to.
  *
- * Every colour here is dark enough to carry white text, because the calendar
- * paints blocks in the colour itself rather than a wash of it.
- */
-
-/** FlowDesk's own green, from the logo and tailwind's `primary`. */
-const FLOWDESK_GREEN = '#1A5C3A'
-
-/**
- * Who is what colour.
- *
- * Keyed by user id. Names are in the comments because ids are unreadable and
- * the next person to edit this needs to know whose colour they are changing.
- */
-const CHOSEN: Record<string, string> = {
-  // InnoWeb Admin (innowebsolucoes@gmail.com) — FlowDesk's green, the same
-  // one as the logo.
-  '1e2001c5-72b2-44a6-9605-9954db51908e': FLOWDESK_GREEN,
-  // Kasim (kasimcustodio@gmail.com) — dark blue.
-  '5719747f-ccc2-4e4e-8b10-13bb026fe725': '#1B3A8A',
-  // Rafael (rafamdann@gmail.com) — green, but a yellower one than FlowDesk's
-  // deep forest green: the two sat 52 apart out of 441 and read as the same
-  // colour side by side on a week.
-  'b63d846e-1780-4040-9a3a-468fb9bfb683': '#4D7C0F',
-  // Esmael (esmaelinnoweb@gmail.com) — purple.
-  'ce6f98bd-3d55-412f-96fc-9ffe88340b2d': '#6B21A8',
-}
-
-/**
- * Nobody. Work that resolves to no person at all — unassigned, on no board,
- * with no recorded creator — is grey rather than a colour, because a colour
- * reads as belonging to someone. Dark enough to carry white text like the
- * rest.
- */
-const UNASSIGNED = '#6B7280'
-
-/**
- * Everyone else, in a fixed order, so two people without an assigned colour
- * still look different from each other. Spaced around the wheel and all dark
- * enough for white text.
- */
-const FALLBACK = [
-  '#B45309', // amber
-  '#9F1239', // crimson
-  '#0E7490', // teal
-  '#4338CA', // indigo
-  '#A21CAF', // magenta
-  '#3F6212', // olive
-  '#334155', // slate
-  '#7C2D12', // rust
-] as const
-
-/**
- * Whose colour carries a starfield. Purely decorative, and drawn as a
- * background layer so it costs nothing where it is not wanted.
- */
-const STARRED = new Set<string>([
-  '5719747f-ccc2-4e4e-8b10-13bb026fe725', // Kasim
-])
-
-/** Does this person's colour carry stars? */
-export function personHasStars(id: string | null | undefined): boolean {
-  return !!id && STARRED.has(id)
-}
-
-/**
- * A scattering of stars as a CSS background, layered over the flat colour.
- * Fixed positions rather than random ones, so the avatar does not change
- * between renders.
- */
-export function personStarLayer(id: string | null | undefined): string | undefined {
-  if (!personHasStars(id)) return undefined
-  const star = (x: number, y: number, r: number, a: number) =>
-    `radial-gradient(circle ${r}px at ${x}% ${y}%, rgba(255,255,255,${a}) 0%, rgba(255,255,255,0) 100%)`
-  return [
-    star(18, 22, 1.1, 0.95),
-    star(72, 16, 0.8, 0.75),
-    star(38, 62, 0.9, 0.85),
-    star(84, 58, 1.1, 0.9),
-    star(58, 84, 0.7, 0.7),
-    star(12, 78, 0.8, 0.8),
-    star(90, 34, 0.6, 0.6),
-  ].join(', ')
-}
-
-/**
- * Stable across runs, unlike a string hash built on anything host-specific.
- * Only used for people who have not been given a colour.
- */
-function hash(id: string): number {
-  let h = 0
-  for (let i = 0; i < id.length; i++) {
-    h = (h * 31 + id.charCodeAt(i)) | 0
-  }
-  return Math.abs(h)
-}
-
-/**
- * The person's colour, as an opaque hex string.
- *
- * Everyone who has been given a colour is keyed by id. Matching on name was
- * a stopgap while some ids were not to hand; a name is the weaker key, since
- * renaming somebody silently changed their colour and two people sharing a
- * first name shared a colour. Work belonging to nobody comes back grey.
+ * Everything belongs to somebody — an employee, or InnoWeb. A missing id
+ * falls to the employee colour rather than a third "nobody" colour: work
+ * owned by no one is a bug to fix where it is created, not a state to give
+ * a swatch to.
  */
 export function personColor(id: string | null | undefined): string {
-  if (id && CHOSEN[id]) return CHOSEN[id]
-  // No person at all, rather than a person we have no colour for.
-  if (!id) return UNASSIGNED
-  return FALLBACK[hash(id) % FALLBACK.length]
+  return id === INNOWEB_ID ? INNOWEB : EMPLOYEE
+}
+
+/** Is this InnoWeb's own work rather than an employee's? */
+export function isInnoweb(id: string | null | undefined): boolean {
+  return id === INNOWEB_ID
 }
 
 /**
@@ -123,11 +53,10 @@ export function personColor(id: string | null | undefined): string {
  * whoever added it.
  *
  * A todo on the shared board has no owner, and one nobody has been assigned
- * has no assignee, so the pair alone left todos belonging to nobody — which
- * on the calendar meant a block with no one's colour. Every todo is created
- * by somebody, so the creator is the answer whenever the other two are
- * silent: if you added it to your own list it is yours, and it stops being
- * yours only when it is assigned to someone else.
+ * has no assignee, so the pair alone left todos belonging to nobody. Every
+ * todo is created by somebody, so the creator is the answer whenever the
+ * other two are silent: if you added it to your own list it is yours, and it
+ * stops being yours only when it is assigned to someone else.
  */
 export function todoOwner(todo: {
   assigneeId?: string | null
