@@ -38,7 +38,6 @@ type DragState =
   | { kind: 'todo'; id: string; label: string }
   // A task's do date belongs to the assignment, not the task, so moving one
   // has to say whose plan is being changed.
-  | { kind: 'task'; id: string; employeeId: string; label: string }
   | { kind: 'entry'; id: string; label: string }
   | { kind: 'unscheduled'; id: string; label: string }
 
@@ -57,6 +56,14 @@ interface Block {
   employeeId?: string
   /** For a task block: whether that person has done it on the day shown. */
   done?: boolean
+  /** Started but not finished, so it can be shown as under way. */
+  started?: boolean
+  /**
+   * A deadline rather than a plan: the day it is due, not the day it is
+   * meant to be worked on. Drawn as a faded red outline so it reads as a
+   * marker rather than as scheduled work.
+   */
+  deadline?: boolean
 }
 
 interface CalendarBoardProps {
@@ -89,7 +96,10 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     overlayTodos, loadOverlayTodos,
   } = useProjectStore()
 
-  const { tasks, setTaskDoDate, completeTask, uncompleteTask, isTaskCompleted } = useTaskStore()
+  const {
+    tasks, completeTask, uncompleteTask, isTaskCompleted,
+    setInProgress, clearInProgress, isInProgress,
+  } = useTaskStore()
   const { employees } = useEmployeeStore()
 
   // Whose calendars to overlay, beyond your own. Admin-only: a manager needs
@@ -235,16 +245,22 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           if (!showsToday) continue
           if (planned === day ? !visible('do') : !visible('due')) continue
 
+          // Two different things wear the same title. On the day it is
+          // planned for, this is the work: filled, in the person's colour.
+          // On its deadline it is a marker saying when it is due — faded red
+          // outline, so a week of deadlines does not read as a week of work.
+          const isDeadlineMarker = planned !== day
           blocks.push({
             key: `task-${task.id}-${empIdForCal}`,
             label: task.title,
-            color: personColor(empIdForCal),
-            outlined: !planned,
+            color: isDeadlineMarker ? '#DC2626' : personColor(empIdForCal),
+            deadline: isDeadlineMarker,
             task,
             employeeId: empIdForCal,
             // The day it is shown on is the day it counts for: a recurring
             // task is done again each time it comes round.
             done: isTaskCompleted(task.id, empIdForCal, day),
+            started: isInProgress(task.id, empIdForCal, day),
             ownerName: canOverlay ? who?.name : undefined,
           })
         }
@@ -257,8 +273,8 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           blocks.push({
             key: `due-${t.id}`,
             label: `Due: ${t.title}`,
-            color: '#dc2626',
-            outlined: true,
+            color: '#DC2626',
+            deadline: true,
             todo: t,
           })
         }
@@ -330,9 +346,6 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       // is how something comes off the calendar without being deleted.
       if (droppedOut) {
         if (drag.kind === 'todo') await updateTodo(drag.id, { doDate: null })
-        else if (drag.kind === 'task') {
-          await setTaskDoDate(drag.id, drag.employeeId, { doDate: null })
-        }
         return
       }
 
@@ -340,11 +353,6 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
 
       if (drag.kind === 'unscheduled' || drag.kind === 'todo') {
         await updateTodo(drag.id, { doDate: day })
-        return
-      }
-
-      if (drag.kind === 'task') {
-        await setTaskDoDate(drag.id, drag.employeeId, { doDate: day })
         return
       }
 
@@ -373,7 +381,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [drag, slotAt, overDropOut, updateTodo, updateCalendarEntry, setTaskDoDate, calendarEntries])
+  }, [drag, slotAt, overDropOut, updateTodo, updateCalendarEntry, calendarEntries])
 
   /** Click on empty space in a day → a new entry on that day. */
   /**
@@ -416,10 +424,21 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
   const toggleTaskDone = async (taskId: string, employeeId: string, day: string) => {
     setError('')
     try {
+      // The same three states as My Tasks, in the same order: not started,
+      // started, done. Ticking here and ticking there are the same action on
+      // the same record — the calendar is another view of the task, not a
+      // separate thing that happens to look like one.
       if (isTaskCompleted(taskId, employeeId, day)) {
+        // Done -> back to the beginning.
         await uncompleteTask(taskId, employeeId, day)
-      } else {
+        await clearInProgress(taskId, employeeId, day)
+      } else if (isInProgress(taskId, employeeId, day)) {
+        // Started -> done. Completing supersedes the started flag, so it is
+        // cleared rather than left behind to reappear on un-completing.
         await completeTask(taskId, employeeId, day)
+      } else {
+        // Not started -> started.
+        await setInProgress(taskId, employeeId, day)
       }
     } catch (e) {
       setError((e as Error).message || 'That could not be updated.')
@@ -629,9 +648,6 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
-              onDragTask={(t, employeeId) =>
-                setDrag({ kind: 'task', id: t.id, employeeId, label: t.title })
-              }
             />
           ) : (
             <DayGrid
@@ -652,9 +668,6 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
-              onDragTask={(t, employeeId) =>
-                setDrag({ kind: 'task', id: t.id, employeeId, label: t.title })
-              }
             />
           )}
         </div>
@@ -822,7 +835,6 @@ function DayGrid({
   onBlockContext,
   onDragTodo,
   onDragEntry,
-  onDragTask,
 }: {
   days: Date[]
   today: string
@@ -841,7 +853,6 @@ function DayGrid({
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
-  onDragTask: (task: Task, employeeId: string) => void
 }) {
   const { t } = useT()
   return (
@@ -897,11 +908,18 @@ function DayGrid({
                         : onOpenEntry(b.entry!.id)
                   }
                   onDragStart={() =>
+                    // Only todos and time blocks are dragged. An assigned
+                    // task's day comes from the schedule it was given, and
+                    // dragging it used to clear that do_date — which did not
+                    // remove the block, because a task with no do_date still
+                    // shows on its deadline. It just changed from filled to
+                    // outline, so it read as the colour being pulled out of
+                    // it while the task stayed put. It is ticked, not moved.
                     b.todo
                       ? onDragTodo(b.todo)
-                      : b.task && b.employeeId
-                        ? onDragTask(b.task, b.employeeId)
-                        : b.entry && onDragEntry(b.entry)
+                      : b.entry
+                        ? onDragEntry(b.entry)
+                        : undefined
                   }
                   onToggleDone={
                     b.todo
@@ -944,7 +962,6 @@ function MonthGrid({
   onBlockContext,
   onDragTodo,
   onDragEntry,
-  onDragTask,
 }: {
   days: Date[]
   today: string
@@ -963,7 +980,6 @@ function MonthGrid({
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
-  onDragTask: (task: Task, employeeId: string) => void
 }) {
   return (
     <div className="grid grid-cols-7 gap-px bg-border rounded-xl overflow-hidden border border-border">
@@ -1018,11 +1034,18 @@ function MonthGrid({
                         : onOpenEntry(b.entry!.id)
                   }
                   onDragStart={() =>
+                    // Only todos and time blocks are dragged. An assigned
+                    // task's day comes from the schedule it was given, and
+                    // dragging it used to clear that do_date — which did not
+                    // remove the block, because a task with no do_date still
+                    // shows on its deadline. It just changed from filled to
+                    // outline, so it read as the colour being pulled out of
+                    // it while the task stayed put. It is ticked, not moved.
                     b.todo
                       ? onDragTodo(b.todo)
-                      : b.task && b.employeeId
-                        ? onDragTask(b.task, b.employeeId)
-                        : b.entry && onDragEntry(b.entry)
+                      : b.entry
+                        ? onDragEntry(b.entry)
+                        : undefined
                   }
                   onToggleDone={
                     b.todo
@@ -1108,19 +1131,31 @@ function BlockChip({
       title={block.ownerName ? `${block.label} — ${block.ownerName}` : block.label}
       className={`relative rounded-md text-[11px] leading-tight truncate cursor-grab active:cursor-grabbing select-none shadow-sm ${
         compact ? 'px-1.5 py-1' : 'px-2 py-1 h-full overflow-hidden'
-      } ${block.todo?.isCompleted || block.done ? 'line-through opacity-60' : ''}`}
+      } ${
+        // Done work fades and strikes through, whichever kind it is.
+        block.todo?.isCompleted || block.done ? 'line-through opacity-45' : ''
+      }`}
       style={
-        block.outlined
-          ? // Unplanned work is outlined rather than filled, so it reads as
-            // provisional. The colour is still the person's, at full strength.
-            { border: `2px solid ${block.color}`, color: block.color, backgroundColor: '#FFFFFF' }
-          : // Everything else is the person's colour exactly as it is — no
+        block.deadline
+          ? // A deadline marker, not the work itself: faded outline, so a
+            // week of due dates does not read as a week of scheduled work.
+            {
+              border: `1.5px solid ${block.color}`,
+              color: block.color,
+              backgroundColor: 'transparent',
+              opacity: block.todo?.isCompleted || block.done ? undefined : 0.7,
+            }
+          : // Scheduled work, in the person's colour exactly as it is — no
             // mix into white. Diluting it made every block a pale wash and
             // two people's work hard to tell apart at a glance. White text
             // is what makes the solid colour readable.
             {
               backgroundColor: block.color,
               color: '#FFFFFF',
+              // Under way but not finished: a lighter edge, so started work
+              // is visibly different from untouched work without changing
+              // whose colour it is.
+              boxShadow: block.started ? 'inset 0 0 0 2px rgba(255,255,255,0.65)' : undefined,
             }
       }
     >
