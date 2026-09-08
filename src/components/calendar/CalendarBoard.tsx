@@ -64,6 +64,12 @@ interface Block {
    * marker rather than as scheduled work.
    */
   deadline?: boolean
+  /**
+   * Something the person put on their own todo list, rather than work
+   * assigned to them. Outlined in their colour on white, so at a glance a
+   * week separates what they were given from what they took on.
+   */
+  ownWork?: boolean
 }
 
 interface CalendarBoardProps {
@@ -207,6 +213,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
             key: `todo-${t.id}`,
             label: t.title,
             color: personColor(todoOwner(t) ?? ownerId),
+            ownWork: true,
             todo: t,
           })
         }
@@ -221,6 +228,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
             key: `overlay-todo-${t.id}`,
             label: t.title,
             color: personColor(todoOwner(t)),
+            ownWork: true,
             todo: t,
             ownerName: employees.find((e) => e.id === t.ownerId)?.name,
           })
@@ -1145,6 +1153,16 @@ function BlockChip({
               backgroundColor: 'transparent',
               opacity: block.todo?.isCompleted || block.done ? undefined : 0.7,
             }
+          : block.ownWork
+            ? // Their own todo: outlined in their colour on white, at full
+              // strength. Assigned work is filled, so the two are told apart
+              // by whether the colour is inside the block or around it —
+              // which reads at a glance across a week without needing a key.
+              {
+                border: `2px solid ${block.color}`,
+                color: block.color,
+                backgroundColor: '#FFFFFF',
+              }
           : // Scheduled work, in the person's colour exactly as it is — no
             // mix into white. Diluting it made every block a pale wash and
             // two people's work hard to tell apart at a glance. White text
@@ -1247,11 +1265,13 @@ function Unscheduled({
                 onDragStart(t.id, t.title)
               }}
               onClick={() => onOpen(t.id)}
-              className={`group flex items-start gap-1.5 p-2 rounded-lg border text-left cursor-grab active:cursor-grabbing transition-colors ${
-                dragging === t.id
-                  ? 'border-primary bg-primary-light'
-                  : 'border-border bg-surface-2 hover:border-primary/40'
+              className={`group flex items-start gap-1.5 p-2 rounded-lg border-2 text-left cursor-grab active:cursor-grabbing transition-colors ${
+                dragging === t.id ? 'bg-primary-light' : 'bg-surface hover:brightness-95'
               }`}
+              // Their colour, outlined, exactly as the same todo looks once
+              // it has a day — so dragging it onto the calendar changes where
+              // it is and nothing else about it.
+              style={{ borderColor: personColor(todoOwner(t)) }}
             >
               <GripVertical size={12} className="text-text-subtle mt-0.5 flex-shrink-0" />
               {/* Ticking it off here: something can be finished without ever
