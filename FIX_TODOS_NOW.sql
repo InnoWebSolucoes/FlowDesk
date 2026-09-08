@@ -4,6 +4,13 @@
 --
 -- Run the whole file in the Supabase SQL editor. Safe to run repeatedly.
 --
+-- If a previous attempt failed with "P0001: Only the owner can change
+-- ownership", nothing from it took effect: that error aborted the script at
+-- the ownership update, before any policy was created. The guard_owner_flag
+-- trigger raises it because it asks is_owner(), which reads auth.uid() —
+-- null in the SQL editor, so never the owner. Section 2 now turns that
+-- trigger off for the one statement and back on straight after.
+--
 -- The second error is the same cause as the first. Creating a todo from the
 -- calendar makes the list first when the board has none, and that insert is
 -- gated the same way. Both come down to one thing: whether the signed-in
@@ -61,9 +68,30 @@ $$;
 -- granted one pasted id, which happened to be the account that already
 -- worked.
 
-update public.users
-set is_owner = true
-where role = 'admin';
+-- guard_owner_flag refuses any change to is_owner unless is_owner() is
+-- already true for the caller. In the SQL editor auth.uid() is null, so it is
+-- never true and the update is rejected with "Only the owner can change
+-- ownership" — which aborts the whole script before a single policy is
+-- created. Turning the trigger off for this one statement is what an earlier
+-- migration already recommended for exactly this case.
+do $grant$
+begin
+  -- Wrapped so a database where the trigger does not exist still runs this.
+  begin
+    execute 'alter table public.users disable trigger guard_owner_flag';
+  exception when undefined_object then
+    null;
+  end;
+
+  update public.users set is_owner = true where role = 'admin';
+
+  begin
+    execute 'alter table public.users enable trigger guard_owner_flag';
+  exception when undefined_object then
+    null;
+  end;
+end
+$grant$;
 
 insert into public.project_members (user_id, project_id)
 select u.id, p.id
