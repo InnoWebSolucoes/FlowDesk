@@ -124,9 +124,9 @@ export function AppUsagePanel({ employeeId }: { employeeId: string }) {
           Nothing recorded yet — this starts from the day tracking was added.
         </p>
       ) : (
-        {/* Six columns rather than five, with last seen taking two of them:
-            a date and a time is a longer string than the counts beside it
-            and would otherwise wrap into two cramped lines. */}
+        // Six columns rather than five, with last seen taking two of them: a
+        // date and a time is a longer string than the counts beside it and
+        // would otherwise wrap into two cramped lines.
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           {tiles.map(([label, value]) => (
             <div key={label} className={label === 'Last seen' ? 'col-span-2' : ''}>
