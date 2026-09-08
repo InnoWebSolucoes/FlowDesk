@@ -1,7 +1,8 @@
 import React from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useMatch } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { NotificationBell } from './NotificationBell'
+import { useProjectStore } from '../../store/projectStore'
 
 const pageTitles: Record<string, string> = {
   // Pages inside a project render their own header, so only the top-level
@@ -23,9 +24,19 @@ export function Layout() {
   // generic rather than repeating "Projects" above it.
   const insideProject = /^\/admin\/projects\/[^/]+/.test(location.pathname)
 
-  const title = insideProject
-    ? 'Flowdesk'
-    : Object.entries(pageTitles).find(([path]) => location.pathname.startsWith(path))?.[1] ?? 'Flowdesk'
+  const title = Object.entries(pageTitles).find(([path]) =>
+    location.pathname.startsWith(path),
+  )?.[1] ?? 'Flowdesk'
+
+  // Which project, when inside one. Its name goes up here beside Flowdesk
+  // rather than in a banner of its own on every page: the banner cost a
+  // block of vertical space to say something the top bar can say in a word.
+  const projectMatch = useMatch('/admin/projects/:projectId/*')
+  const activeProject = useProjectStore((s) =>
+    projectMatch?.params.projectId
+      ? s.projects.find((p) => p.id === projectMatch.params.projectId)
+      : undefined,
+  )
 
   return (
     <div className="flex h-screen bg-bg overflow-hidden">
@@ -33,7 +44,23 @@ export function Layout() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top bar */}
         <header className="h-16 bg-surface border-b border-border px-6 flex items-center justify-between flex-shrink-0 md:pl-6 pl-16">
-          <h1 className="text-text-main font-semibold text-lg">{title}</h1>
+          <h1 className="text-text-main font-semibold text-lg flex items-center gap-2 min-w-0">
+            <span className="flex-shrink-0">{insideProject ? 'Flowdesk' : title}</span>
+            {activeProject && (
+              <>
+                <span className="text-text-subtle font-normal flex-shrink-0">/</span>
+                <span
+                  className="truncate px-2 py-0.5 rounded-md text-base"
+                  style={{
+                    backgroundColor: `${activeProject.color}1f`,
+                    color: activeProject.color,
+                  }}
+                >
+                  {activeProject.name}
+                </span>
+              </>
+            )}
+          </h1>
           <NotificationBell />
         </header>
         {/* Main content.

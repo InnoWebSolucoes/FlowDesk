@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
-  Circle, CheckCircle2, Users, X,
+  Circle, CheckCircle2, Timer, Users, X,
 } from 'lucide-react'
 import {
   addDays, addWeeks, format,
@@ -491,10 +491,10 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
         : format(cursor, 'MMMM yyyy')
 
   return (
-    // Full viewport height minus the page chrome, so the grid can fill what
-    // is left rather than stopping halfway down. min-h-0 on the row below is
-    // what lets a flex child actually shrink and scroll.
-    <div className="animate-fade-in flex flex-col h-[calc(100vh-7rem)]">
+    // Fills the window less the chrome above it and a margin below, so the
+    // grid reaches down the page without running into the bottom edge.
+    // min-h-0 on the row below is what lets a flex child shrink and scroll.
+    <div className="animate-fade-in flex flex-col h-[calc(100vh-11rem)] min-h-[30rem] mb-6">
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
         <div className="flex items-center gap-1">
@@ -1150,7 +1150,7 @@ function BlockChip({
         onContext(e.clientX, e.clientY)
       }}
       title={block.ownerName ? `${block.label} — ${block.ownerName}` : block.label}
-      className={`relative rounded-md text-xs leading-snug truncate cursor-grab active:cursor-grabbing select-none shadow-sm ${
+      className={`relative rounded-md text-xs leading-snug cursor-grab active:cursor-grabbing select-none shadow-sm ${
         // Month cells stay tight — there are 28 of them on screen. A week or
         // a day has the room, and 11px text in a 1-unit padding was a sliver
         // that was hard to read and harder to hit.
@@ -1193,22 +1193,37 @@ function BlockChip({
             }
       }
     >
-      {onToggleDone && (
-        <button
-          onPointerDown={(e) => { e.stopPropagation(); moved.current = true }}
-          onClick={(e) => { e.stopPropagation(); onToggleDone() }}
-          className="float-left mr-1 mt-[2px] hover:opacity-100 opacity-70"
-          title={block.todo?.isCompleted || block.done ? t('cal_markNotDone') : t('cal_markDone')}
-        >
-          {block.todo?.isCompleted || block.done ? <CheckCircle2 size={11} /> : <Circle size={11} />}
-        </button>
-      )}
-      {block.label}
-      {/* Whose it is, when the team's calendars are overlaid on yours. */}
-      {block.ownerName && (
-        <span className="opacity-60"> · {block.ownerName}</span>
-      )}
-
+      {/* A row rather than floats: the label now wraps to two lines, and a
+          floated button beside a clamped block does not line up. */}
+      <div className="flex items-start gap-1.5">
+        {onToggleDone && (
+          <button
+            onPointerDown={(e) => { e.stopPropagation(); moved.current = true }}
+            onClick={(e) => { e.stopPropagation(); onToggleDone() }}
+            className="flex-shrink-0 mt-[1px] hover:opacity-100 opacity-80"
+            title={block.todo?.isCompleted || block.done ? t('cal_markNotDone') : t('cal_markDone')}
+          >
+            {block.todo?.isCompleted || block.done ? (
+              <CheckCircle2 size={15} />
+            ) : block.started ? (
+              // Under way, the same timer My Tasks shows, so ticking once
+              // says something visible rather than appearing to do nothing.
+              <Timer size={15} />
+            ) : (
+              <Circle size={15} />
+            )}
+          </button>
+        )}
+        <span className="min-w-0 flex-1">
+          {/* Two lines before it clips: one line cut most titles mid-word,
+              and a calendar box has the room now. */}
+          <span className="line-clamp-2 break-words">{block.label}</span>
+          {/* Whose it is, when the team's calendars are overlaid on yours. */}
+          {block.ownerName && (
+            <span className="opacity-60"> · {block.ownerName}</span>
+          )}
+        </span>
+      </div>
     </div>
   )
 }
