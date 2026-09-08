@@ -35,12 +35,15 @@ Deno.serve(async (req) => {
 
     const { data: callerProfile, error: profileErr } = await anonClient
       .from('users')
-      .select('role')
+      .select('is_owner')
       .eq('id', caller.id)
       .single()
 
-    if (profileErr || callerProfile?.role !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), {
+    // Ownership, not the admin role. There is no admin tier any more — one
+    // owner, everybody else an employee — so requiring role = 'admin' locked
+    // this to whichever account happened to keep that role.
+    if (profileErr || !callerProfile?.is_owner) {
+      return new Response(JSON.stringify({ error: 'Forbidden: only the owner can do this' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })

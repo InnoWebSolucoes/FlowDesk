@@ -167,7 +167,20 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     })
 
     if (error || data?.error) {
-      return { success: false, error: data?.error ?? error?.message }
+      // On a non-2xx, supabase-js discards the body and hands back a
+      // FunctionsHttpError whose message is always the same unhelpful
+      // "Edge Function returned a non-2xx status code". The function does say
+      // what went wrong — forbidden, missing id, deleting your own account —
+      // so read it off the response before falling back to that.
+      let reason = data?.error as string | undefined
+      if (!reason && error) {
+        const res = (error as { context?: Response }).context
+        if (res && typeof res.json === 'function') {
+          const body = await res.json().catch(() => null)
+          if (body?.error) reason = body.error
+        }
+      }
+      return { success: false, error: reason ?? error?.message }
     }
 
     set((s) => {
