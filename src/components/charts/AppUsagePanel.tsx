@@ -30,13 +30,31 @@ function duration(mins: number): string {
   return rest === 0 ? `${h}h` : `${h}h ${rest}m`
 }
 
+/**
+ * When they were last in the app, to the minute.
+ *
+ * "today" answered the wrong question: the point of last seen is knowing
+ * whether somebody was in the app an hour ago or first thing this morning,
+ * and a day is too coarse to say. Recent times are relative because that is
+ * how you read them at a glance; anything older carries the clock time too,
+ * since "9 days ago" alone leaves you counting back.
+ */
 function ago(iso: string | null): string {
   if (!iso) return '—'
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
-  if (days === 0) return 'today'
-  if (days === 1) return 'yesterday'
-  if (days < 30) return `${days} days ago`
-  return new Date(iso).toLocaleDateString()
+  const then = new Date(iso)
+  const mins = Math.floor((Date.now() - then.getTime()) / 60_000)
+  const clock = then.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago · ${clock}`
+
+  const days = Math.floor(hours / 24)
+  if (days === 1) return `yesterday ${clock}`
+  if (days < 7) return `${days} days ago · ${clock}`
+  return `${then.toLocaleDateString()} ${clock}`
 }
 
 export function AppUsagePanel({ employeeId }: { employeeId: string }) {
@@ -106,11 +124,23 @@ export function AppUsagePanel({ employeeId }: { employeeId: string }) {
           Nothing recorded yet — this starts from the day tracking was added.
         </p>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {/* Six columns rather than five, with last seen taking two of them:
+            a date and a time is a longer string than the counts beside it
+            and would otherwise wrap into two cramped lines. */}
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           {tiles.map(([label, value]) => (
-            <div key={label}>
+            <div key={label} className={label === 'Last seen' ? 'col-span-2' : ''}>
               <p className="text-text-muted text-[11px]">{label}</p>
-              <p className="text-text-main font-semibold text-lg leading-tight">{value}</p>
+              <p
+                className={`text-text-main font-semibold leading-tight ${
+                  label === 'Last seen' ? 'text-sm mt-0.5' : 'text-lg'
+                }`}
+                title={label === 'Last seen' && stats.lastSeen
+                  ? new Date(stats.lastSeen).toLocaleString()
+                  : undefined}
+              >
+                {value}
+              </p>
             </div>
           ))}
         </div>
