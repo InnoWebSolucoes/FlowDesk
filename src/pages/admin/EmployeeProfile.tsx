@@ -5,6 +5,7 @@ import { useEmployeeStore } from '../../store/employeeStore'
 import { useToolStore } from '../../store/toolStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskManager } from './TaskManager'
+import { MyTasks } from '../employee/MyTasks'
 import { Analytics } from './Analytics'
 import { AppUsagePanel } from '../../components/charts/AppUsagePanel'
 import { EmptyState } from '../../components/shared/EmptyState'
@@ -24,6 +25,10 @@ import { WorkLog } from '../../components/worklog/WorkLog'
 const TABS = ['tasks', 'analytics', 'worklog', 'todos', 'calendar', 'notes', 'toolbox', 'guidelines'] as const
 type Tab = typeof TABS[number]
 
+/** The four cuts of somebody's work, in the order they read in. */
+const TASK_SECTIONS = ['today', 'week', 'month', 'all'] as const
+type TaskSection = typeof TASK_SECTIONS[number]
+
 export function EmployeeProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -36,6 +41,7 @@ export function EmployeeProfile() {
   const { t, dateLocale } = useT()
 
   const [tab, setTab] = useState<Tab>('tasks')
+  const [taskSection, setTaskSection] = useState<TaskSection>('today')
   const [guideSaved, setGuideSaved] = useState(false)
 
   const emp = allEmployees.find(e => e.id === id)
@@ -66,6 +72,15 @@ export function EmployeeProfile() {
     await saveGuidelines(id, editor.getHTML(), currentUser.id)
     setGuideSaved(true)
     setTimeout(() => setGuideSaved(false), 2000)
+  }
+
+  // The first three reuse the employee's own labels, so the sections are
+  // named the same on both sides of the app.
+  const taskSectionLabels: Record<TaskSection, string> = {
+    today: t('mytasks_today'),
+    week: t('mytasks_thisWeek'),
+    month: t('mytasks_thisMonth'),
+    all: t('profile_tabAllTasks'),
   }
 
   const tabLabels: Record<Tab, string> = {
@@ -119,8 +134,38 @@ export function EmployeeProfile() {
         ))}
       </div>
 
+      {/* Their work in the same four cuts, in the same order: today, this
+          week, this month, then everything. The first three are the very
+          component the employee looks at — read-only and one period at a
+          time — so what a manager sees of somebody's day is that person's
+          actual day rather than a second, differently-shaped summary of it
+          that can quietly disagree with it. The fourth is the task manager
+          that was here already, which is the only one of the four you can
+          edit from. */}
       {tab === 'tasks' && (
-        <TaskManager preselectedEmployee={emp.id} />
+        <div>
+          <div className="flex items-center gap-1 mb-5 overflow-x-auto">
+            {TASK_SECTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setTaskSection(s)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                  taskSection === s
+                    ? 'bg-primary text-white'
+                    : 'text-text-muted hover:text-text-main hover:bg-surface-2'
+                }`}
+              >
+                {taskSectionLabels[s]}
+              </button>
+            ))}
+          </div>
+
+          {taskSection === 'all' ? (
+            <TaskManager preselectedEmployee={emp.id} />
+          ) : (
+            <MyTasks employeeId={emp.id} section={taskSection} readOnly />
+          )}
+        </div>
       )}
 
       {tab === 'analytics' && (

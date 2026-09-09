@@ -13,7 +13,7 @@ import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
 
 const TABS = ['today', 'week', 'month'] as const
-type Tab = typeof TABS[number]
+export type TaskPeriod = typeof TABS[number]
 
 function TimeBlock({
   label,
@@ -25,6 +25,7 @@ function TimeBlock({
   empId,
   todayStr,
   highlight,
+  readOnly,
 }: {
   label: string
   tasks: Task[]
@@ -35,6 +36,7 @@ function TimeBlock({
   empId: string
   todayStr: string
   highlight: ReturnType<typeof useHighlight>
+  readOnly?: boolean
 }) {
   const { isInProgress: isInProgressFn, setInProgress, clearInProgress } = useTaskStore()
 
@@ -52,8 +54,9 @@ function TimeBlock({
             category={categories.find(c => c.id === task.categoryId)}
             onComplete={() => onComplete(task.id)}
             onUncomplete={() => onUncomplete(task.id)}
-            onSetInProgress={() => setInProgress(task.id, empId, todayStr)}
-            onClearInProgress={() => clearInProgress(task.id, empId, todayStr)}
+            // A manager reading somebody's day does not tick it off for them.
+            onSetInProgress={readOnly ? undefined : () => setInProgress(task.id, empId, todayStr)}
+            onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, todayStr)}
             currentUserId={empId}
             dueDate={todayStr}
             highlighted={highlight.isHighlighted(task.id)}
@@ -90,14 +93,38 @@ function OwedSummary({ label, total, done }: { label: string; total: number; don
   )
 }
 
-export function MyTasks() {
+/**
+ * Somebody's tasks, broken into today, this week and this month.
+ *
+ * The employee's own page renders it whole, with its three tabs. The manager's
+ * view of an employee renders it one period at a time, read-only, so the
+ * profile can show the same three sections above the full task list — which is
+ * the point: what a manager sees of somebody's day should be the day that
+ * person is actually looking at, not a differently-shaped summary of it.
+ */
+export function MyTasks({
+  employeeId,
+  readOnly,
+  section,
+}: {
+  /** Whose tasks. Defaults to the signed-in user — their own page. */
+  employeeId?: string
+  /** Read the work, do not tick it off. */
+  readOnly?: boolean
+  /** Render only this period, without the tab bar. Omitted, all three tabs. */
+  section?: TaskPeriod
+} = {}) {
   const { currentUser } = useAuthStore()
   const {
     tasks, categories, completionLogs, completeTask, uncompleteTask, isTaskCompleted,
     isInProgress: isInProgressFn, setInProgress, clearInProgress,
   } = useTaskStore()
   const { t, dateLocale } = useT()
-  const [tab, setTab] = useState<Tab>('today')
+  // Controlled from outside when a single section was asked for, so the
+  // manager's four-section view drives which period is on screen.
+  const [ownTab, setOwnTab] = useState<TaskPeriod>('today')
+  const tab = section ?? ownTab
+  const setTab = setOwnTab
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set())
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set([0, 1, 2, 3]))
 
@@ -106,7 +133,7 @@ export function MyTasks() {
   const [filterPriority, setFilterPriority] = useState('')
   const [filterCategoryId, setFilterCategoryId] = useState('')
 
-  const empId = currentUser!.id
+  const empId = employeeId ?? currentUser?.id ?? ''
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
 
@@ -136,8 +163,10 @@ export function MyTasks() {
   const hasFilters = searchQuery || filterPriority || filterCategoryId
   const noResults = hasFilters && todayTasks.length === 0 && totalToday > 0
 
-  const handleComplete = (taskId: string) => completeTask(taskId, empId, todayStr)
-  const handleUncomplete = (taskId: string) => uncompleteTask(taskId, empId, todayStr)
+  // No-ops when reading somebody else's: the cards still show what is done,
+  // they just are not buttons any more.
+  const handleComplete = (taskId: string) => { if (!readOnly) completeTask(taskId, empId, todayStr) }
+  const handleUncomplete = (taskId: string) => { if (!readOnly) uncompleteTask(taskId, empId, todayStr) }
 
   const morning: Task[] = []
   const afternoon: Task[] = []
@@ -210,7 +239,7 @@ export function MyTasks() {
     })
   }
 
-  const tabCls = (tab_: Tab) =>
+  const tabCls = (tab_: TaskPeriod) =>
     `px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
       tab === tab_ ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-main'
     }`
@@ -228,6 +257,9 @@ export function MyTasks() {
   useEffect(() => {
     const id = highlight.activeId
     if (!id) return
+    // The parent decides which period is showing when it asked for one, so
+    // jumping to another tab here would fight it and land on nothing.
+    if (section) return
 
     setSearchQuery('')
     setFilterPriority('')
@@ -262,14 +294,16 @@ export function MyTasks() {
   }, [highlight.activeId])
 
   return (
-    <div className="max-w-2xl mx-auto animate-fade-in">
-      <div className="border-b border-border flex gap-0 mb-6">
-        {TABS.map(tab_ => (
-          <button key={tab_} onClick={() => setTab(tab_)} className={tabCls(tab_)}>
-            {tab_ === 'today' ? t('mytasks_today') : tab_ === 'week' ? t('mytasks_thisWeek') : t('mytasks_thisMonth')}
-          </button>
-        ))}
-      </div>
+    <div className={section ? 'animate-fade-in' : 'max-w-2xl mx-auto animate-fade-in'}>
+      {!section && (
+        <div className="border-b border-border flex gap-0 mb-6">
+          {TABS.map(tab_ => (
+            <button key={tab_} onClick={() => setTab(tab_)} className={tabCls(tab_)}>
+              {tab_ === 'today' ? t('mytasks_today') : tab_ === 'week' ? t('mytasks_thisWeek') : t('mytasks_thisMonth')}
+            </button>
+          ))}
+        </div>
+      )}
 
       {tab === 'today' && (
         <div>
@@ -360,6 +394,7 @@ export function MyTasks() {
                 empId={empId}
                 todayStr={todayStr}
                 highlight={highlight}
+                readOnly={readOnly}
               />
               <TimeBlock
                 label={t('mytasks_afternoon')}
@@ -371,6 +406,7 @@ export function MyTasks() {
                 empId={empId}
                 todayStr={todayStr}
                 highlight={highlight}
+                readOnly={readOnly}
               />
               <TimeBlock
                 label={t('mytasks_endOfDay')}
@@ -382,6 +418,7 @@ export function MyTasks() {
                 empId={empId}
                 todayStr={todayStr}
                 highlight={highlight}
+                readOnly={readOnly}
               />
             </>
           )}
@@ -472,8 +509,8 @@ export function MyTasks() {
                         category={categories.find(c => c.id === task.categoryId)}
                         onComplete={() => completeTask(task.id, empId, dateStr)}
                         onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
-                        onSetInProgress={() => setInProgress(task.id, empId, dateStr)}
-                        onClearInProgress={() => clearInProgress(task.id, empId, dateStr)}
+                        onSetInProgress={readOnly ? undefined : () => setInProgress(task.id, empId, dateStr)}
+                        onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, dateStr)}
                         currentUserId={empId}
                         dueDate={dateStr}
                         highlighted={highlight.isHighlighted(task.id)}
@@ -541,8 +578,8 @@ export function MyTasks() {
                                 category={categories.find(c => c.id === task.categoryId)}
                                 onComplete={() => completeTask(task.id, empId, dateStr)}
                                 onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
-                                onSetInProgress={() => setInProgress(task.id, empId, dateStr)}
-                                onClearInProgress={() => clearInProgress(task.id, empId, dateStr)}
+                                onSetInProgress={readOnly ? undefined : () => setInProgress(task.id, empId, dateStr)}
+                                onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, dateStr)}
                                 currentUserId={empId}
                                 dueDate={dateStr}
                                 highlighted={highlight.isHighlighted(task.id)}
