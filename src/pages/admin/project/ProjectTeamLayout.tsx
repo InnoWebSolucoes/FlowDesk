@@ -1,5 +1,5 @@
 import React from 'react'
-import { NavLink, Outlet, useOutletContext } from 'react-router-dom'
+import { NavLink, Outlet, useOutletContext, useMatch } from 'react-router-dom'
 import { Users, LayoutDashboard, ListTodo, Sparkles, BarChart3, Shield } from 'lucide-react'
 import { Project } from '../../../types'
 import { useT } from '../../../i18n/useT'
@@ -15,6 +15,12 @@ export function ProjectTeamLayout() {
   const { project } = useOutletContext<Ctx>()
   const { t } = useT()
 
+  // One person's profile is a page in its own right, not another tab in this
+  // row — none of these tabs is the one you are on, so the row lights nothing
+  // and costs a strip of height on a page that already runs off the bottom.
+  // The profile opens with "back to employees", which is the way back to it.
+  const onProfile = !!useMatch('/admin/projects/:projectId/employees/team/:id')
+
   const tabs = [
     { to: 'team', label: t('nav_employees'), icon: Users },
     { to: 'overview', label: t('nav_overview'), icon: LayoutDashboard },
@@ -28,7 +34,7 @@ export function ProjectTeamLayout() {
 
   return (
     <div>
-      <nav className="flex items-center gap-1 mb-5 overflow-x-auto">
+      <nav className={`items-center gap-1 mb-5 overflow-x-auto ${onProfile ? 'hidden' : 'flex'}`}>
         {tabs.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}

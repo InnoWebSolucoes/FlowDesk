@@ -75,8 +75,18 @@ export function Layout() {
               and its dates at the other, with nothing in between. */}
           {/* No padding for chat rather than padding it cancels with -m-6:
               h-full measures the padded box, so the negative margin pulled the
-              content up and left the padding showing as a strip underneath. */}
-          <div className={`h-full w-full ${isChat ? '' : 'p-6 max-w-[1600px] mx-auto'}`}>
+              content up and left the padding showing as a strip underneath.
+
+              min-h-full, not h-full, for everything else. h-full pins the box
+              to the window's height, and content taller than that overflows
+              the padding edge rather than pushing it down — so the bottom
+              padding sat where the fold was and the last card in a long list
+              ran off the bottom of the window with nothing under it. Growing
+              with the content puts the padding after it, where it reads as a
+              margin. pb-16 rather than the p-6 all round: the end of a long
+              scroll wants more room under it than the sides need beside it,
+              and on the desktop app the taskbar eats the last few pixels. */}
+          <div className={`w-full ${isChat ? 'h-full' : 'min-h-full p-6 pb-16 max-w-[1600px] mx-auto'}`}>
             <Outlet />
           </div>
         </main>
