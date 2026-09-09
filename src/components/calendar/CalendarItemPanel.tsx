@@ -31,6 +31,7 @@ export function CalendarItemPanel({
   projectId,
   onClose,
   basePath,
+  readOnly = false,
 }: {
   todo?: ProjectTodo
   entry?: CalendarEntry
@@ -41,6 +42,11 @@ export function CalendarItemPanel({
    * Todos, which sit at different paths for an admin and an employee.
    */
   basePath?: string
+  /**
+   * Reading somebody else's item. Every field still shows what it says — the
+   * point is to see their week as they see it — but nothing here writes.
+   */
+  readOnly?: boolean
 }) {
   const { t } = useT()
   const {
@@ -91,6 +97,7 @@ export function CalendarItemPanel({
               {todo ? (
                 <textarea
                   value={todo.title}
+                  readOnly={readOnly}
                   onChange={(e) => updateTodo(todo.id, { title: e.target.value })}
                   rows={Math.min(3, Math.ceil(todo.title.length / 46) || 1)}
                   className="w-full bg-transparent text-text-main font-semibold text-base outline-none focus:bg-surface-2 rounded px-1 -ml-1 resize-none leading-snug"
@@ -98,6 +105,7 @@ export function CalendarItemPanel({
               ) : (
                 <textarea
                   value={entry!.title}
+                  readOnly={readOnly}
                   onChange={(e) => updateCalendarEntry(entry!.id, { title: e.target.value })}
                   rows={Math.min(3, Math.ceil(entry!.title.length / 46) || 1)}
                   className="w-full bg-transparent text-text-main font-semibold text-base outline-none focus:bg-surface-2 rounded px-1 -ml-1 resize-none leading-snug"
@@ -113,17 +121,19 @@ export function CalendarItemPanel({
           </header>
 
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            {todo ? <TodoBody todo={todo} /> : <EntryBody entry={entry!} />}
+            {todo ? <TodoBody todo={todo} readOnly={readOnly} /> : <EntryBody entry={entry!} readOnly={readOnly} />}
 
             <section>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs font-medium text-text-muted">{t('cal_linkedDocuments')}</label>
-                <button
-                  onClick={() => setPicking(true)}
-                  className="text-xs text-primary hover:underline flex items-center gap-1"
-                >
-                  <Link2 size={12} /> {links.length > 0 ? 'Edit links' : 'Add links'}
-                </button>
+                {!readOnly && (
+                  <button
+                    onClick={() => setPicking(true)}
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                  >
+                    <Link2 size={12} /> {links.length > 0 ? 'Edit links' : 'Add links'}
+                  </button>
+                )}
               </div>
 
               {linked.length === 0 && (
@@ -163,15 +173,17 @@ export function CalendarItemPanel({
               >{t('cal_openInTodos')}</button>
             )}
             {entry && <span className="flex-1" />}
-            <button
-              onClick={() => {
-                if (todo) deleteTodo(todo.id)
-                else deleteCalendarEntry(entry!.id)
-                onClose()
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-danger hover:bg-danger-bg"
-            >
-              <Trash2 size={13} />{t('ui_delete')}</button>
+            {!readOnly && (
+              <button
+                onClick={() => {
+                  if (todo) deleteTodo(todo.id)
+                  else deleteCalendarEntry(entry!.id)
+                  onClose()
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-danger hover:bg-danger-bg"
+              >
+                <Trash2 size={13} />{t('ui_delete')}</button>
+            )}
           </footer>
         </div>
       </div>
@@ -201,28 +213,32 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const inputClass =
   'w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary'
 
-function TodoBody({ todo }: { todo: ProjectTodo }) {
+function TodoBody({ todo, readOnly }: { todo: ProjectTodo; readOnly?: boolean }) {
   const { t } = useT()
   const { employees } = useEmployeeStore()
   const { updateTodo, toggleTodo, todoLists } = useProjectStore()
 
   return (
     <>
-      <button
-        onClick={() => toggleTodo(todo.id)}
+      {/* Read-only still says whether it is done — that is a fact about their
+          week — it just is not a button any more. */}
+      <div
         className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm w-full transition-colors ${
           todo.isCompleted
             ? 'bg-success-bg text-success'
-            : 'bg-surface-2 text-text-muted hover:bg-border'
+            : `bg-surface-2 text-text-muted ${readOnly ? '' : 'hover:bg-border cursor-pointer'}`
         }`}
+        onClick={readOnly ? undefined : () => toggleTodo(todo.id)}
+        role={readOnly ? undefined : 'button'}
       >
         <Check size={14} />
-        {todo.isCompleted ? 'Completed' : 'Mark as done'}
-      </button>
+        {todo.isCompleted ? 'Completed' : readOnly ? 'Not done yet' : 'Mark as done'}
+      </div>
 
       <Field label={t('cal_descriptionLabel')}>
         <textarea
           value={todo.notes}
+          readOnly={readOnly}
           onChange={(e) => updateTodo(todo.id, { notes: e.target.value })}
           rows={4}
           placeholder={t('cal_whatIsThisAndWhatDoes')}
@@ -235,6 +251,8 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
           <input
             type="date"
             value={todo.doDate ?? ''}
+            readOnly={readOnly}
+            disabled={readOnly}
             onChange={(e) => updateTodo(todo.id, { doDate: e.target.value || null })}
             className={inputClass}
           />
@@ -243,6 +261,8 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
           <input
             type="date"
             value={todo.dueDate ?? ''}
+            readOnly={readOnly}
+            disabled={readOnly}
             onChange={(e) => updateTodo(todo.id, { dueDate: e.target.value || null })}
             className={inputClass}
           />
@@ -259,6 +279,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
       <Field label={t('cal_assignedTo')}>
         <select
           value={todo.assigneeId ?? ''}
+          disabled={readOnly}
           onChange={(e) => updateTodo(todo.id, { assigneeId: e.target.value || null })}
           className={inputClass}
         >
@@ -275,6 +296,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
         <Field label={t('cal_priorityLabel')}>
           <select
             value={todo.priority}
+            disabled={readOnly}
             onChange={(e) => updateTodo(todo.id, { priority: e.target.value as Priority })}
             className={inputClass}
           >
@@ -286,6 +308,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
         <Field label={t('cal_listLabel')}>
           <select
             value={todo.listId ?? ''}
+            disabled={readOnly}
             onChange={(e) => useProjectStore.getState().moveTodoToList(todo.id, e.target.value)}
             className={inputClass}
           >
@@ -301,7 +324,7 @@ function TodoBody({ todo }: { todo: ProjectTodo }) {
   )
 }
 
-function EntryBody({ entry }: { entry: CalendarEntry }) {
+function EntryBody({ entry, readOnly }: { entry: CalendarEntry; readOnly?: boolean }) {
   const { t } = useT()
   const { updateCalendarEntry } = useProjectStore()
 
@@ -327,8 +350,9 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
           {(Object.keys(KIND_STYLE) as CalendarEntryKind[]).map((k) => (
             <button
               key={k}
+              disabled={readOnly}
               onClick={() => updateCalendarEntry(entry.id, { kind: k })}
-              className="px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+              className="px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:cursor-default"
               style={
                 entry.kind === k
                   ? {
@@ -348,6 +372,7 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
       <Field label={t('cal_notesLabel')}>
         <textarea
           value={entry.notes}
+          readOnly={readOnly}
           onChange={(e) => updateCalendarEntry(entry.id, { notes: e.target.value })}
           rows={3}
           placeholder={t('cal_agendaLocationAnythingUseful')}
@@ -360,6 +385,8 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
           <input
             type="date"
             value={entry.startsOn}
+            readOnly={readOnly}
+            disabled={readOnly}
             onChange={(e) => setFirstDay(e.target.value)}
             className={inputClass}
           />
@@ -368,6 +395,8 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
           <input
             type="date"
             value={entry.endsOn}
+            readOnly={readOnly}
+            disabled={readOnly}
             onChange={(e) => setLastDay(e.target.value)}
             className={inputClass}
           />
@@ -377,6 +406,7 @@ function EntryBody({ entry }: { entry: CalendarEntry }) {
       <Field label={t('cal_whoCanSeeIt')}>
         <select
           value={entry.visibility ?? ''}
+          disabled={readOnly}
           onChange={(e) => updateCalendarEntry(entry.id, { visibility: (e.target.value || null) as Visibility | null })}
           className={inputClass}
         >

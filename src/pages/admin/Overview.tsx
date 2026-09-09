@@ -167,14 +167,16 @@ export function Overview() {
                   const done = completionLogs.filter(
                     l => l.employeeId === emp.id && l.dueDate === todayStr
                   ).length
-                  const rate = due.length > 0 ? Math.round((done / due.length) * 100) : 0
+                  // Capped, for the same reason as the team cards: logs outlive
+                  // the tasks they were for, so done can exceed due.
+                  const rate = due.length > 0 ? Math.min(100, Math.round((done / due.length) * 100)) : 0
                   return (
                     <div key={emp.id}>
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-sm font-medium text-text-main">{emp.name}</span>
                         <span className="text-xs text-amber font-medium">{done}/{due.length} ({rate}%)</span>
                       </div>
-                      <div className="w-full bg-surface rounded-full h-1.5">
+                      <div className="w-full bg-surface rounded-full h-1.5 overflow-hidden">
                         <div
                           className="bg-amber rounded-full h-1.5 transition-all"
                           style={{ width: `${rate}%` }}
@@ -195,7 +197,7 @@ export function Overview() {
                 const done = completionLogs.filter(
                   l => l.employeeId === emp.id && l.dueDate === todayStr
                 ).length
-                const rate = due.length > 0 ? Math.round((done / due.length) * 100) : 0
+                const rate = due.length > 0 ? Math.min(100, Math.round((done / due.length) * 100)) : 0
                 return (
                   <div key={emp.id}>
                     <div className="flex justify-between items-center mb-1">
@@ -205,7 +207,7 @@ export function Overview() {
                       </div>
                       <span className="text-xs text-text-muted">{done}/{due.length}</span>
                     </div>
-                    <div className="w-full bg-surface-2 rounded-full h-1.5">
+                    <div className="w-full bg-surface-2 rounded-full h-1.5 overflow-hidden">
                       <div
                         className={`rounded-full h-1.5 transition-all ${rate === 100 ? 'bg-primary' : rate >= 50 ? 'bg-amber' : 'bg-danger'}`}
                         style={{ width: `${rate}%` }}

@@ -11,6 +11,7 @@ import { Project, ProjectTodo, CalendarEntry, Task } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
+import { useAuthStore } from '../../store/authStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
 import { personColor, todoOwner, DEADLINE_RED } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
@@ -83,6 +84,12 @@ interface CalendarBoardProps {
   ownerId: string | null
   /** Where this side of the app lives, for links out to Resources and Todos. */
   basePath: string
+  /**
+   * Look, don't touch. A manager reading somebody else's week gets exactly the
+   * board that person sees — the same blocks in the same colours — but cannot
+   * add, move, tick or delete anything on it. Their calendar is theirs.
+   */
+  readOnly?: boolean
 }
 
 /**
@@ -90,7 +97,7 @@ interface CalendarBoardProps {
  * One component for the managers' board and each employee's, so the planning
  * view is the same tool on both sides.
  */
-export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps) {
+export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: CalendarBoardProps) {
   const { t } = useT()
   const {
     todos, todosLoadedFor, loadTodos, updateTodo,
@@ -107,6 +114,17 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
     setInProgress, clearInProgress, isInProgress,
   } = useTaskStore()
   const { employees } = useEmployeeStore()
+  const currentUserId = useAuthStore((s) => s.currentUser?.id)
+
+  /**
+   * Reading somebody else's board rather than your own. It matters for the
+   * busy blocks: on your own board RLS has already decided what you may see,
+   * and that is the right answer. Looking at an employee's board as the
+   * manager, RLS is still *yours* — far broader — so without this the board
+   * fills with entries that have nothing to do with them, on a page that says
+   * it is their calendar.
+   */
+  const otherPersonsBoard = ownerId !== null && ownerId !== currentUserId
 
   // Whose calendars to overlay, beyond your own. Admin-only: a manager needs
   // to see the team's week to plan against it. Empty means just this board.
@@ -277,6 +295,10 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       if (visible('due')) {
         for (const t of todos) {
           if (t.dueDate !== day || t.isCompleted) continue
+          // Same guard the do-date loop carries: the store holds whatever
+          // board was loaded last, so without it another owner's deadlines
+          // land on this one.
+          if ((t.ownerId ?? null) !== ownerId) continue
           if (t.doDate === day) continue // already shown as a do-date block
           blocks.push({
             key: `due-${t.id}`,
@@ -291,6 +313,8 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       for (const e of calendarEntries) {
         if (!visible(e.kind)) continue
         if (!entryCoversDay(e, day)) continue
+        // On someone else's board, only their own blocks belong on it.
+        if (otherPersonsBoard && e.ownerId !== ownerId) continue
         // Someone else's entry only shows while they are overlaid, and says
         // whose it is so a busy day is attributable.
         const mine = !ownerId || e.ownerId === ownerId
@@ -308,7 +332,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
       return blocks
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay],
+    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay, otherPersonsBoard],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -398,6 +422,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
    * anyone meant. Blocking time out is still there, on the day's own menu.
    */
   const createAt = async (day: string) => {
+    if (readOnly) return
     setError('')
     try {
       // A todo has to live in a list. Falling back to making one beats
@@ -430,6 +455,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
    * task is completed for one person on one day, so it needs both.
    */
   const toggleTaskDone = async (taskId: string, employeeId: string, day: string) => {
+    if (readOnly) return
     setError('')
     try {
       // The same three states as My Tasks, in the same order: not started,
@@ -460,6 +486,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
 
   /** Blocking time out, which the day menu still offers. */
   const createEntryAt = async (day: string) => {
+    if (readOnly) return
     const created = await createCalendarEntry({
       projectId: project.id,
       title: 'Busy',
@@ -644,6 +671,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
             <MonthGrid
               days={days}
               today={today}
+              readOnly={readOnly}
               blocksFor={blocksFor}
               hoverSlot={hoverSlot}
               dragging={!!drag}
@@ -664,6 +692,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
             <DayGrid
               days={days}
               today={today}
+              readOnly={readOnly}
               blocksFor={blocksFor}
               hoverSlot={hoverSlot}
               dragging={!!drag}
@@ -686,6 +715,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
         <Unscheduled
           todos={todos}
           lists={boardLists}
+          readOnly={readOnly}
           dragging={drag?.kind === 'unscheduled' ? drag.id : null}
           dropActive={overUnscheduled}
           onDragStart={(id, label) => setDrag({ kind: 'unscheduled', id, label })}
@@ -813,6 +843,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
           entry={entry}
           projectId={project.id}
           basePath={basePath}
+          readOnly={readOnly}
           onClose={() => {
             setOpenTodo(null)
             setOpenEntry(null)
@@ -831,6 +862,7 @@ export function CalendarBoard({ project, ownerId, basePath }: CalendarBoardProps
 function DayGrid({
   days,
   today,
+  readOnly,
   blocksFor,
   hoverSlot,
   dragging,
@@ -849,6 +881,7 @@ function DayGrid({
 }: {
   days: Date[]
   today: string
+  readOnly?: boolean
   blocksFor: (day: string) => Block[]
   hoverSlot: string | null
   dragging: boolean
@@ -906,11 +939,15 @@ function DayGrid({
           <div
             key={key}
             data-day={key}
-            onClick={() => { if (!justDragged.current) onCreate(key) }}
-            onContextMenu={(e) => { e.preventDefault(); onDayContext(e.clientX, e.clientY, key) }}
-            className={`bg-surface p-2 cursor-pointer transition-colors hover:bg-surface-2/40 min-h-0 overflow-y-auto ${
-              dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''
-            }`}
+            onClick={() => { if (!readOnly && !justDragged.current) onCreate(key) }}
+            onContextMenu={(e) => {
+              if (readOnly) return
+              e.preventDefault()
+              onDayContext(e.clientX, e.clientY, key)
+            }}
+            className={`bg-surface p-2 transition-colors min-h-0 overflow-y-auto ${
+              readOnly ? '' : 'cursor-pointer hover:bg-surface-2/40'
+            } ${dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''}`}
           >
             {/* Scrolls within the day rather than stretching it, so one busy
                 day does not set the height of the whole week. */}
@@ -926,7 +963,7 @@ function DayGrid({
                         ? onOpenTask(b.task.id)
                         : onOpenEntry(b.entry!.id)
                   }
-                  onDragStart={() =>
+                  onDragStart={
                     // Only todos and time blocks are dragged. An assigned
                     // task's day comes from the schedule it was given, and
                     // dragging it used to clear that do_date — which did not
@@ -934,21 +971,27 @@ function DayGrid({
                     // shows on its deadline. It just changed from filled to
                     // outline, so it read as the colour being pulled out of
                     // it while the task stayed put. It is ticked, not moved.
-                    b.todo
-                      ? onDragTodo(b.todo)
-                      : b.entry
-                        ? onDragEntry(b.entry)
-                        : undefined
+                    readOnly
+                      ? undefined
+                      : b.todo
+                        ? () => onDragTodo(b.todo!)
+                        : b.entry
+                          ? () => onDragEntry(b.entry!)
+                          : undefined
                   }
                   onToggleDone={
-                    b.todo
-                      ? () => onToggleDone(b.todo!.id)
-                      : b.task && b.employeeId
-                        ? () => onToggleTask(b.task!.id, b.employeeId!, key)
-                        : undefined
+                    readOnly
+                      ? undefined
+                      : b.todo
+                        ? () => onToggleDone(b.todo!.id)
+                        : b.task && b.employeeId
+                          ? () => onToggleTask(b.task!.id, b.employeeId!, key)
+                          : undefined
                   }
-                  onContext={(x, y) =>
-                    onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
+                  onContext={
+                    readOnly
+                      ? undefined
+                      : (x, y) => onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
                   }
                 />
               ))}
@@ -966,6 +1009,7 @@ function DayGrid({
 function MonthGrid({
   days,
   today,
+  readOnly,
   blocksFor,
   hoverSlot,
   dragging,
@@ -984,6 +1028,7 @@ function MonthGrid({
 }: {
   days: Date[]
   today: string
+  readOnly?: boolean
   blocksFor: (day: string) => Block[]
   hoverSlot: string | null
   dragging: boolean
@@ -1022,11 +1067,17 @@ function MonthGrid({
           <div
             key={key}
             data-day={key}
-            onClick={() => { if (!justDragged.current) onCreate(key) }}
-            onContextMenu={(e) => { e.preventDefault(); onDayContext(e.clientX, e.clientY, key) }}
-            className={`bg-surface min-h-[112px] p-1.5 cursor-pointer transition-colors hover:bg-surface-2/40 overflow-y-auto ${
-              outside ? 'opacity-40' : ''
-            } ${dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''}`}
+            onClick={() => { if (!readOnly && !justDragged.current) onCreate(key) }}
+            onContextMenu={(e) => {
+              if (readOnly) return
+              e.preventDefault()
+              onDayContext(e.clientX, e.clientY, key)
+            }}
+            className={`bg-surface min-h-[112px] p-1.5 transition-colors overflow-y-auto ${
+              readOnly ? '' : 'cursor-pointer hover:bg-surface-2/40'
+            } ${outside ? 'opacity-40' : ''} ${
+              dragging && hoverSlot === key ? 'ring-2 ring-primary ring-inset' : ''
+            }`}
           >
             <div className="flex items-center justify-between mb-1">
               <button
@@ -1055,7 +1106,7 @@ function MonthGrid({
                         ? onOpenTask(b.task.id)
                         : onOpenEntry(b.entry!.id)
                   }
-                  onDragStart={() =>
+                  onDragStart={
                     // Only todos and time blocks are dragged. An assigned
                     // task's day comes from the schedule it was given, and
                     // dragging it used to clear that do_date — which did not
@@ -1063,21 +1114,27 @@ function MonthGrid({
                     // shows on its deadline. It just changed from filled to
                     // outline, so it read as the colour being pulled out of
                     // it while the task stayed put. It is ticked, not moved.
-                    b.todo
-                      ? onDragTodo(b.todo)
-                      : b.entry
-                        ? onDragEntry(b.entry)
-                        : undefined
+                    readOnly
+                      ? undefined
+                      : b.todo
+                        ? () => onDragTodo(b.todo!)
+                        : b.entry
+                          ? () => onDragEntry(b.entry!)
+                          : undefined
                   }
                   onToggleDone={
-                    b.todo
-                      ? () => onToggleDone(b.todo!.id)
-                      : b.task && b.employeeId
-                        ? () => onToggleTask(b.task!.id, b.employeeId!, key)
-                        : undefined
+                    readOnly
+                      ? undefined
+                      : b.todo
+                        ? () => onToggleDone(b.todo!.id)
+                        : b.task && b.employeeId
+                          ? () => onToggleTask(b.task!.id, b.employeeId!, key)
+                          : undefined
                   }
-                  onContext={(x, y) =>
-                    onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
+                  onContext={
+                    readOnly
+                      ? undefined
+                      : (x, y) => onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
                   }
                 />
               ))}
@@ -1106,7 +1163,8 @@ function BlockChip({
   block: Block
   compact?: boolean
   onOpen: () => void
-  onDragStart: () => void
+  /** Absent on a board that is only being read: the block cannot be moved. */
+  onDragStart?: () => void
   onToggleDone?: () => void
   onContext?: (x: number, y: number) => void
 }) {
@@ -1121,6 +1179,9 @@ function BlockChip({
         // Stops the browser starting a text selection on the block's label.
         e.preventDefault()
         moved.current = false
+        // Nothing to drag on a read-only board; the stopPropagation above is
+        // still wanted, so that clicking a block does not also hit the day.
+        if (!onDragStart) return
         const startX = e.clientX
         const startY = e.clientY
 
@@ -1150,7 +1211,9 @@ function BlockChip({
         onContext(e.clientX, e.clientY)
       }}
       title={block.ownerName ? `${block.label} — ${block.ownerName}` : block.label}
-      className={`relative rounded-md text-xs leading-snug cursor-grab active:cursor-grabbing select-none shadow-sm ${
+      className={`relative rounded-md text-xs leading-snug select-none shadow-sm ${
+        onDragStart ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+      } ${
         // Month cells stay tight — there are 28 of them on screen. A week or
         // a day has the room, and 11px text in a 1-unit padding was a sliver
         // that was hard to read and harder to hit.
@@ -1232,6 +1295,7 @@ function BlockChip({
 function Unscheduled({
   todos,
   lists,
+  readOnly,
   dragging,
   dropActive,
   onDragStart,
@@ -1240,6 +1304,7 @@ function Unscheduled({
 }: {
   todos: ProjectTodo[]
   lists: { id: string; name: string }[]
+  readOnly?: boolean
   dragging: string | null
   /** True while a scheduled todo is being dragged over this panel. */
   dropActive?: boolean
@@ -1287,29 +1352,33 @@ function Unscheduled({
             <div
               key={t.id}
               onPointerDown={(e) => {
-                if (e.button !== 0) return
+                if (readOnly || e.button !== 0) return
                 onDragStart(t.id, t.title)
               }}
               onClick={() => onOpen(t.id)}
-              className={`group flex items-start gap-1.5 p-2 rounded-lg border-2 text-left cursor-grab active:cursor-grabbing transition-colors ${
-                dragging === t.id ? 'bg-primary-light' : 'bg-surface hover:brightness-95'
-              }`}
+              className={`group flex items-start gap-1.5 p-2 rounded-lg border-2 text-left transition-colors ${
+                readOnly ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
+              } ${dragging === t.id ? 'bg-primary-light' : 'bg-surface hover:brightness-95'}`}
               // Their colour, outlined, exactly as the same todo looks once
               // it has a day — so dragging it onto the calendar changes where
               // it is and nothing else about it.
               style={{ borderColor: personColor(todoOwner(t)) }}
             >
-              <GripVertical size={12} className="text-text-subtle mt-0.5 flex-shrink-0" />
+              {!readOnly && (
+                <GripVertical size={12} className="text-text-subtle mt-0.5 flex-shrink-0" />
+              )}
               {/* Ticking it off here: something can be finished without ever
                   having been given a day. */}
-              <button
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => { e.stopPropagation(); onToggleDone(t.id) }}
-                title={tr('cal_markDone')}
-                className="text-text-subtle hover:text-success mt-0.5 flex-shrink-0"
-              >
-                <Circle size={12} />
-              </button>
+              {!readOnly && (
+                <button
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); onToggleDone(t.id) }}
+                  title={tr('cal_markDone')}
+                  className="text-text-subtle hover:text-success mt-0.5 flex-shrink-0"
+                >
+                  <Circle size={12} />
+                </button>
+              )}
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-text-main leading-snug">{t.title}</p>
                 {t.dueDate && (

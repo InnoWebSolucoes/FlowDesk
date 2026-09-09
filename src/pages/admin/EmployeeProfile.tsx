@@ -11,6 +11,7 @@ import { EmptyState } from '../../components/shared/EmptyState'
 import { faviconUrl, faviconLetter } from '../../lib/favicon'
 import { TodoBoard } from '../../components/todos/TodoBoard'
 import { NoteBoard } from '../../components/notes/NoteBoard'
+import { CalendarBoard } from '../../components/calendar/CalendarBoard'
 import { useProjectStore } from '../../store/projectStore'
 import { format, parseISO } from 'date-fns'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -20,7 +21,7 @@ import { useT } from '../../i18n/useT'
 import { Avatar } from '../../components/shared/Avatar'
 import { WorkLog } from '../../components/worklog/WorkLog'
 
-const TABS = ['tasks', 'analytics', 'worklog', 'todos', 'notes', 'toolbox', 'guidelines'] as const
+const TABS = ['tasks', 'analytics', 'worklog', 'todos', 'calendar', 'notes', 'toolbox', 'guidelines'] as const
 type Tab = typeof TABS[number]
 
 export function EmployeeProfile() {
@@ -72,6 +73,7 @@ export function EmployeeProfile() {
     analytics: t('profile_tabAnalytics'),
     worklog: t('nav_workLog'),
     todos: t('nav_todos'),
+    calendar: t('nav_calendar'),
     notes: t('nav_notes'),
     toolbox: t('profile_tabToolbox'),
     guidelines: t('profile_tabGuidelines'),
@@ -136,6 +138,24 @@ export function EmployeeProfile() {
           // Read-only: this is their record of their own work, and a manager
           // reads it rather than writes into it.
           <WorkLog project={empProject} authorId={emp.id} readOnly />
+        )
+      )}
+
+      {/* Their week, exactly as they see it: the same CalendarBoard on the
+          same board (project + their own owner id), so assigned work is the
+          filled purple block and their own todos are the outlined one. Rendering
+          anything else here would be a second, differently coloured calendar
+          claiming to be theirs. Read-only — their plan is theirs to change. */}
+      {tab === 'calendar' && (
+        !empProject ? (
+          <p className="text-text-muted text-sm py-8">{t('profile_notOnProject')}</p>
+        ) : (
+          <CalendarBoard
+            project={empProject}
+            ownerId={emp.id}
+            basePath={`/admin/projects/${empProject.id}`}
+            readOnly
+          />
         )
       )}
 

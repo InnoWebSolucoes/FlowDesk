@@ -140,7 +140,13 @@ export function ProjectEmployees() {
           {members.map((emp) => {
             const dueTasks = getTasksDueOnDate(tasks, emp.id, today)
             const doneToday = completionLogs.filter((l) => l.employeeId === emp.id && l.dueDate === todayStr).length
-            const rate = dueTasks.length > 0 ? Math.round((doneToday / dueTasks.length) * 100) : 0
+            // Capped at 100. A completion log survives the task being
+            // deactivated or unassigned, so somebody can have more logs for
+            // today than they have tasks due today — which made the rate come
+            // out above 100 and the bar run straight out of its track.
+            const rate = dueTasks.length > 0
+              ? Math.min(100, Math.round((doneToday / dueTasks.length) * 100))
+              : 0
 
             let streak = 0
             for (let i = 1; i <= 30; i++) {
@@ -212,7 +218,10 @@ export function ProjectEmployees() {
                     <span className="text-text-muted text-xs">{t('ui_today')}</span>
                     <span className="text-text-main text-xs font-medium">{doneToday}/{dueTasks.length}</span>
                   </div>
-                  <div className="w-full bg-surface-2 rounded-full h-2">
+                  {/* overflow-hidden as well as the cap: the fill is rounded
+                      to the same radius as the track, so it has to be clipped
+                      by it rather than merely sized to it. */}
+                  <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden">
                     <div
                       className={`h-2 rounded-full transition-all ${
                         rate === 100 ? 'bg-primary' : rate >= 60 ? 'bg-amber' : 'bg-danger'
