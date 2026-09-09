@@ -21,6 +21,37 @@ interface Stats {
   activeDays: number
 }
 
+/** One day of use: when they started, when they were last seen, how long. */
+interface DayStart {
+  day: string
+  firstSeen: string
+  lastSeen: string
+  sessions: number
+  minutes: number
+}
+
+/** Just the clock: "08:42". */
+function clockOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+/**
+ * The typical start, as minutes past midnight averaged over the days shown.
+ *
+ * A mean is the right shape here despite being pulled about by one very late
+ * day, because the question is "roughly when do they start" and a handful of
+ * days is too few for a median to say anything a mean does not.
+ */
+function typicalStart(days: DayStart[]): string | null {
+  if (days.length === 0) return null
+  const mins = days.map((d) => {
+    const t = new Date(d.firstSeen)
+    return t.getHours() * 60 + t.getMinutes()
+  })
+  const avg = Math.round(mins.reduce((a, b) => a + b, 0) / mins.length)
+  return `${String(Math.floor(avg / 60)).padStart(2, '0')}:${String(avg % 60).padStart(2, '0')}`
+}
+
 /** Minutes as something readable: 95 -> "1h 35m". */
 function duration(mins: number): string {
   const m = Math.round(mins)
@@ -60,6 +91,7 @@ function ago(iso: string | null): string {
 export function AppUsagePanel({ employeeId }: { employeeId: string }) {
   const isOwner = !!useAuthStore((s) => s.currentUser?.isOwner)
   const [stats, setStats] = useState<Stats | null>(null)
+  const [days, setDays] = useState<DayStart[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -70,6 +102,15 @@ export function AppUsagePanel({ employeeId }: { employeeId: string }) {
     let cancelled = false
 
     ;(async () => {
+      // The day starts are bucketed in the reader's zone, so a day that began
+      // before 01:00 local is not filed under yesterday.
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      const startsPromise = supabase.rpc('app_session_day_starts', {
+        p_user: employeeId,
+        p_days: 14,
+        p_tz: tz,
+      })
+
       const { data, error } = await supabase.rpc('app_session_stats')
       if (cancelled) return
       if (error || !Array.isArray(data)) {
@@ -89,6 +130,25 @@ export function AppUsagePanel({ employeeId }: { employeeId: string }) {
             }
           : null,
       )
+
+      // Not fatal if it fails: the migration may not have run yet, and the
+      // rest of the panel is still worth showing.
+      const { data: startRows, error: startErr } = await startsPromise
+      if (cancelled) return
+      if (startErr) {
+        console.warn('[AppUsagePanel] day starts unavailable:', startErr.message)
+        setDays([])
+      } else {
+        setDays(
+          (Array.isArray(startRows) ? startRows : []).map((r: any) => ({
+            day: r.day,
+            firstSeen: r.first_seen,
+            lastSeen: r.last_seen,
+            sessions: Number(r.sessions ?? 0),
+            minutes: Number(r.minutes ?? 0),
+          })),
+        )
+      }
       setLoading(false)
     })()
 
@@ -99,8 +159,16 @@ export function AppUsagePanel({ employeeId }: { employeeId: string }) {
 
   if (!isOwner || loading) return null
 
+  // The first time they opened the app today: the start of their working day.
+  // Rows come back newest first, and only for days they actually appeared, so
+  // the top row being today is what says they have started at all.
+  const todayKey = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD, local
+  const startedToday = days.find((d) => d.day === todayKey)?.firstSeen ?? null
+
   const tiles: [string, string][] = stats
     ? [
+        ['Started today', startedToday ? clockOf(startedToday) : 'not yet'],
+        ['Typical start', typicalStart(days) ?? '—'],
         ['Times opened', String(stats.sessions)],
         ['Total time', duration(stats.totalMinutes)],
         ['Average visit', duration(stats.avgMinutes)],
@@ -124,10 +192,11 @@ export function AppUsagePanel({ employeeId }: { employeeId: string }) {
           Nothing recorded yet — this starts from the day tracking was added.
         </p>
       ) : (
-        // Six columns rather than five, with last seen taking two of them: a
-        // date and a time is a longer string than the counts beside it and
-        // would otherwise wrap into two cramped lines.
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+        // Eight columns now that the two start-of-day tiles are here, with
+        // last seen still taking two of them: a date and a time is a longer
+        // string than the counts beside it and would otherwise wrap into two
+        // cramped lines. Four across on a medium screen, two on a phone.
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
           {tiles.map(([label, value]) => (
             <div key={label} className={label === 'Last seen' ? 'col-span-2' : ''}>
               <p className="text-text-muted text-[11px]">{label}</p>
@@ -143,6 +212,48 @@ export function AppUsagePanel({ employeeId }: { employeeId: string }) {
               </p>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* The last fortnight of working days, most recent first. A single
+          "started today" is a fact; a fortnight of them is the thing you
+          actually want to look at, because it says whether today is normal
+          for them. Days they never opened the app simply are not here —
+          absence is the record, and inventing a row of dashes for a Sunday
+          would read as a missed day rather than a day off. */}
+      {days.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-border">
+          <p className="text-text-muted text-[11px] mb-2">Start of day, last 14 days</p>
+          <div className="space-y-1">
+            {days.map((d) => {
+              const isToday = d.day === todayKey
+              return (
+                <div
+                  key={d.day}
+                  className={`flex items-center gap-3 text-xs rounded-md px-2 py-1 ${
+                    isToday ? 'bg-primary-light' : ''
+                  }`}
+                >
+                  <span className={`w-28 flex-shrink-0 ${isToday ? 'text-primary font-medium' : 'text-text-muted'}`}>
+                    {new Date(`${d.day}T12:00:00`).toLocaleDateString([], {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short',
+                    })}
+                  </span>
+                  <span className={`font-semibold tabular-nums ${isToday ? 'text-primary' : 'text-text-main'}`}>
+                    {clockOf(d.firstSeen)}
+                  </span>
+                  <span className="text-text-subtle">
+                    → {clockOf(d.lastSeen)}
+                  </span>
+                  <span className="ml-auto text-text-subtle">
+                    {duration(d.minutes)} · {d.sessions}×
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

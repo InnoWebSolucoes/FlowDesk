@@ -125,7 +125,13 @@ export function MyTasks({
   const [ownTab, setOwnTab] = useState<TaskPeriod>('today')
   const tab = section ?? ownTab
   const setTab = setOwnTab
-  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set())
+  // Today starts open, because it is the day you came here to read — but it
+  // is only a starting point. It used to be forced open by `|| isCurrentDay`
+  // below, so today's row had a chevron that turned but never closed
+  // anything, and a long day could not be folded away to see the week.
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(
+    () => new Set([format(new Date(), 'yyyy-MM-dd')]),
+  )
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set([0, 1, 2, 3]))
 
   // Filters (today tab only)
@@ -470,7 +476,7 @@ export function MyTasks({
             const isPast = date < today && dateStr !== todayStr
             const isCurrentDay = dateStr === todayStr
             const isFuture = date > today
-            const isExpanded = expandedDays.has(dateStr) || isCurrentDay
+            const isExpanded = expandedDays.has(dateStr)
 
             let badge: string
             if (total === 0) badge = t('mytasks_noTasksBadge')
