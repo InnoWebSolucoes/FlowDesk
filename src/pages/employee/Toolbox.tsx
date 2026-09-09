@@ -166,21 +166,33 @@ export function Toolbox() {
               </button>
             ) : (
               <div className="bg-surface rounded-xl border border-border p-4 space-y-2">
-                <input
-                  autoFocus
-                  value={siteUrl}
-                  onChange={(e) => setSiteUrl(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') addSite() }}
-                  placeholder={t('toolbox_websiteUrl')}
-                  className="w-full text-sm bg-surface-2 border border-border rounded-lg px-3 py-2"
-                />
-                <input
-                  value={siteName}
-                  onChange={(e) => setSiteName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') addSite() }}
-                  placeholder={t('toolbox_websiteName')}
-                  className="w-full text-sm bg-surface-2 border border-border rounded-lg px-3 py-2"
-                />
+                {/* Labelled, not just placeheld: three bare boxes in a row
+                    got the address typed into the name, which then showed the
+                    URL as the title and left the favicon looking for a
+                    hostname that was never a hostname. */}
+                <label className="block">
+                  <span className="text-text-muted text-[11px]">{t('toolbox_websiteUrlLabel')}</span>
+                  <input
+                    autoFocus
+                    type="url"
+                    inputMode="url"
+                    value={siteUrl}
+                    onChange={(e) => setSiteUrl(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') addSite() }}
+                    placeholder={t('toolbox_websiteUrl')}
+                    className="w-full text-sm bg-surface-2 border border-border rounded-lg px-3 py-2 mt-0.5"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-text-muted text-[11px]">{t('toolbox_websiteNameLabel')}</span>
+                  <input
+                    value={siteName}
+                    onChange={(e) => setSiteName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') addSite() }}
+                    placeholder={t('toolbox_websiteName')}
+                    className="w-full text-sm bg-surface-2 border border-border rounded-lg px-3 py-2 mt-0.5"
+                  />
+                </label>
                 <input
                   value={siteDesc}
                   onChange={(e) => setSiteDesc(e.target.value)}
