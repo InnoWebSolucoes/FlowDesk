@@ -4,7 +4,7 @@ import {
   NotebookPen,
   ListTodo, Users, Info, FolderOpen, CalendarDays,
   CheckSquare, Wrench, BookOpen, Building2, MessageCircle, MessageSquare, StickyNote, Sparkles,
-  LogOut, Menu, X, ChevronLeft, PanelLeftClose, PanelLeftOpen
+  LogOut, Menu, X, ChevronLeft, PanelLeftClose, PanelLeftOpen, ExternalLink
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useProjectStore } from '../../store/projectStore'
@@ -13,8 +13,8 @@ import { useChatStore } from '../../store/chatStore'
 import { useT } from '../../i18n/useT'
 import { Avatar } from './Avatar'
 import {
-  canDockWhatsapp, setWhatsappTab, onWhatsappState,
-  canDockClaude, setClaudeTab, onClaudeState, setSidebarWidth,
+  canDockWhatsapp, setWhatsappTab, onWhatsappState, openWhatsapp,
+  canDockClaude, setClaudeTab, onClaudeState, openClaude, setSidebarWidth,
 } from '../../lib/nativeShare'
 
 export function Sidebar() {
@@ -280,51 +280,69 @@ export function Sidebar() {
 
         {/* Below the other tabs, since it is a tool rather than part of the
             project's data. Desktop app only, a browser cannot embed it. */}
-        {whatsappAvailable && (
-          <button
-            onClick={() => {
-              setMobileOpen(false)
-              // One native view at a time: leaving the other open docked both
-              // and the one behind became a side panel.
-              setClaudeTab(false)
-              // Always open, never toggle: a tab does not deselect itself when
-              // you click it again. You leave by picking another tab.
-              setWhatsappTab(true)
-            }}
-            title={mini ? 'WhatsApp' : undefined}
-            className={`w-full flex items-center rounded-lg text-sm font-medium transition-all duration-150 ${
-              mini ? 'justify-center h-10' : 'gap-3 px-3 py-2.5'
-            } ${
-              whatsappDocked
-                ? 'bg-[#25d366] text-white'
-                : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
-            }`}
-          >
-            <MessageCircle size={18} />
-            {!mini && 'WhatsApp'}
-          </button>
-        )}
+        {/* Both tabs, for everybody. They used to render only when the shell
+            could dock them, which is desktop-only — so anyone on the web app,
+            which is most of the employees, had no WhatsApp or Claude at all.
+            The tabs are there for them now and open in a browser tab instead:
+            neither site can be framed, so docking is genuinely impossible on
+            the web, but "opens in a tab" beats "is not there". */}
+        <button
+          onClick={() => {
+            setMobileOpen(false)
+            if (!whatsappAvailable) {
+              // No number: this opens WhatsApp itself, not a conversation.
+              openWhatsapp()
+              return
+            }
+            // One native view at a time: leaving the other open docked both
+            // and the one behind became a side panel.
+            setClaudeTab(false)
+            // Always open, never toggle: a tab does not deselect itself when
+            // you click it again. You leave by picking another tab.
+            setWhatsappTab(true)
+          }}
+          title={mini ? 'WhatsApp' : undefined}
+          className={`w-full flex items-center rounded-lg text-sm font-medium transition-all duration-150 ${
+            mini ? 'justify-center h-10' : 'gap-3 px-3 py-2.5'
+          } ${
+            whatsappDocked
+              ? 'bg-[#25d366] text-white'
+              : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
+          }`}
+        >
+          <MessageCircle size={18} />
+          {!mini && 'WhatsApp'}
+          {/* Says it is leaving the app, so a new tab is not a surprise. */}
+          {!mini && !whatsappAvailable && (
+            <ExternalLink size={12} className="ml-auto opacity-50" />
+          )}
+        </button>
 
-        {claudeAvailable && (
-          <button
-            onClick={() => {
-              setMobileOpen(false)
-              setWhatsappTab(false)
-              setClaudeTab(true)
-            }}
-            title={mini ? 'Claude' : undefined}
-            className={`w-full flex items-center rounded-lg text-sm font-medium transition-all duration-150 ${
-              mini ? 'justify-center h-10' : 'gap-3 px-3 py-2.5'
-            } ${
-              claudeDocked
-                ? 'bg-[#d97757] text-white'
-                : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
-            }`}
-          >
-            <Sparkles size={18} />
-            {!mini && 'Claude'}
-          </button>
-        )}
+        <button
+          onClick={() => {
+            setMobileOpen(false)
+            if (!claudeAvailable) {
+              openClaude()
+              return
+            }
+            setWhatsappTab(false)
+            setClaudeTab(true)
+          }}
+          title={mini ? 'Claude' : undefined}
+          className={`w-full flex items-center rounded-lg text-sm font-medium transition-all duration-150 ${
+            mini ? 'justify-center h-10' : 'gap-3 px-3 py-2.5'
+          } ${
+            claudeDocked
+              ? 'bg-[#d97757] text-white'
+              : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
+          }`}
+        >
+          <Sparkles size={18} />
+          {!mini && 'Claude'}
+          {!mini && !claudeAvailable && (
+            <ExternalLink size={12} className="ml-auto opacity-50" />
+          )}
+        </button>
       </nav>
 
       {/* Language toggle + User section */}

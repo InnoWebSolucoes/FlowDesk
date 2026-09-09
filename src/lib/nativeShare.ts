@@ -143,6 +143,20 @@ export function onWhatsappState(cb: (s: { open: boolean; mode: string }) => void
 /** True when Claude can be shown as a full-width tab — desktop app only. */
 export const canDockClaude = () => !!window.flowdeskNative?.claudeTab
 
+/**
+ * Claude, wherever the app is running.
+ *
+ * The desktop shell docks it beside the sidebar. A browser cannot: claude.ai
+ * refuses to be framed, and an iframe that renders nothing is worse than no
+ * tab at all. So on the web it opens in a new tab — which is what somebody
+ * pressing a Claude button wants either way, and is why employees on the web
+ * app had no Claude tab at all rather than a working one.
+ */
+export function openClaude(): { ok: boolean } {
+  window.open('https://claude.ai/', '_blank', 'noopener')
+  return { ok: true }
+}
+
 /** Shows or hides Claude filling the page. `undefined` toggles. */
 export async function setClaudeTab(open?: boolean) {
   const native = window.flowdeskNative
