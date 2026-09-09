@@ -7,12 +7,15 @@ export const KIND_STYLE: Record<CalendarEntryKind, { label: string; color: strin
   timeoff: { label: 'Time off', color: '#a855f7' },
 }
 
-/** The filterable layers of the calendar, including the two todo kinds. */
-export type Layer = CalendarEntryKind | 'do' | 'due'
+/**
+ * The filterable layers of the calendar: the work, plus the kinds of time
+ * block. There used to be a 'due' layer for deadlines as well — deadlines are
+ * gone, and a day on this calendar is now simply the day the work happens.
+ */
+export type Layer = CalendarEntryKind | 'do'
 
 export const LAYERS: { key: Layer; label: string; color: string; outlined?: boolean }[] = [
   { key: 'do', label: 'Do date', color: '#1A5C3A' },
-  { key: 'due', label: 'Deadline', color: '#dc2626', outlined: true },
   ...(Object.keys(KIND_STYLE) as CalendarEntryKind[]).map((k) => ({
     key: k as Layer,
     label: KIND_STYLE[k].label,

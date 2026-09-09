@@ -246,33 +246,19 @@ function TodoBody({ todo, readOnly }: { todo: ProjectTodo; readOnly?: boolean })
         />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label={t('cal_doDateLabel')}>
-          <input
-            type="date"
-            value={todo.doDate ?? ''}
-            readOnly={readOnly}
-            disabled={readOnly}
-            onChange={(e) => updateTodo(todo.id, { doDate: e.target.value || null })}
-            className={inputClass}
-          />
-        </Field>
-        <Field label={t('cal_deadline')}>
-          <input
-            type="date"
-            value={todo.dueDate ?? ''}
-            readOnly={readOnly}
-            disabled={readOnly}
-            onChange={(e) => updateTodo(todo.id, { dueDate: e.target.value || null })}
-            className={inputClass}
-          />
-        </Field>
-      </div>
-
-
-      {todo.dueDate && todo.doDate && todo.doDate > todo.dueDate && (
-        <p className="text-[11px] text-danger">{t('cal_theDoDateIsAfterThe')}</p>
-      )}
+      {/* One date. The deadline that used to sit beside it is gone: a todo
+          happens on the day it happens, and two dates meant reading both to
+          work out which one the week was actually built from. */}
+      <Field label={t('cal_doDateLabel')}>
+        <input
+          type="date"
+          value={todo.doDate ?? ''}
+          readOnly={readOnly}
+          disabled={readOnly}
+          onChange={(e) => updateTodo(todo.id, { doDate: e.target.value || null })}
+          className={inputClass}
+        />
+      </Field>
 
       {/* Who is doing it. Adding a todo from the calendar dropped you here
           with no way to say whose it was, so it stayed on the shared board. */}

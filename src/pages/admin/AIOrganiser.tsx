@@ -28,9 +28,11 @@ interface GeneratedTask {
   _assignedTo?: string[]
   /** Names the model suggested, resolved to ids on arrival. */
   suggestedAssignees?: string[]
-  /** The hard deadline, YYYY-MM-DD, when the brief gave one. */
-  deadline?: string | null
-  /** The day the work should be done, YYYY-MM-DD. */
+  /**
+   * The day the work should be done, YYYY-MM-DD. The only date: the model
+   * used to return a separate deadline as well, and now has one date to give
+   * because there is one date to keep.
+   */
   doDate?: string | null
   /** The board the model thinks a manager's task belongs on, by title. */
   suggestedList?: string | null
@@ -250,7 +252,6 @@ export function AIOrganiser() {
         notes: gt.description,
         listId,
         priority: gt.priority,
-        dueDate: gt.deadline || null,
         doDate: gt.doDate || null,
       },
       null,
@@ -339,7 +340,6 @@ export function AIOrganiser() {
         categoryId: catId,
         priority: gt.priority,
         estimatedMinutes: Number(gt.estimatedMinutes) || 0,
-        deadline: gt.deadline || null,
         // A do date is per person, so everyone the task goes to gets the
         // same planned day; they can move their own afterwards.
         schedules: gt.doDate

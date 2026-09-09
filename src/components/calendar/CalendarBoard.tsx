@@ -13,7 +13,7 @@ import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useAuthStore } from '../../store/authStore'
 import { isTaskDueOnDate } from '../../utils/taskScheduler'
-import { personColor, todoOwner, DEADLINE_RED } from '../../lib/personColor'
+import { personColor, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
 import {
@@ -49,7 +49,7 @@ interface Block {
   outlined?: boolean
   todo?: ProjectTodo
   entry?: CalendarEntry
-  /** An assigned task shown on the day it is planned for, or its deadline. */
+  /** An assigned task, on the day it is planned for. */
   task?: Task
   /** Whose block this is, when other people's calendars are overlaid. */
   ownerName?: string
@@ -59,12 +59,6 @@ interface Block {
   done?: boolean
   /** Started but not finished, so it can be shown as under way. */
   started?: boolean
-  /**
-   * A deadline rather than a plan: the day it is due, not the day it is
-   * meant to be worked on. Drawn as a faded red outline so it reads as a
-   * marker rather than as scheduled work.
-   */
-  deadline?: boolean
   /**
    * Something the person put on their own todo list, rather than work
    * assigned to them. Outlined in their colour on white, so at a glance a
@@ -254,10 +248,11 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       }
 
       // Assigned work belongs on the calendar too, otherwise an employee has
-      // to hold two lists in their head. Shown on the day they planned it; if
-      // they have not planned it, on its deadline so it is not invisible.
+      // to hold two lists in their head. Shown on the day it is planned for;
+      // if nobody has planned it, on the days its recurrence puts it on, so
+      // it is not invisible.
       const scheduleOwners = canOverlay ? [...overlaid] : [ownerId!]
-      for (const empIdForCal of scheduleOwners) {
+      if (visible('do')) for (const empIdForCal of scheduleOwners) {
         const who = employees.find((e) => e.id === empIdForCal)
         for (const task of tasks) {
           if (!task.isActive || !task.assignedTo.includes(empIdForCal)) continue
@@ -266,21 +261,18 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
           const planned = sched?.doDate
           const showsToday =
             planned === day ||
-            (!planned && task.deadline === day) ||
-            (!planned && !task.deadline && isTaskDueOnDate(task, empIdForCal, parseISO(day)))
+            (!planned && isTaskDueOnDate(task, empIdForCal, parseISO(day)))
           if (!showsToday) continue
-          if (planned === day ? !visible('do') : !visible('due')) continue
 
-          // Two different things wear the same title. On the day it is
-          // planned for, this is the work: filled, in the person's colour.
-          // On its deadline it is a marker saying when it is due — faded red
-          // outline, so a week of deadlines does not read as a week of work.
-          const isDeadlineMarker = planned !== day
+          // One kind of task block now. There used to be two — the work on
+          // its do date, and a faded red marker on its deadline — and a task
+          // with both put the same title on the calendar twice, in two
+          // colours, meaning two different things. Every day a task appears
+          // on is a day it is meant to be worked on.
           blocks.push({
             key: `task-${task.id}-${empIdForCal}`,
             label: task.title,
-            color: isDeadlineMarker ? DEADLINE_RED : personColor(empIdForCal),
-            deadline: isDeadlineMarker,
+            color: personColor(empIdForCal),
             task,
             employeeId: empIdForCal,
             // The day it is shown on is the day it counts for: a recurring
@@ -288,24 +280,6 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
             done: isTaskCompleted(task.id, empIdForCal, day),
             started: isInProgress(task.id, empIdForCal, day),
             ownerName: canOverlay ? who?.name : undefined,
-          })
-        }
-      }
-
-      if (visible('due')) {
-        for (const t of todos) {
-          if (t.dueDate !== day || t.isCompleted) continue
-          // Same guard the do-date loop carries: the store holds whatever
-          // board was loaded last, so without it another owner's deadlines
-          // land on this one.
-          if ((t.ownerId ?? null) !== ownerId) continue
-          if (t.doDate === day) continue // already shown as a do-date block
-          blocks.push({
-            key: `due-${t.id}`,
-            label: `Due: ${t.title}`,
-            color: DEADLINE_RED,
-            deadline: true,
-            todo: t,
           })
         }
       }
@@ -966,11 +940,9 @@ function DayGrid({
                   onDragStart={
                     // Only todos and time blocks are dragged. An assigned
                     // task's day comes from the schedule it was given, and
-                    // dragging it used to clear that do_date — which did not
-                    // remove the block, because a task with no do_date still
-                    // shows on its deadline. It just changed from filled to
-                    // outline, so it read as the colour being pulled out of
-                    // it while the task stayed put. It is ticked, not moved.
+                    // dragging it used to clear that do_date, which moved the
+                    // block somewhere nobody asked for. It is ticked, not
+                    // moved; rescheduling it is the task manager's job.
                     readOnly
                       ? undefined
                       : b.todo
@@ -1109,11 +1081,9 @@ function MonthGrid({
                   onDragStart={
                     // Only todos and time blocks are dragged. An assigned
                     // task's day comes from the schedule it was given, and
-                    // dragging it used to clear that do_date — which did not
-                    // remove the block, because a task with no do_date still
-                    // shows on its deadline. It just changed from filled to
-                    // outline, so it read as the colour being pulled out of
-                    // it while the task stayed put. It is ticked, not moved.
+                    // dragging it used to clear that do_date, which moved the
+                    // block somewhere nobody asked for. It is ticked, not
+                    // moved; rescheduling it is the task manager's job.
                     readOnly
                       ? undefined
                       : b.todo
@@ -1223,25 +1193,16 @@ function BlockChip({
         block.todo?.isCompleted || block.done ? 'line-through opacity-45' : ''
       }`}
       style={
-        block.deadline
-          ? // A deadline marker, not the work itself: faded outline, so a
-            // week of due dates does not read as a week of scheduled work.
+        block.ownWork
+          ? // Their own todo: outlined in their colour on white, at full
+            // strength. Assigned work is filled, so the two are told apart
+            // by whether the colour is inside the block or around it —
+            // which reads at a glance across a week without needing a key.
             {
-              border: `1.5px solid ${block.color}`,
+              border: `2px solid ${block.color}`,
               color: block.color,
-              backgroundColor: 'transparent',
-              opacity: block.todo?.isCompleted || block.done ? undefined : 0.7,
+              backgroundColor: '#FFFFFF',
             }
-          : block.ownWork
-            ? // Their own todo: outlined in their colour on white, at full
-              // strength. Assigned work is filled, so the two are told apart
-              // by whether the colour is inside the block or around it —
-              // which reads at a glance across a week without needing a key.
-              {
-                border: `2px solid ${block.color}`,
-                color: block.color,
-                backgroundColor: '#FFFFFF',
-              }
           : // Scheduled work, in the person's colour exactly as it is — no
             // mix into white. Diluting it made every block a pale wash and
             // two people's work hard to tell apart at a glance. White text
@@ -1381,11 +1342,6 @@ function Unscheduled({
               )}
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-text-main leading-snug">{t.title}</p>
-                {t.dueDate && (
-                  <p className="text-[10px] text-danger mt-0.5">
-                    {tr('cal_due')} {t.dueDate}
-                  </p>
-                )}
               </div>
             </div>
           ))}

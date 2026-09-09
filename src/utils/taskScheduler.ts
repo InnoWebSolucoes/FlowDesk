@@ -124,8 +124,13 @@ export function getTasksDueThisMonth(
  * dropping it off the list is how work goes missing.
  *
  * A task counts when either date lands in range:
- *   - its deadline, the day it must be finished by; or
+ *   - the do date this person was given, the day the work is meant to happen;
+ *     or
  *   - a day its recurrence puts it on.
+ *
+ * The do date took the deadline's place here. They answered different
+ * questions — "finish by" against "work on" — but only one of them is left,
+ * and it is the one that says when the work actually lands.
  */
 export function getTasksDueThrough(
   tasks: Task[],
@@ -147,11 +152,10 @@ export function getTasksDueThrough(
     if (!task.isActive) return false
     if (!task.assignedTo.includes(employeeId)) return false
 
-    // A deadline is the strongest signal: it is the date it is owed by.
-    if (task.deadline) {
-      const dl = parseISO(task.deadline)
-      if (inRange(dl)) return true
-    }
+    // A do date is the strongest signal: somebody has said which day this is
+    // happening on, which beats working it out from the recurrence.
+    const planned = task.schedules.find((sc) => sc.employeeId === employeeId)?.doDate
+    if (planned && inRange(parseISO(planned))) return true
 
     // Otherwise, does its recurrence put it on any day in the window? Walk the
     // days rather than reasoning about the rule, which keeps this correct for

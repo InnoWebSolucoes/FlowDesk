@@ -205,9 +205,11 @@ export interface ProjectTodo {
   priority: Priority
   isCompleted: boolean
   completedAt: string | null
-  /** The hard deadline. */
-  dueDate: string | null
-  /** When you plan to actually do it — this is what the calendar shows. */
+  /**
+   * The day it is to be done. The only date a todo has: there used to be a
+   * deadline alongside it, and carrying two dates meant every todo had to be
+   * read twice to find out when it was actually happening.
+   */
   doDate: string | null
   assigneeId: string | null
   visibility: Visibility | null
@@ -284,11 +286,10 @@ export interface Task {
   description: string
   assignedTo: string[] // employee IDs
   /**
-   * The date it must be finished by, set by whoever assigned it. Optional —
-   * a recurring task often has no single deadline.
+   * When the work happens, one row per person the task is assigned to. This
+   * is the only date a task carries now: the separate deadline it used to
+   * have is gone, and a do date is what "it must be done" means.
    */
-  deadline: string | null
-  /** Per-assignee planning. One row per person the task is assigned to. */
   schedules: TaskSchedule[]
   frequency: TaskFrequency
   categoryId: string
@@ -305,6 +306,12 @@ export interface CompletionLog {
   taskId: string
   employeeId: string
   completedAt: string // full ISO timestamp
+  /**
+   * Which day's work this completion is for — the occurrence, not a deadline.
+   * A recurring task comes round again, so this is what tells one instance of
+   * it from the next. Nothing to do with the deleted due-date system; the name
+   * matches the `due_date` column it reads, which is why it has not changed.
+   */
   dueDate: string // ISO date
   wasLate: boolean
   timeOfDay: 'early' | 'mid-morning' | 'afternoon' | 'end-of-day'
@@ -391,7 +398,10 @@ export interface TaskAttachment {
 export interface TaskFile {
   id: string
   taskId: string
-  /** Which day's work this is, for a task that comes round again. */
+  /**
+   * Which day's work this is, for a task that comes round again — the
+   * occurrence, not a deadline. See CompletionLog.dueDate.
+   */
   dueDate: string | null
   name: string
   type: string

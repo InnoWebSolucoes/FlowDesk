@@ -1,7 +1,7 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X, Clock, CalendarClock, Users, Tag, Repeat, CheckCircle2, ExternalLink } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { format } from 'date-fns'
 import { Task } from '../../types'
 import type { TranslationKey } from '../../i18n/translations'
 import { useTaskStore } from '../../store/taskStore'
@@ -125,11 +125,6 @@ export function TaskPeekPanel({
               : <span className="text-text-subtle">{t('cal_nobody')}</span>)}
 
           {row(Repeat, t('taskpeek_repeats'), frequencyLabel(task.frequency, t))}
-
-          {row(CalendarClock, t('cal_deadline'),
-            task.deadline
-              ? format(parseISO(task.deadline), 'EEEE d MMMM yyyy')
-              : <span className="text-text-subtle">{t('cal_none')}</span>)}
 
           {task.schedules.length > 0 && row(CalendarClock, t('taskpeek_plannedFor'),
             <div className="space-y-0.5">

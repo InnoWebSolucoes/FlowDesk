@@ -4,7 +4,7 @@ import { useHighlight } from '../../hooks/useHighlight'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import {
   ListTodo, Plus, Trash2, Link2, ChevronUp, ChevronDown, Circle, CheckCircle2,
-  FolderOpen, Calendar, CalendarClock, Pencil, Check, Copy,
+  FolderOpen, CalendarClock, Pencil, Check, Copy,
 } from 'lucide-react'
 import { isBefore, parseISO, startOfToday } from 'date-fns'
 import { Project, ProjectTodo, Priority } from '../../types'
@@ -45,7 +45,7 @@ const PRIORITY_STYLES: Record<Priority, string> = {
   low: 'bg-surface-2 text-text-muted',
 }
 
-type SortMode = 'manual' | 'priority' | 'dueDate' | 'doDate'
+type SortMode = 'manual' | 'priority' | 'doDate'
 
 /**
  * The tabbed to-do list. One component serves the managers' shared board and
@@ -74,7 +74,6 @@ export function TodoBoard({
   const emptyDraft = {
     notes: '',
     priority: 'medium' as Priority,
-    dueDate: '',
     doDate: '',
     links: [] as { itemId?: string; clusterId?: string }[],
   }
@@ -158,14 +157,6 @@ export function TodoBoard({
       })
     }
 
-    if (sortMode === 'dueDate') {
-      return [...list].sort((a, b) => {
-        if (!a.dueDate && !b.dueDate) return a.sortOrder - b.sortOrder
-        if (!a.dueDate) return 1
-        if (!b.dueDate) return -1
-        return a.dueDate.localeCompare(b.dueDate)
-      })
-    }
     return [...list].sort((a, b) => a.sortOrder - b.sortOrder)
   }, [listTodos, sortMode])
 
@@ -202,7 +193,6 @@ export function TodoBoard({
   const hasDraft =
     draft.notes.trim() !== '' ||
     draft.priority !== 'medium' ||
-    draft.dueDate !== '' ||
     draft.doDate !== '' ||
     draft.links.length > 0
 
@@ -219,7 +209,6 @@ export function TodoBoard({
           listId: currentListId,
           notes: details.notes,
           priority: details.priority,
-          dueDate: details.dueDate || null,
           doDate: details.doDate || null,
         },
         ownerId,
@@ -289,7 +278,9 @@ export function TodoBoard({
   }
 
   const TodoRow = ({ todo }: { todo: ProjectTodo }) => {
-    const overdue = !todo.isCompleted && todo.dueDate && isBefore(parseISO(todo.dueDate), startOfToday())
+    // Overdue is now measured against the do date, the only date there is:
+    // the day it was meant to happen has passed and it did not happen.
+    const overdue = !todo.isCompleted && todo.doDate && isBefore(parseISO(todo.doDate), startOfToday())
     const isEditing = editingId === todo.id
 
     return (
@@ -375,13 +366,20 @@ export function TodoBoard({
               </button>
             )}
 
-            {/* Do date: the day you plan to work on it. This is what the
-                calendar shows, the deadline below is just the limit. */}
+            {/* The do date, and the only date. It is what the calendar shows
+                and what "when it must be done" now means; the separate
+                deadline that used to sit beside it is gone. A day that has
+                been and gone with the todo still open goes red — that is what
+                overdue means now. */}
             <label
               className={`flex items-center gap-1 text-[11px] px-1.5 py-1 rounded-md cursor-pointer ${
-                todo.doDate ? 'bg-primary-light text-primary' : 'bg-surface-2 text-text-muted'
+                overdue
+                  ? 'bg-danger-bg text-danger'
+                  : todo.doDate
+                    ? 'bg-primary-light text-primary'
+                    : 'bg-surface-2 text-text-muted'
               }`}
-              title={todo.doDate ? `Doing it on ${todo.doDate}` : 'Set a do date, when you will actually do it'}
+              title={todo.doDate ? `Doing it on ${todo.doDate}` : 'Set a do date, the day it gets done'}
             >
               <CalendarClock size={11} />
               <input
@@ -391,24 +389,6 @@ export function TodoBoard({
                 disabled={!canEdit}
                 className={`bg-transparent border-0 text-[11px] focus:outline-none cursor-pointer ${
                   todo.doDate ? 'w-[92px]' : 'w-[16px]'
-                }`}
-              />
-            </label>
-
-            <label
-              className={`flex items-center gap-1 text-[11px] px-1.5 py-1 rounded-md cursor-pointer ${
-                overdue ? 'bg-danger-bg text-danger' : 'bg-surface-2 text-text-muted'
-              }`}
-              title={todo.dueDate ? `Deadline ${todo.dueDate}` : 'Set a deadline'}
-            >
-              <Calendar size={11} />
-              <input
-                type="date"
-                value={todo.dueDate ?? ''}
-                onChange={(e) => updateTodo(todo.id, { dueDate: e.target.value || null })}
-                disabled={!canEdit}
-                className={`bg-transparent border-0 text-[11px] focus:outline-none cursor-pointer ${
-                  todo.dueDate ? 'w-[92px]' : 'w-[16px]'
                 }`}
               />
             </label>
@@ -678,16 +658,6 @@ export function TodoBoard({
                   className="px-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-main focus:outline-none focus:border-primary"
                 />
               </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-text-subtle">{t('todo_dueDate')}</span>
-                <input
-                  type="date"
-                  value={draft.dueDate}
-                  onChange={(e) => setDraft((d) => ({ ...d, dueDate: e.target.value }))}
-                  className="px-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-main focus:outline-none focus:border-primary"
-                />
-              </label>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
@@ -729,7 +699,7 @@ export function TodoBoard({
         <div className="flex items-center justify-between gap-3 mb-3 text-xs">
           <div className="flex items-center gap-1.5">
             <span className="text-text-subtle">{t('todo_sort')}</span>
-            {(['manual', 'priority', 'doDate', 'dueDate'] as SortMode[]).map((mode) => (
+            {(['manual', 'priority', 'doDate'] as SortMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setSortMode(mode)}

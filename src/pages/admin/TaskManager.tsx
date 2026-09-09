@@ -24,9 +24,8 @@ const defaultTask = (): Omit<Task, 'id' | 'createdAt' | 'createdBy' | 'projectId
   categoryId: '',
   priority: 'medium',
   estimatedMinutes: 30,
-  // Optional: a recurring task often has no single date it must be done by,
-  // and a manager may want the employee to choose. Empty is a real value.
-  deadline: null,
+  // Optional: a recurring task often has no single day, and a manager may want
+  // the employee to choose. Empty is a real value.
   schedules: [],
   isActive: true,
 })
@@ -64,6 +63,12 @@ function TaskForm({
           assignedTo: defaultAssignee ? [defaultAssignee] : [],
         }
   )
+  // The do date lives per assignee, but the form offers one box: a manager
+  // setting a day means "this happens on this day", not a different day each.
+  // Editing shows whichever day the assignees already share.
+  const [doDate, setDoDate] = useState<string>(
+    initial?.schedules.find((sc) => sc.doDate)?.doDate ?? '',
+  )
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [newCatName, setNewCatName] = useState('')
   const [newCatColor, setNewCatColor] = useState('#1A5C3A')
@@ -93,7 +98,16 @@ function TaskForm({
     if (!validate()) return
     // '' is a typing state, not a value. 0 is how "no estimate" is stored.
     const mins = parseInt(String(form.estimatedMinutes), 10)
-    onSave({ ...form, estimatedMinutes: Number.isFinite(mins) && mins > 0 ? mins : 0 })
+    // One box, one day, spread across everyone it is assigned to. Cleared, the
+    // schedules go empty and the task falls back to its recurrence.
+    const schedules = doDate
+      ? form.assignedTo.map((employeeId: string) => ({ employeeId, doDate }))
+      : []
+    onSave({
+      ...form,
+      schedules,
+      estimatedMinutes: Number.isFinite(mins) && mins > 0 ? mins : 0,
+    })
   }
 
   const toggleDay = (day: number) => {
@@ -307,18 +321,19 @@ function TaskForm({
         )}
       </div>
 
-      {/* The deadline is separate from the recurrence: when it must be
-          finished by, regardless of which days it appears on. Optional — left
-          empty, the employee decides, and it simply has no deadline. */}
+      {/* The day the work happens. This replaced the deadline: there is one
+          date now, and it is the one the calendar is built from. It is stored
+          per assignee, so setting it here plans the same day for everyone the
+          task goes to and each of them can move their own afterwards. */}
       <div>
-        <label className={lbl}>{t('task_deadline')}</label>
+        <label className={lbl}>{t('task_doDate')}</label>
         <input
           type="date"
           className={inp}
-          value={form.deadline ?? ''}
-          onChange={e => set('deadline', e.target.value || null)}
+          value={doDate}
+          onChange={e => setDoDate(e.target.value)}
         />
-        <p className="text-text-subtle text-[11px] mt-1">{t('task_deadlineHint')}</p>
+        <p className="text-text-subtle text-[11px] mt-1">{t('task_doDateHint')}</p>
       </div>
 
       <div className="flex gap-2 pt-1">

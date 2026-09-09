@@ -25,13 +25,6 @@ const EMPLOYEE = '#6B21A8'
 const INNOWEB = '#6B7280'
 
 /**
- * A deadline: when something is due, rather than when it is meant to be
- * done. Drawn as a faded outline rather than filled, so a week of due dates
- * does not read as a week of work.
- */
-export const DEADLINE_RED = '#DC2626'
-
-/**
  * The colour for whoever this work belongs to.
  *
  * Everything belongs to somebody — an employee, or InnoWeb. A missing id

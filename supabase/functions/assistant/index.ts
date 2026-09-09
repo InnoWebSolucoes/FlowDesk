@@ -52,10 +52,9 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           notes: { type: 'string', description: 'Optional detail.' },
           list_id: { type: 'string', description: 'Which todo list. Omit for the first list.' },
           priority: { type: 'string', enum: ['low', 'medium', 'high'] },
-          due_date: { type: 'string', description: 'Hard deadline, YYYY-MM-DD.' },
           do_date: {
             type: 'string',
-            description: 'The day the work will actually be done, YYYY-MM-DD. This is what appears on the calendar.',
+            description: 'The day the work is to be done, YYYY-MM-DD. The only date a todo has, and what appears on the calendar.',
           },
           assignee_id: { type: 'string', description: 'User id of the person who will do it.' },
         },
@@ -75,7 +74,6 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           title: { type: 'string' },
           notes: { type: 'string' },
           priority: { type: 'string', enum: ['low', 'medium', 'high'] },
-          due_date: { type: 'string' },
           do_date: { type: 'string' },
           assignee_id: { type: 'string' },
           is_completed: { type: 'boolean' },
@@ -202,8 +200,7 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           priority: { type: 'string', enum: ['low', 'medium', 'high'] },
           category_name: { type: 'string', description: 'Existing category name, or a new one.' },
           estimated_minutes: { type: 'number' },
-          deadline: { type: 'string', description: 'Hard due date, YYYY-MM-DD.' },
-          do_date: { type: 'string', description: 'The day it should be done, YYYY-MM-DD.' },
+          do_date: { type: 'string', description: 'The day it is to be done, YYYY-MM-DD. The only date a task has.' },
           frequency_type: {
             type: 'string',
             enum: ['daily', 'weekly', 'monthly', 'one-off'],
@@ -231,7 +228,6 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           title: { type: 'string' },
           description: { type: 'string' },
           priority: { type: 'string', enum: ['low', 'medium', 'high'] },
-          deadline: { type: 'string' },
           estimated_minutes: { type: 'number' },
           is_active: { type: 'boolean', description: 'False retires it without deleting it.' },
         },
@@ -377,7 +373,7 @@ Deno.serve(async (req) => {
     db.from('project_todo_lists').select('id,name').eq('project_id', projectId).order('sort_order'),
     db
       .from('project_todos')
-      .select('id,title,list_id,priority,is_completed,due_date,do_date,assignee_id')
+      .select('id,title,list_id,priority,is_completed,do_date,assignee_id')
       .eq('project_id', projectId)
       .order('sort_order')
       .limit(150),
@@ -406,7 +402,7 @@ Deno.serve(async (req) => {
     // board, not what anyone was actually given to do.
     db
       .from('tasks')
-      .select('id,title,description,frequency,priority,deadline,is_active,created_at,task_assignments(employee_id,do_date)')
+      .select('id,title,description,frequency,priority,is_active,created_at,task_assignments(employee_id,do_date)')
       .eq('project_id', projectId)
       .limit(200),
     db
@@ -479,10 +475,10 @@ Deno.serve(async (req) => {
 
       const lines = mine.map((t) => {
         const assignment = (t.task_assignments ?? []).find((a: any) => a.employee_id === p.id)
-        const overdue = t.deadline && t.deadline < today
+        const planned = assignment?.do_date
+        const overdue = planned && planned < today
         return `  - ${t.title} [${t.id}] — ${freqText(t.frequency)}, ${t.priority} priority`
-          + `${t.deadline ? `, deadline ${t.deadline}${overdue ? ' (OVERDUE)' : ''}` : ', no deadline'}`
-          + `${assignment?.do_date ? `, planned for ${assignment.do_date}` : ''}`
+          + `${planned ? `, planned for ${planned}${overdue ? ' (OVERDUE)' : ''}` : ', no day set'}`
           + ` — ${statusOf(t.id, p.id)}`
       })
       return `${p.name} [${p.id}]: ${mine.length} task(s)
@@ -498,9 +494,9 @@ ${lines.join('\n')}`
 
 Today is ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('en-GB', { weekday: 'long' })}). The user's timezone is ${timezone}.
 
-DO DATE vs DUE DATE — this distinction matters and users rely on it:
-- due_date is the hard deadline, the last acceptable moment.
-- do_date is the day the person actually plans to do the work. The calendar shows do dates. When someone asks when to fit something in, you are choosing a do_date, and it must land on or before the due_date. The calendar is organised by day only — there are no times on it.
+DO DATES — there is one date and this is it:
+- do_date is the day the work is to be done. Todos and tasks have no separate deadline; that was removed, so never ask for one, offer one, or say a thing is "due" on some other day.
+- When someone asks when to fit something in, or says something must be done by a date, you are choosing a do_date. The calendar is organised by day only — there are no times on it.
 
 Current project description:
 ${project.description || '(empty)'}
@@ -519,7 +515,7 @@ ${workByPerson.length ? workByPerson.join('\n') : '(nobody has any tasks)'}
 Open todos:
 ${
   todos.filter((t) => !t.is_completed).slice(0, 40).map((t) =>
-    `- ${t.title} [${t.id}]${t.due_date ? ` due ${t.due_date}` : ''}${t.do_date ? ` doing ${t.do_date}` : ' — NOT SCHEDULED'}`
+    `- ${t.title} [${t.id}]${t.do_date ? ` doing ${t.do_date}` : ' — NOT SCHEDULED'}`
   ).join('\n') || '(none)'
 }
 
@@ -670,7 +666,6 @@ How to behave:
                 title: args.title,
                 notes: args.notes ?? '',
                 priority: toPriority(args.priority),
-                due_date: args.due_date ?? null,
                 do_date: args.do_date ?? null,
                 assignee_id: args.assignee_id ?? null,
               })
@@ -686,7 +681,7 @@ How to behave:
             const patch: Record<string, unknown> = {}
             for (const [k, col] of [
               ['title', 'title'], ['notes', 'notes'], ['priority', 'priority'],
-              ['due_date', 'due_date'], ['do_date', 'do_date'],
+              ['do_date', 'do_date'],
               ['assignee_id', 'assignee_id'],
             ] as const) {
               // Same normalising as on insert: an edit can set priority too.
@@ -808,7 +803,7 @@ How to behave:
             const type = args.frequency_type ?? 'one-off'
             const frequency: Record<string, unknown> = { type }
             if (type === 'weekly') frequency.days = args.frequency_days ?? [1]
-            if (type === 'one-off' && args.deadline) frequency.date = args.deadline
+            if (type === 'one-off' && args.do_date) frequency.date = args.do_date
 
             const { data: task, error } = await db
               .from('tasks')
@@ -820,7 +815,6 @@ How to behave:
                 category_id: categoryId,
                 priority: toPriority(args.priority),
                 estimated_minutes: args.estimated_minutes ?? 0,
-                deadline: args.deadline ?? null,
                 created_by: user.id,
                 is_active: true,
               })
@@ -848,7 +842,7 @@ How to behave:
             const patch: Record<string, unknown> = {}
             for (const [k, col] of [
               ['title', 'title'], ['description', 'description'], ['priority', 'priority'],
-              ['deadline', 'deadline'], ['estimated_minutes', 'estimated_minutes'],
+              ['estimated_minutes', 'estimated_minutes'],
               ['is_active', 'is_active'],
             ] as const) {
               // Same normalising as on insert: an edit can set priority too.

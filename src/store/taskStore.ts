@@ -76,7 +76,6 @@ function toTask(row: any): Task {
     title: row.title,
     description: row.description,
     assignedTo: (row.task_assignments ?? []).map((a: any) => a.employee_id),
-    deadline: row.deadline ?? null,
     schedules: (row.task_assignments ?? []).map((a: any) => ({
       employeeId: a.employee_id,
       doDate: a.do_date ?? null,
@@ -272,18 +271,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       is_active: task.isActive,
     }
 
-    // deadline arrives with the task-dates migration. Retry without it rather
-    // than refusing to create the task at all when that has not run yet.
-    let { data, error } = await supabase
-      .from('tasks')
-      .insert({ ...base, deadline: task.deadline || null })
-      .select()
-      .single()
-
-    if (error) {
-      console.warn('[addTask] retrying without deadline — run the task-dates migration:', error.message)
-      ;({ data, error } = await supabase.from('tasks').insert(base).select().single())
-    }
+    const { data, error } = await supabase.from('tasks').insert(base).select().single()
 
     // Swallowing this made a failed save look like a successful one: the form
     // closed, nothing appeared, and there was nothing to go on. Throw so the
@@ -324,9 +312,17 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       }
     }
 
+    // Carry the do dates into the local row too, or a task created with a day
+    // shows up unplanned until the next full reload.
     set((s) => applyTasks(s.scopedProjectId, [
       ...s.allTasks,
-      toTask({ ...data, task_assignments: task.assignedTo.map(id => ({ employee_id: id })) }),
+      toTask({
+        ...data,
+        task_assignments: task.assignedTo.map((id) => ({
+          employee_id: id,
+          do_date: task.schedules?.find((sc) => sc.employeeId === id)?.doDate ?? null,
+        })),
+      }),
     ]))
   },
 
@@ -339,34 +335,49 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     if (updates.priority !== undefined) patch.priority = updates.priority
     if (updates.associatedTool !== undefined) patch.associated_tool = updates.associatedTool
     if (updates.estimatedMinutes !== undefined) patch.estimated_minutes = updates.estimatedMinutes
-    if (updates.deadline !== undefined) patch.deadline = updates.deadline || null
     if (updates.isActive !== undefined) patch.is_active = updates.isActive
 
     if (Object.keys(patch).length > 0) {
-      let { error } = await supabase.from('tasks').update(patch).eq('id', id)
-      if (error && 'deadline' in patch) {
-        // Same pre-migration fallback as addTask: keep the rest of the edit
-        // rather than losing the whole change.
-        console.warn('[updateTask] retrying without deadline:', error.message)
-        const { deadline: _drop, ...legacy } = patch
-        if (Object.keys(legacy).length > 0) {
-          ;({ error } = await supabase.from('tasks').update(legacy).eq('id', id))
-        } else {
-          error = null
-        }
-      }
+      const { error } = await supabase.from('tasks').update(patch).eq('id', id)
       if (error) {
         console.error('[updateTask] failed:', error)
         throw new Error(error.message)
       }
     }
 
+    // The do date is the task's only date now, so it has to survive an edit.
+    // Assignments are rewritten wholesale here, and they used to be reinserted
+    // without do_date — which silently unplanned every assignee the moment
+    // anything else about the task was saved. Fall back to whatever the
+    // assignment already had, so an edit that does not mention days keeps them.
+    const existing = get().allTasks.find((t) => t.id === id)
+    const doDateFor = (employeeId: string) =>
+      (updates.schedules ?? existing?.schedules ?? []).find((sc) => sc.employeeId === employeeId)
+        ?.doDate ?? null
+
     if (updates.assignedTo !== undefined) {
       await supabase.from('task_assignments').delete().eq('task_id', id)
       if (updates.assignedTo.length > 0) {
+        const { error } = await supabase.from('task_assignments').insert(
+          updates.assignedTo.map((employeeId) => ({
+            task_id: id,
+            employee_id: employeeId,
+            do_date: doDateFor(employeeId),
+          })),
+        )
+        if (error) {
+          console.error('[updateTask] assignments failed:', error)
+          throw new Error(error.message)
+        }
+      }
+    } else if (updates.schedules !== undefined) {
+      // Days changed but not who is doing it: update the rows in place.
+      for (const sc of updates.schedules) {
         await supabase
           .from('task_assignments')
-          .insert(updates.assignedTo.map((employeeId) => ({ task_id: id, employee_id: employeeId })))
+          .update({ do_date: sc.doDate || null })
+          .eq('task_id', id)
+          .eq('employee_id', sc.employeeId)
       }
     }
 
