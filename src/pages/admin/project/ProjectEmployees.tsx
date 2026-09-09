@@ -35,12 +35,17 @@ export function ProjectEmployees() {
   const [submitting, setSubmitting] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [pageError, setPageError] = useState('')
 
   const toggleActive = async (emp: Employee) => {
-    setError('')
-    const res = await setEmployeeActive(emp.id, !emp.isActive)
-    if (res?.success === false) {
-      setError(res.error || 'That could not be changed.')
+    setPageError('')
+    try {
+      const res = await setEmployeeActive(emp.id, !emp.isActive)
+      if (res?.success === false) {
+        setPageError(res.error || 'That could not be changed.')
+      }
+    } catch (e) {
+      setPageError((e as Error).message || 'That could not be changed.')
     }
   }
 
@@ -107,6 +112,18 @@ export function ProjectEmployees() {
 
   return (
     <div>
+      {/* Errors from the row buttons — deactivating, removing from a project.
+          The other two error slots live inside modals, so a failure out here
+          had nowhere to appear and the button looked inert. */}
+      {pageError && (
+        <div className="mb-4 flex items-start gap-2 text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2">
+          <span className="flex-1">{pageError}</span>
+          <button onClick={() => setPageError('')} className="hover:opacity-70" title={t('ui_close')}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {members.length > 0 && <div className="flex justify-end mb-5">{addButton}</div>}
 
       {/* Who may run this project. An admin granted here can do everything the

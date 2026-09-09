@@ -72,11 +72,25 @@ Deno.serve(async (req) => {
     // Deleting the auth user cascades to public.users (FK on delete cascade),
     // which in turn cascades to tasks/comments/etc. authored by or assigned to them.
     const { error: deleteErr } = await adminClient.auth.admin.deleteUser(employeeId)
+
+    // deleteUser can report an error after the row is already gone — the
+    // cascade touches a lot of tables and something downstream complaining
+    // does not mean the delete did not happen. It was reporting failure on
+    // deletes that had plainly worked, so the outcome is checked rather than
+    // the error trusted: if the user is no longer there, it succeeded.
     if (deleteErr) {
-      return new Response(JSON.stringify({ error: deleteErr.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      const { data: stillThere } = await adminClient
+        .from('users')
+        .select('id')
+        .eq('id', employeeId)
+        .maybeSingle()
+
+      if (stillThere) {
+        return new Response(JSON.stringify({ error: deleteErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     return new Response(JSON.stringify({ success: true }), {

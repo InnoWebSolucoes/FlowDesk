@@ -106,15 +106,29 @@ export function Sidebar() {
   // below runs with the deps it declares, so closing over the flags would use
   // whatever they were on the last route change — stale by the time a tab is
   // clicked, which left the Claude tab open when switching tabs.
-  // Always starts collapsed to icons, so the main area opens with the room
-  // whatever happened last time. Expanding is one click and lasts as long as
-  // you are on the page; it is deliberately not remembered.
-  const [collapsed, setCollapsed] = useState(true)
+  // Remembered between visits: leaving it open and finding it shut on every
+  // reload is a setting the app keeps forgetting. Collapsed is still the
+  // default for anyone who has never touched it, so a first run opens with
+  // the room.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('flowdesk:sidebarCollapsed')
+      return saved === null ? true : saved === '1'
+    } catch {
+      // Private mode or blocked storage: the preference just is not kept.
+      return true
+    }
+  })
 
   useEffect(() => {
     // The docked native views start where the sidebar ends, so the shell has
     // to be told when that width changes or they would overlap or leave a gap.
     setSidebarWidth(collapsed ? 64 : 240)
+    try {
+      localStorage.setItem('flowdesk:sidebarCollapsed', collapsed ? '1' : '0')
+    } catch {
+      // As above — not being able to save it is not worth failing over.
+    }
   }, [collapsed])
 
   // Unconditional on purpose. Guarding these on a docked flag meant a flag
