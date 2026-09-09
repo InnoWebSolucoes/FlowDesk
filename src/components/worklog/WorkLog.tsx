@@ -133,6 +133,15 @@ export function WorkLog({
       setError(t('worklog_needTitle'))
       return
     }
+    // How long it took is required now. A work log full of entries with no
+    // time on them cannot answer the one question it exists to answer, and
+    // "optional" meant almost every entry skipped it. Whole minutes, above
+    // zero: '' is a typing state, and 0 is not a length of work.
+    const mins = Number(minutes)
+    if (!minutes.trim() || !Number.isFinite(mins) || !Number.isInteger(mins) || mins <= 0) {
+      setError(t('worklog_needMinutes'))
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -140,7 +149,7 @@ export function WorkLog({
         projectId: project.id,
         title: title.trim(),
         description: description.trim(),
-        minutes: minutes ? Number(minutes) : null,
+        minutes: mins,
         workedOn,
         itemIds,
         links,
@@ -231,10 +240,16 @@ export function WorkLog({
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-text-subtle">{t('worklog_minutes')}</span>
+              {/* Required, and marked as such: the asterisk is the only thing
+                  telling somebody that before they press save. */}
+              <span className="text-[11px] text-text-subtle">
+                {t('worklog_minutes')} <span className="text-danger">*</span>
+              </span>
               <input
                 type="number"
-                min={0}
+                min={1}
+                step={1}
+                required
                 value={minutes}
                 onChange={(e) => setMinutes(e.target.value)}
                 placeholder="45"

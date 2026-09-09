@@ -274,6 +274,7 @@ const en = {
   toolbox_noDocuments: 'No documents',
   toolbox_noDocumentsDesc: 'Upload files to see them here.',
   toolbox_download: 'Download',
+  toolbox_openPreview: 'Open',
   toolbox_delete: 'Delete',
 
   // Guidelines
@@ -706,6 +707,7 @@ const en = {
   worklog_saving: 'Saving…',
   worklog_you: 'You',
   worklog_needTitle: 'Say what you did first.',
+  worklog_needMinutes: 'Say how long it took, in whole minutes.',
   worklog_couldNotSave: 'That could not be saved.',
   worklog_couldNotAttach: 'That file could not be attached.',
   worklog_emptyTitle: 'Nothing logged yet',
@@ -986,6 +988,7 @@ const pt: typeof en = {
   toolbox_noDocuments: 'Nenhum documento',
   toolbox_noDocumentsDesc: 'Envie arquivos para vê-los aqui.',
   toolbox_download: 'Baixar',
+  toolbox_openPreview: 'Abrir',
   toolbox_delete: 'Excluir',
 
   // Guidelines
@@ -1417,6 +1420,7 @@ const pt: typeof en = {
   worklog_saving: 'A guardar…',
   worklog_you: 'Eu',
   worklog_needTitle: 'Diga primeiro o que fez.',
+  worklog_needMinutes: 'Diga quanto tempo demorou, em minutos inteiros.',
   worklog_couldNotSave: 'Não foi possível guardar.',
   worklog_couldNotAttach: 'Não foi possível anexar esse ficheiro.',
   worklog_emptyTitle: 'Ainda não há registos',

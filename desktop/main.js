@@ -496,12 +496,20 @@ function setClaudeDocked(docked) {
   if (docked) {
     settings.claudeCollapsed = false
     ensureClaudeLoaded()
-  } else if (settings.claudeDocked) {
+  } else {
     // Always collapsed on the way out. Restoring whatever the pane was before
     // meant a stored `claudeCollapsed: false` — the old side-by-side layout,
     // which nobody chose on purpose — put Claude straight back as a column
     // beside the tab that had just been picked. Leaving the tab means leaving
     // Claude; the split is still reachable from its own shortcut.
+    //
+    // Unconditional, where this used to be guarded on `settings.claudeDocked`.
+    // That guard trusted a flag to describe what is actually on screen, and
+    // whenever the two had drifted apart — the renderer asking to leave a tab
+    // the shell no longer thought was docked — nothing collapsed and Claude
+    // stayed as a column down the side of whichever tab had just been picked.
+    // Collapsing something already collapsed costs nothing; leaving Claude
+    // visible after leaving its tab is the whole bug.
     settings.claudeCollapsed = true
   }
 

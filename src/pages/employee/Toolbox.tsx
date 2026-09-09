@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react'
-import { Globe, FileText, Upload, Trash2, Download, FolderPlus, Folder, ExternalLink } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { Globe, FileText, Upload, Trash2, Download, FolderPlus, Folder, ExternalLink, X } from 'lucide-react'
 import { useToolStore } from '../../store/toolStore'
 import { useAuthStore } from '../../store/authStore'
 import { EmptyState } from '../../components/shared/EmptyState'
@@ -7,6 +7,8 @@ import { format, parseISO } from 'date-fns'
 import { useT } from '../../i18n/useT'
 import { Document } from '../../types'
 import { faviconUrl, faviconLetter } from '../../lib/favicon'
+import { DocumentThumb } from '../../components/shared/DocumentThumb'
+import { fileKind } from '../../components/resources/ResourceThumbnail'
 
 const TABS = ['websites', 'documents'] as const
 type Tab = typeof TABS[number]
@@ -15,14 +17,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function fileIcon(type: string): string {
-  if (type.includes('pdf')) return '📄'
-  if (type.includes('word') || type.includes('docx') || type.includes('doc')) return '📝'
-  if (type.includes('excel') || type.includes('xlsx') || type.includes('spreadsheet')) return '📊'
-  if (type.includes('image') || type.includes('png') || type.includes('jpg')) return '🖼️'
-  return '📁'
 }
 
 export function Toolbox() {
@@ -39,6 +33,18 @@ export function Toolbox() {
 
   // Renaming a document in place: click the title, type, Enter or blur.
   const [renamingDoc, setRenamingDoc] = useState<string | null>(null)
+  // The image being looked at full size, with the signed URL it was opened
+  // with — signatures expire, so it is fetched at open rather than reused.
+  const [preview, setPreview] = useState<{ url: string; doc: Document } | null>(null)
+
+  // Escape leaves the viewer. Bound only while it is open, so it does not
+  // swallow the key from the rename inputs the rest of the time.
+  useEffect(() => {
+    if (!preview) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreview(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [preview])
   const [titleDraft, setTitleDraft] = useState('')
 
   // Adding a website to your own list.
@@ -123,6 +129,29 @@ export function Toolbox() {
     a.href = url
     a.download = doc.name
     a.click()
+  }
+
+  /**
+   * Looking at a document without committing to downloading it.
+   *
+   * An image opens in the viewer below, which is the common case here —
+   * screenshots of work. Anything else the browser can render itself (a PDF)
+   * opens in a tab; anything it cannot falls back to downloading, because
+   * pointing a tab at a .docx just downloads it anyway with an extra step.
+   */
+  const openDoc = async (doc: Document) => {
+    const kind = fileKind(doc.type || null, doc.name)
+    if (kind === 'image') {
+      const url = await getDocumentUrl(doc.storagePath)
+      if (url) setPreview({ url, doc })
+      return
+    }
+    if (kind === 'pdf' || kind === 'text') {
+      const url = await getDocumentUrl(doc.storagePath)
+      if (url) window.open(url, '_blank', 'noopener')
+      return
+    }
+    handleDownload(doc)
   }
 
   const handleCreateFolder = async () => {
@@ -352,22 +381,25 @@ export function Toolbox() {
             {displayedDocs.length === 0 ? (
               <EmptyState icon={FileText} title={t('toolbox_noDocuments')} description={t('toolbox_noDocumentsDesc')} />
             ) : (
-              <div className="space-y-2">
+              // Cards rather than rows: a list of identical grey glyphs said
+              // nothing about which file was which, and an employee looking
+              // for the screenshot they uploaded had to read every filename.
+              // An image shows itself; everything else shows its type.
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {displayedDocs.map(doc => (
-                  <div key={doc.id} className="bg-surface rounded-lg border border-border px-4 py-3 flex items-center gap-3">
-                    {/* The site's own favicon where the document is a link,
-                        the file-type glyph otherwise. */}
-                    {doc.iconUrl ? (
-                      <img
-                        src={doc.iconUrl}
-                        alt=""
-                        className="w-6 h-6 rounded flex-shrink-0 object-contain bg-surface-2 p-0.5"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                      />
-                    ) : (
-                      <span className="text-xl flex-shrink-0">{fileIcon(doc.type)}</span>
-                    )}
-                    <div className="flex-1 min-w-0">
+                  <div
+                    key={doc.id}
+                    className="group bg-surface rounded-xl border border-border p-2.5 flex flex-col gap-2 hover:border-primary/40 transition-colors"
+                  >
+                    <button
+                      onClick={() => openDoc(doc)}
+                      title={t('toolbox_openPreview')}
+                      className="block w-full"
+                    >
+                      <DocumentThumb doc={doc} />
+                    </button>
+
+                    <div className="min-w-0">
                       {renamingDoc === doc.id ? (
                         <input
                           autoFocus
@@ -382,27 +414,30 @@ export function Toolbox() {
                         />
                       ) : (
                         <p
-                          className="text-sm font-medium text-text-main truncate cursor-text"
+                          className="text-sm font-medium text-text-main truncate cursor-text leading-snug"
                           title={doc.name}
                           onClick={() => { setRenamingDoc(doc.id); setTitleDraft(doc.title) }}
                         >
                           {doc.title}
                         </p>
                       )}
-                      <p className="text-xs text-text-subtle">
-                        {formatFileSize(doc.size)} · {format(parseISO(doc.uploadedAt), 'EEE d MMM yyyy', dateLocale)}
+                      <p className="text-[11px] text-text-subtle truncate">
+                        {formatFileSize(doc.size)} · {format(parseISO(doc.uploadedAt), 'd MMM yyyy', dateLocale)}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
+
+                    {/* Always present, not hover-only: on a touch screen there
+                        is no hover, and these are the only way to get the file. */}
+                    <div className="flex items-center gap-1 border-t border-border pt-2 -mb-0.5">
                       <button onClick={() => handleDownload(doc)}
-                        className="p-1.5 rounded hover:bg-surface-2 text-text-subtle hover:text-primary transition-colors"
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1 rounded-md text-[11px] text-text-muted hover:bg-surface-2 hover:text-primary transition-colors"
                         title={t('toolbox_download')}>
-                        <Download size={14} />
+                        <Download size={13} /> {t('toolbox_download')}
                       </button>
                       <button onClick={() => deleteDocument(doc.id)}
-                        className="p-1.5 rounded hover:bg-danger-bg text-text-subtle hover:text-danger transition-colors"
+                        className="p-1 rounded-md text-text-subtle hover:bg-danger-bg hover:text-danger transition-colors"
                         title={t('toolbox_delete')}>
-                        <Trash2 size={14} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -410,6 +445,42 @@ export function Toolbox() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Full-size image viewer. Click anywhere or press Escape to leave;
+          download is here too, so looking at something and then keeping it
+          does not mean finding the card again. */}
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4"
+          onClick={() => setPreview(null)}
+        >
+          <div
+            className="flex items-center gap-3 mb-3 max-w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-white text-sm font-medium truncate">{preview.doc.title}</p>
+            <button
+              onClick={() => handleDownload(preview.doc)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/15 text-white text-xs hover:bg-white/25 transition-colors flex-shrink-0"
+            >
+              <Download size={13} /> {t('toolbox_download')}
+            </button>
+            <button
+              onClick={() => setPreview(null)}
+              className="p-1 rounded-md text-white/80 hover:text-white hover:bg-white/15 transition-colors flex-shrink-0"
+              title={t('ui_close')}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <img
+            src={preview.url}
+            alt={preview.doc.title}
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
+          />
         </div>
       )}
     </div>
