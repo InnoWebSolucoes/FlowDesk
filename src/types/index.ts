@@ -15,6 +15,11 @@ export interface User {
 
 export interface Employee extends User {
   role: 'employee'
+  /**
+   * Still working here. A deactivated person keeps their history but cannot
+   * sign in and is left off the lists people pick from.
+   */
+  isActive: boolean
   /** Every project they work on. projectId is their primary one. */
   projectIds: string[]
   jobTitle: string

@@ -30,6 +30,8 @@ interface EmployeeState {
   removeFromProject: (employeeId: string, projectId: string) => Promise<void>
   updateEmployee: (id: string, updates: Partial<Employee>) => Promise<void>
   deleteEmployee: (id: string) => Promise<{ success: boolean; error?: string }>
+  /** Stop somebody signing in, or let them back in, without losing anything. */
+  setEmployeeActive: (id: string, active: boolean) => Promise<{ success: boolean; error?: string }>
   getEmployeeStats: (employeeId: string, completionLogs: CompletionLog[], tasks: Task[]) => EmployeeStats
   getProjectEmployees: (projectId: string) => Employee[]
 }
@@ -45,6 +47,8 @@ function toEmployee(row: any): Employee {
     department: row.department ?? '',
     managerId: row.manager_id,
     role: row.role ?? 'employee',
+    // Rows predating the column are people who are still here.
+    isActive: row.is_active ?? true,
     projectId: row.project_id ?? null,
     projectIds: (row.project_members ?? []).map((m: any) => m.project_id),
   }
@@ -74,7 +78,7 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     set({ loading: true })
     const { data, error } = await supabase
       .from('users')
-      .select('id, email, name, role, avatar_initials, join_date, job_title, department, manager_id, project_id, project_members(project_id)')
+      .select('id, email, name, role, avatar_initials, join_date, job_title, department, manager_id, project_id, is_active, project_members(project_id)')
       .order('name')
 
     if (!error && data) {
@@ -159,6 +163,33 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
       const all = s.allEmployees.map((e) => (e.id === id ? { ...e, ...updates } : e))
       return { allEmployees: all, employees: scoped(all, s.scopedProjectId) }
     })
+  },
+
+  setEmployeeActive: async (id, active) => {
+    const { data, error } = await supabase.functions.invoke('deactivate-employee', {
+      body: { employeeId: id, active },
+    })
+
+    if (error || data?.error) {
+      // supabase-js discards the body on a non-2xx, so the specific reason
+      // has to be read off the response before falling back to its generic
+      // "Edge Function returned a non-2xx status code".
+      let reason = data?.error as string | undefined
+      if (!reason && error) {
+        const res = (error as { context?: Response }).context
+        if (res && typeof res.json === 'function') {
+          const body = await res.json().catch(() => null)
+          if (body?.error) reason = body.error
+        }
+      }
+      return { success: false, error: reason ?? error?.message }
+    }
+
+    set((s) => {
+      const all = s.allEmployees.map((e) => (e.id === id ? { ...e, isActive: active } : e))
+      return { allEmployees: all, employees: scoped(all, s.scopedProjectId) }
+    })
+    return { success: true }
   },
 
   deleteEmployee: async (id) => {

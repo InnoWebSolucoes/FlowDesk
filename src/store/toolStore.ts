@@ -92,21 +92,47 @@ export const useToolStore = create<ToolState>()((set, get) => ({
   },
 
   addWebsite: async (website) => {
-    const { data, error } = await supabase
-      .from('websites')
-      .insert({ name: website.name, url: website.url, description: website.description, favicon_url: website.faviconUrl ?? null })
-      .select()
-      .single()
-
-    if (error || !data) return
-
-    if (website.assignedTo.length > 0) {
-      await supabase
-        .from('website_assignments')
-        .insert(website.assignedTo.map((employeeId) => ({ website_id: data.id, employee_id: employeeId })))
+    // The id is generated here rather than read back. Selecting the row after
+    // inserting it needs a matching select policy, and a site is only visible
+    // to somebody once they are assigned to it — which happens on the next
+    // statement. So for anyone but the owner the insert succeeded and the
+    // read came back empty, and the function returned before ever writing the
+    // assignment: the site was created, belonged to nobody, and the button
+    // looked like it had done nothing.
+    const id = uuidv4()
+    const row = {
+      id,
+      name: website.name,
+      url: website.url,
+      description: website.description,
+      favicon_url: website.faviconUrl ?? null,
     }
 
-    set((s) => ({ websites: [...s.websites, toWebsite({ ...data, website_assignments: website.assignedTo.map(id => ({ employee_id: id })) })] }))
+    const { error } = await supabase.from('websites').insert(row)
+    if (error) {
+      console.error('[addWebsite] failed:', error)
+      throw new Error(error.message)
+    }
+
+    if (website.assignedTo.length > 0) {
+      const { error: assignErr } = await supabase
+        .from('website_assignments')
+        .insert(website.assignedTo.map((employeeId) => ({ website_id: id, employee_id: employeeId })))
+      if (assignErr) {
+        // Without an assignment the site is on nobody's list and invisible to
+        // everyone but the owner, so a half-done add is worse than none.
+        await supabase.from('websites').delete().eq('id', id)
+        console.error('[addWebsite] assignment failed:', assignErr)
+        throw new Error(assignErr.message)
+      }
+    }
+
+    set((s) => ({
+      websites: [
+        ...s.websites,
+        toWebsite({ ...row, website_assignments: website.assignedTo.map((e) => ({ employee_id: e })) }),
+      ],
+    }))
   },
 
   updateWebsite: async (id, updates) => {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
-import { Users, Plus, Trash2, X, UserPlus, LogOut } from 'lucide-react'
+import { Users, Plus, Trash2, X, UserPlus, LogOut, UserX, UserCheck } from 'lucide-react'
 import { format } from 'date-fns'
 import { Project, Employee } from '../../../types'
 import { useEmployeeStore } from '../../../store/employeeStore'
@@ -25,7 +25,7 @@ const emptyForm: FormState = { name: '', email: '', password: '', jobTitle: '', 
 export function ProjectEmployees() {
   const { t } = useT()
   const { project } = useOutletContext<Ctx>()
-  const { employees, createEmployee, deleteEmployee, addToProject, removeFromProject } = useEmployeeStore()
+  const { employees, createEmployee, deleteEmployee, setEmployeeActive, addToProject, removeFromProject } = useEmployeeStore()
   const { tasks, completionLogs } = useTaskStore()
 
   const [showForm, setShowForm] = useState(false)
@@ -35,6 +35,14 @@ export function ProjectEmployees() {
   const [submitting, setSubmitting] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  const toggleActive = async (emp: Employee) => {
+    setError('')
+    const res = await setEmployeeActive(emp.id, !emp.isActive)
+    if (res?.success === false) {
+      setError(res.error || 'That could not be changed.')
+    }
+  }
 
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
@@ -134,7 +142,14 @@ export function ProjectEmployees() {
                 <div className="flex items-start gap-3">
                   <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={48} />
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-text-main font-semibold text-sm truncate">{emp.name}</h3>
+                    <h3 className="text-text-main font-semibold text-sm truncate flex items-center gap-1.5">
+                      <span className="truncate">{emp.name}</span>
+                      {!emp.isActive && (
+                        <span className="flex-shrink-0 text-[10px] font-medium uppercase tracking-wide text-warning bg-warning/10 border border-warning/30 rounded px-1.5 py-0.5">
+                          {t('proj_inactive')}
+                        </span>
+                      )}
+                    </h3>
                     <p className="text-text-muted text-xs mt-0.5 truncate">{emp.jobTitle}</p>
                     <p className="text-text-subtle text-xs truncate">{emp.department}</p>
                   </div>
@@ -150,6 +165,20 @@ export function ProjectEmployees() {
                       title={t('proj_removeFromThisProjectKeepsThe')}
                     >
                       <LogOut size={14} />
+                    </button>
+                    {/* Deactivating is the reversible one, so it sits above
+                        delete: somebody who has left usually wants their
+                        record kept. */}
+                    <button
+                      onClick={() => toggleActive(emp)}
+                      className={`transition-colors p-1 rounded ${
+                        emp.isActive
+                          ? 'text-text-subtle hover:text-warning'
+                          : 'text-warning hover:text-success'
+                      }`}
+                      title={emp.isActive ? t('proj_deactivate') : t('proj_reactivate')}
+                    >
+                      {emp.isActive ? <UserX size={14} /> : <UserCheck size={14} />}
                     </button>
                     <button
                       onClick={() => setPendingDelete(emp)}
