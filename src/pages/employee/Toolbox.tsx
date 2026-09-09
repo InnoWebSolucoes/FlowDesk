@@ -16,6 +16,24 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/**
+ * The site's own favicon, via Google's service.
+ *
+ * It wants a bare hostname; passing the whole URL — scheme, path and all —
+ * returns nothing, which is why every tile was blank. 64px because the icons
+ * are drawn at 40 and a 32px source is soft on a high-density screen.
+ */
+function faviconUrl(url: string): string {
+  let host = url
+  try {
+    host = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname
+  } catch {
+    // Not parseable as a URL — strip what we can and let the service try.
+    host = url.replace(/^https?:\/\//i, '').split('/')[0]
+  }
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`
+}
+
 function fileIcon(type: string): string {
   if (type.includes('pdf')) return '📄'
   if (type.includes('word') || type.includes('docx') || type.includes('doc')) return '📝'
@@ -213,30 +231,38 @@ export function Toolbox() {
               description={t('toolbox_noWebsitesDesc')}
             />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            // Icons with their names under them, the way a desktop or a
+            // phone home screen reads: the whole tile is the link, so there
+            // is no separate Open button to aim at.
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
               {myWebsites.map(w => (
-                <div key={w.id} className="bg-surface rounded-xl border border-border p-4 flex flex-col gap-3">
-                  <div className="flex items-start gap-3">
-                    <img
-                      src={`https://www.google.com/s2/favicons?domain=${w.url}&sz=32`}
-                      alt=""
-                      className="w-8 h-8 rounded-lg flex-shrink-0 object-contain bg-surface-2 p-1"
-                      onError={e => { (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><circle cx=%2212%22 cy=%2212%22 r=%2210%22 fill=%22%23E3F0E9%22/></svg>' }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-text-main font-semibold text-sm">{w.name}</h3>
-                      <p className="text-text-muted text-xs mt-0.5 line-clamp-2">{w.description}</p>
-                    </div>
-                  </div>
-                  <a
-                    href={w.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full flex items-center justify-center gap-1.5 bg-primary text-white text-sm font-medium py-2 rounded-lg hover:bg-primary-dark transition-colors"
-                  >
-                    <ExternalLink size={13} /> {t('toolbox_open')}
-                  </a>
-                </div>
+                <a
+                  key={w.id}
+                  href={w.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={w.description || w.url}
+                  className="group flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-surface-2 transition-colors"
+                >
+                  <img
+                    src={faviconUrl(w.url)}
+                    alt=""
+                    className="w-10 h-10 rounded-xl object-contain bg-surface border border-border p-1.5 shadow-sm group-hover:shadow transition-shadow"
+                    onError={e => {
+                      // A site with no favicon falls back to its first letter
+                      // rather than a broken image.
+                      const img = e.target as HTMLImageElement
+                      img.style.display = 'none'
+                      img.nextElementSibling?.classList.remove('hidden')
+                    }}
+                  />
+                  <span className="hidden w-10 h-10 rounded-xl bg-primary-light border border-border shadow-sm items-center justify-center text-primary font-semibold">
+                    {(w.name || w.url).trim().charAt(0).toUpperCase()}
+                  </span>
+                  <span className="text-text-main text-xs text-center leading-tight line-clamp-2 w-full">
+                    {w.name}
+                  </span>
+                </a>
               ))}
             </div>
           )}
