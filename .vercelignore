@@ -1,0 +1,25 @@
+# What Vercel does not need, and must not upload.
+#
+# Vercel does not read .gitignore, so without this it packs the whole working
+# directory: a deploy tried to upload 984MB and was refused for exceeding the
+# 100MB file limit. The built installers under desktop/ are the bulk of it —
+# they are attached to the GitHub release, not served from here.
+#
+# Vercel builds the site itself from source, so node_modules and dist are its
+# own to produce rather than ours to send.
+
+node_modules
+dist
+
+# The Electron shell and its built installers. The desktop app loads the
+# deployed site over the network; none of this is served.
+desktop
+
+# Database scripts and migrations, run against Supabase rather than deployed.
+supabase
+*.sql
+
+# Docs and local tooling.
+docs
+.claude
+.github
