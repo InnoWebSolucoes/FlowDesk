@@ -8,6 +8,7 @@ import { TaskManager } from './TaskManager'
 import { Analytics } from './Analytics'
 import { AppUsagePanel } from '../../components/charts/AppUsagePanel'
 import { EmptyState } from '../../components/shared/EmptyState'
+import { faviconUrl, faviconLetter } from '../../lib/favicon'
 import { TodoBoard } from '../../components/todos/TodoBoard'
 import { NoteBoard } from '../../components/notes/NoteBoard'
 import { useProjectStore } from '../../store/projectStore'
@@ -163,20 +164,36 @@ export function EmployeeProfile() {
             {empWebsites.length === 0 ? (
               <EmptyState icon={Globe} title={t('profile_noWebsites')} description={t('profile_noWebsitesDesc')} />
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              // The same icon grid the employee sees in their own Toolbox:
+              // this is a view of their tools, so it should look like their
+              // tools rather than a different list of the same sites.
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
                 {empWebsites.map(w => (
-                  <div key={w.id} className="bg-surface rounded-lg border border-border p-3 flex items-center gap-3">
+                  <a
+                    key={w.id}
+                    href={w.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={w.description || w.url}
+                    className="group flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-surface-2 transition-colors"
+                  >
                     <img
-                      src={`https://www.google.com/s2/favicons?domain=${w.url}&sz=32`}
+                      src={faviconUrl(w.url)}
                       alt=""
-                      className="w-6 h-6 rounded flex-shrink-0"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      className="w-10 h-10 rounded-xl object-contain bg-surface border border-border p-1.5 shadow-sm group-hover:shadow transition-shadow"
+                      onError={e => {
+                        const img = e.target as HTMLImageElement
+                        img.style.display = 'none'
+                        img.nextElementSibling?.classList.remove('hidden')
+                      }}
                     />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-text-main">{w.name}</p>
-                      <p className="text-xs text-text-subtle truncate">{w.url}</p>
-                    </div>
-                  </div>
+                    <span className="hidden w-10 h-10 rounded-xl bg-primary-light border border-border shadow-sm items-center justify-center text-primary font-semibold">
+                      {faviconLetter(w.name || w.url)}
+                    </span>
+                    <span className="text-text-main text-xs text-center leading-tight line-clamp-2 w-full">
+                      {w.name}
+                    </span>
+                  </a>
                 ))}
               </div>
             )}

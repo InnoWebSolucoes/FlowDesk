@@ -6,6 +6,7 @@ import { EmptyState } from '../../components/shared/EmptyState'
 import { format, parseISO } from 'date-fns'
 import { useT } from '../../i18n/useT'
 import { Document } from '../../types'
+import { faviconUrl, faviconLetter } from '../../lib/favicon'
 
 const TABS = ['websites', 'documents'] as const
 type Tab = typeof TABS[number]
@@ -14,24 +15,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-/**
- * The site's own favicon, via Google's service.
- *
- * It wants a bare hostname; passing the whole URL — scheme, path and all —
- * returns nothing, which is why every tile was blank. 64px because the icons
- * are drawn at 40 and a 32px source is soft on a high-density screen.
- */
-function faviconUrl(url: string): string {
-  let host = url
-  try {
-    host = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname
-  } catch {
-    // Not parseable as a URL — strip what we can and let the service try.
-    host = url.replace(/^https?:\/\//i, '').split('/')[0]
-  }
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`
 }
 
 function fileIcon(type: string): string {
@@ -257,7 +240,7 @@ export function Toolbox() {
                     }}
                   />
                   <span className="hidden w-10 h-10 rounded-xl bg-primary-light border border-border shadow-sm items-center justify-center text-primary font-semibold">
-                    {(w.name || w.url).trim().charAt(0).toUpperCase()}
+                    {faviconLetter(w.name || w.url)}
                   </span>
                   <span className="text-text-main text-xs text-center leading-tight line-clamp-2 w-full">
                     {w.name}
