@@ -1,10 +1,14 @@
 -- ============================================================================
--- Did the last two migrations actually land?
+-- Did the migrations actually land?
 --
 -- Run this in the Supabase SQL editor. Every row should say OK. Anything
 -- saying MISSING means that migration did not run, whatever the editor said
--- at the time — a script that errors part-way through still reports the
--- statements that succeeded before it stopped.
+-- at the time — a script that errors part-way through still applies the
+-- statements that succeeded before it stopped, so "no error on screen" and
+-- "it all ran" are not the same thing.
+--
+-- The migrations are written to be safe in any order and safe to run twice,
+-- so the fix for a MISSING row is always just to run that file.
 -- ============================================================================
 
 select

@@ -33,16 +33,48 @@ alter table public.project_todos
 
 
 -- ─── 2. Tasks: deadline → each assignee's do_date ───────────────────────────
--- The deadline sat on the task and the do date sits on the assignment, so one
--- deadline becomes a day for each person the task is assigned to. Only where
--- that person has no day of their own already.
+-- The deadline sat on the task and the do date sat on the assignment, so one
+-- deadline became a day for each person the task is assigned to. Only where
+-- that person had no day of their own already.
+--
+-- Guarded, because this file may be run after 20260929000000, which drops
+-- task_assignments.do_date entirely. Writing to a column that is no longer
+-- there errors and takes the rest of the script — including the two drops
+-- below — down with it. When do_date has already gone, the question this
+-- step answered has gone with it: a task's day now lives in its frequency,
+-- and 20260929 moved the one-off dates there.
 
-update public.task_assignments a
-set do_date = t.deadline
-from public.tasks t
-where a.task_id = t.id
-  and a.do_date is null
-  and t.deadline is not null;
+do $carry$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'task_assignments'
+      and column_name = 'do_date'
+  ) then
+    execute $sql$
+      update public.task_assignments a
+      set do_date = t.deadline
+      from public.tasks t
+      where a.task_id = t.id
+        and a.do_date is null
+        and t.deadline is not null
+    $sql$;
+  end if;
+end
+$carry$;
+
+
+-- A one-off with a deadline and no date of its own takes the deadline as its
+-- date, so nothing is left without a day when the column goes. Nothing to do
+-- on a database where that already holds — which the verify script reports.
+
+update public.tasks
+set frequency = jsonb_set(
+      frequency::jsonb, '{date}', to_jsonb(to_char(deadline, 'YYYY-MM-DD'))
+    )::json
+where frequency->>'type' = 'one-off'
+  and coalesce(frequency->>'date', '') = ''
+  and deadline is not null;
 
 drop index if exists public.tasks_deadline_idx;
 
