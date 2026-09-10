@@ -67,4 +67,26 @@ select
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'project_todos'
       and column_name = 'due_date'
-  ) then 'OK' else 'MISSING — run 20260927000000_do_dates_only.sql' end;
+  ) then 'OK' else 'MISSING — run 20260927000000_do_dates_only.sql' end
+
+union all
+
+select
+  'chat_clears table exists',
+  case when exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'chat_clears'
+  ) then 'OK' else 'MISSING — run 20260930000000_chat_clear_for_me.sql' end
+
+union all
+
+-- Not a migration: the three columns that look like deadlines but are not.
+-- Each says which day's instance of a recurring task a row is about, so
+-- losing them would take every completion record with them.
+select
+  'occurrence keys still present',
+  case when (
+    select count(*) from information_schema.columns
+    where table_schema = 'public' and column_name = 'due_date'
+      and table_name in ('completion_logs', 'task_files', 'task_statuses')
+  ) = 3 then 'OK' else 'PROBLEM — a completion-tracking column has been dropped' end;
