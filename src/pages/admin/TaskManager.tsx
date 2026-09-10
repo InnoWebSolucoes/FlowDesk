@@ -30,7 +30,13 @@ const defaultTask = (): Omit<Task, 'id' | 'createdAt' | 'createdBy' | 'projectId
   isActive: true,
 })
 
-function TaskForm({
+/**
+ * The task editor. Exported so an employee's day, week and month sections can
+ * open the same form the task manager uses — a manager editing a task from a
+ * card should get the fields they already know, not a second cut-down editor
+ * that drifts from this one.
+ */
+export function TaskForm({
   initial,
   onSave,
   onCancel,
@@ -537,7 +543,13 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
   }
 
   const handleDelete = async (id: string) => {
-    await deleteTask(id)
+    // deleteTask throws on a refusal now, and an unhandled rejection here
+    // would leave the row on screen with nothing said.
+    try {
+      await deleteTask(id)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : t('task_couldNotDelete'))
+    }
   }
 
   const freqLabel = (task: Task) => {

@@ -11,6 +11,7 @@ import {
 import { Task } from '../../types'
 import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
+import { TaskEditDialog } from '../../components/shared/TaskEditDialog'
 
 const TABS = ['today', 'week', 'month'] as const
 export type TaskPeriod = typeof TABS[number]
@@ -26,6 +27,7 @@ function TimeBlock({
   todayStr,
   highlight,
   readOnly,
+  onEditTask,
 }: {
   label: string
   tasks: Task[]
@@ -37,6 +39,7 @@ function TimeBlock({
   todayStr: string
   highlight: ReturnType<typeof useHighlight>
   readOnly?: boolean
+  onEditTask?: (task: Task) => void
 }) {
   const { isInProgress: isInProgressFn, setInProgress, clearInProgress } = useTaskStore()
 
@@ -59,6 +62,7 @@ function TimeBlock({
             onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, todayStr)}
             currentUserId={empId}
             dueDate={todayStr}
+            onEdit={onEditTask ? () => onEditTask(task) : undefined}
             highlighted={highlight.isHighlighted(task.id)}
             highlightRef={highlight.ref}
           />
@@ -106,6 +110,7 @@ export function MyTasks({
   employeeId,
   readOnly,
   section,
+  manage,
 }: {
   /** Whose tasks. Defaults to the signed-in user — their own page. */
   employeeId?: string
@@ -113,6 +118,13 @@ export function MyTasks({
   readOnly?: boolean
   /** Render only this period, without the tab bar. Omitted, all three tabs. */
   section?: TaskPeriod
+  /**
+   * Offer the task editor on each card. The manager's view of somebody's week
+   * sets it; an employee's own list never does, because tasks are the
+   * manager's to change and RLS would refuse the write anyway — a pencil there
+   * would be a button that fails.
+   */
+  manage?: boolean
 } = {}) {
   const { currentUser } = useAuthStore()
   const {
@@ -133,6 +145,9 @@ export function MyTasks({
     () => new Set([format(new Date(), 'yyyy-MM-dd')]),
   )
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set([0, 1, 2, 3]))
+  // The task open in the editor, if any.
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const onEditTask = manage ? (task: Task) => setEditingTask(task) : undefined
 
   // Filters (today tab only)
   const [searchQuery, setSearchQuery] = useState('')
@@ -455,6 +470,7 @@ export function MyTasks({
                 todayStr={todayStr}
                 highlight={highlight}
                 readOnly={readOnly}
+                onEditTask={onEditTask}
               />
               <TimeBlock
                 label={t('mytasks_afternoon')}
@@ -467,6 +483,7 @@ export function MyTasks({
                 todayStr={todayStr}
                 highlight={highlight}
                 readOnly={readOnly}
+                onEditTask={onEditTask}
               />
               <TimeBlock
                 label={t('mytasks_endOfDay')}
@@ -479,6 +496,7 @@ export function MyTasks({
                 todayStr={todayStr}
                 highlight={highlight}
                 readOnly={readOnly}
+                onEditTask={onEditTask}
               />
             </>
           )}
@@ -504,6 +522,7 @@ export function MyTasks({
                       onUncomplete={() => handleUncomplete(task.id)}
                       currentUserId={empId}
                       dueDate={todayStr}
+                      onEdit={onEditTask ? () => onEditTask(task) : undefined}
                       highlighted={highlight.isHighlighted(task.id)}
                       highlightRef={highlight.ref}
                     />
@@ -573,6 +592,7 @@ export function MyTasks({
                         onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
                         currentUserId={empId}
                         dueDate={dateStr}
+                        onEdit={onEditTask ? () => onEditTask(task) : undefined}
                         highlighted={highlight.isHighlighted(task.id)}
                         highlightRef={highlight.ref}
                       />
@@ -642,7 +662,8 @@ export function MyTasks({
                                 onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
                                 currentUserId={empId}
                                 dueDate={dateStr}
-                                highlighted={highlight.isHighlighted(task.id)}
+                                onEdit={onEditTask ? () => onEditTask(task) : undefined}
+                        highlighted={highlight.isHighlighted(task.id)}
                                 highlightRef={highlight.ref}
                               />
                             ))}
@@ -656,6 +677,10 @@ export function MyTasks({
             )
           })}
         </div>
+      )}
+
+      {editingTask && (
+        <TaskEditDialog task={editingTask} onClose={() => setEditingTask(null)} />
       )}
     </div>
   )

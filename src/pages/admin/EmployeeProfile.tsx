@@ -170,7 +170,7 @@ export function EmployeeProfile() {
           {taskSection === 'all' ? (
             <TaskManager preselectedEmployee={emp.id} />
           ) : (
-            <MyTasks employeeId={emp.id} section={taskSection} />
+            <MyTasks employeeId={emp.id} section={taskSection} manage />
           )}
         </div>
       )}

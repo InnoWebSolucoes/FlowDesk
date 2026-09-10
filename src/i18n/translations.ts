@@ -113,6 +113,8 @@ const en = {
   task_colPriority: 'Priority',
   task_colTime: 'Time',
   task_deleteConfirm: 'Delete this task?',
+  task_couldNotSave: 'That task could not be saved.',
+  task_couldNotDelete: 'That task could not be deleted.',
   task_freqDaily: 'Daily',
   task_freqWeekly: 'Weekly',
   task_freqMonthly: 'Monthly',
@@ -288,6 +290,8 @@ const en = {
   taskcard_markComplete: 'Mark complete',
   taskcard_min: 'min',
   taskcard_discuss: 'Discuss in chat',
+  taskcard_edit: 'Edit task',
+  taskcard_delete: 'Delete task',
 
   // Stat Card
   statcard_vsLastPeriod: 'vs last period',
@@ -827,6 +831,8 @@ const pt: typeof en = {
   task_colPriority: 'Prioridade',
   task_colTime: 'Tempo',
   task_deleteConfirm: 'Excluir esta tarefa?',
+  task_couldNotSave: 'Não foi possível guardar essa tarefa.',
+  task_couldNotDelete: 'Não foi possível eliminar essa tarefa.',
   task_freqDaily: 'Diário',
   task_freqWeekly: 'Semanal',
   task_freqMonthly: 'Mensal',
@@ -1002,6 +1008,8 @@ const pt: typeof en = {
   taskcard_markComplete: 'Marcar como concluído',
   taskcard_min: 'min',
   taskcard_discuss: 'Discutir na conversa',
+  taskcard_edit: 'Editar tarefa',
+  taskcard_delete: 'Eliminar tarefa',
 
   // Stat Card
   statcard_vsLastPeriod: 'vs período anterior',

@@ -385,7 +385,14 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   },
 
   deleteTask: async (id) => {
-    await supabase.from('tasks').delete().eq('id', id)
+    // The result was thrown away and the row dropped from local state either
+    // way, so a refused delete looked exactly like a successful one until the
+    // task reappeared on the next reload. Say so instead.
+    const { error } = await supabase.from('tasks').delete().eq('id', id)
+    if (error) {
+      console.error('[deleteTask] failed:', error)
+      throw new Error(error.message)
+    }
     set((s) => applyTasks(s.scopedProjectId, s.allTasks.filter((t) => t.id !== id)))
   },
 

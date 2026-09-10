@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock, CheckCircle2, Circle, Timer, MessageSquare, Paperclip } from 'lucide-react'
+import { Clock, CheckCircle2, Circle, Timer, MessageSquare, Paperclip, Pencil, Trash2 } from 'lucide-react'
 import { Task, Category } from '../../types'
 import { Badge } from './Badge'
 import { useChatStore } from '../../store/chatStore'
@@ -23,6 +23,13 @@ interface TaskCardProps {
   employeeName?: string
   currentUserId?: string
   dueDate?: string
+  /**
+   * Manager actions. Present only where somebody may actually change the
+   * task — the employee's own list gets neither, and RLS would refuse them
+   * anyway, so offering a pencil there would be a button that fails.
+   */
+  onEdit?: () => void
+  onDelete?: () => void
   /**
    * Rings the card and scrolls it into view. Set when a notification pointed
    * at this task, so the reader is not left hunting a long list for it.
@@ -87,6 +94,8 @@ export function TaskCard({
   employeeName,
   currentUserId,
   dueDate,
+  onEdit,
+  onDelete,
   highlighted,
   highlightRef,
 }: TaskCardProps) {
@@ -251,6 +260,29 @@ export function TaskCard({
               <MessageSquare size={13} />
               {messageCount > 0 && <span>{messageCount}</span>}
             </button>
+
+            {/* Changing the task itself, for whoever may. Beside the other
+                two rather than hidden behind a hover: on a touch screen
+                there is no hover, and a manager going through somebody's
+                week is exactly who needs these. */}
+            {onEdit && (
+              <button
+                onClick={onEdit}
+                title={t('taskcard_edit')}
+                className="flex items-center gap-1 text-xs text-text-subtle hover:text-primary transition-colors"
+              >
+                <Pencil size={13} />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={onDelete}
+                title={t('taskcard_delete')}
+                className="flex items-center gap-1 text-xs text-text-subtle hover:text-danger transition-colors"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         </div>
       </div>
