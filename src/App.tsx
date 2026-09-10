@@ -87,12 +87,19 @@ function ProtectedRoute({
   requiredRole?: 'admin' | 'employee'
 }) {
   const { status, currentUser } = useAuthStore()
+  // Where a preview was entered from. An owner leaving one is, for a moment,
+  // an admin standing on an employee route — which is this redirect's job to
+  // correct. Sending them to the project list would undo the banner's own
+  // navigate back to the page they came from, so both use the same answer.
+  const viewAsReturnTo = useAuthStore((s) => s.viewAsReturnTo)
 
   if (status === 'loading') return <LoadingScreen />
   if (status === 'unauthenticated') return <Navigate to="/login" replace />
 
   if (requiredRole && currentUser?.role !== requiredRole) {
-    if (currentUser?.role === 'admin') return <Navigate to="/admin/projects" replace />
+    if (currentUser?.role === 'admin') {
+      return <Navigate to={viewAsReturnTo ?? '/admin/projects'} replace />
+    }
     return <Navigate to="/employee/tasks" replace />
   }
 

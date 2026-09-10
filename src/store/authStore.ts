@@ -81,10 +81,17 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     set({
       viewAs: user,
       currentUser: user ?? real,
-      // Kept only while a preview is open; entering without a path leaves
-      // whatever was there rather than clearing it, so a second call to swap
-      // between employees does not lose the way back.
-      viewAsReturnTo: user ? returnTo ?? get().viewAsReturnTo : null,
+      // Deliberately survives leaving the preview.
+      //
+      // Clearing it here is what sent you out of the project entirely.
+      // Dropping the preview flips currentUser back to the owner while the
+      // router is still on an /employee route, so ProtectedRoute bounces the
+      // now-admin off it — and that redirect raced the banner's own navigate
+      // and usually won. Both of them read this to decide where to go, so
+      // they have to agree, which means it must still be here when the
+      // redirect runs. Entering a preview overwrites it; signing in or out
+      // clears it.
+      viewAsReturnTo: returnTo ?? get().viewAsReturnTo,
     })
   },
 
