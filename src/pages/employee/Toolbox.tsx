@@ -6,7 +6,7 @@ import { EmptyState } from '../../components/shared/EmptyState'
 import { format, parseISO } from 'date-fns'
 import { useT } from '../../i18n/useT'
 import { Document } from '../../types'
-import { faviconUrl, faviconLetter } from '../../lib/favicon'
+import { Favicon } from '../../components/shared/Favicon'
 import { DocumentThumb } from '../../components/shared/DocumentThumb'
 import { fileKind } from '../../components/resources/ResourceThumbnail'
 
@@ -268,21 +268,12 @@ export function Toolbox() {
                   title={w.description || w.url}
                   className="group flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-surface-2 transition-colors"
                 >
-                  <img
-                    src={faviconUrl(w.url)}
-                    alt=""
+                  <Favicon
+                    url={w.url}
+                    name={w.name}
                     className="w-10 h-10 rounded-xl object-contain bg-surface border border-border p-1.5 shadow-sm group-hover:shadow transition-shadow"
-                    onError={e => {
-                      // A site with no favicon falls back to its first letter
-                      // rather than a broken image.
-                      const img = e.target as HTMLImageElement
-                      img.style.display = 'none'
-                      img.nextElementSibling?.classList.remove('hidden')
-                    }}
+                    letterClassName="w-10 h-10 rounded-xl bg-primary-light border border-border shadow-sm flex items-center justify-center text-primary font-semibold"
                   />
-                  <span className="hidden w-10 h-10 rounded-xl bg-primary-light border border-border shadow-sm items-center justify-center text-primary font-semibold">
-                    {faviconLetter(w.name || w.url)}
-                  </span>
                   <span className="text-text-main text-xs text-center leading-tight line-clamp-2 w-full">
                     {w.name}
                   </span>

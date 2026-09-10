@@ -1,5 +1,4 @@
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Eye, X } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useT } from '../../i18n/useT'
@@ -16,25 +15,21 @@ import { useT } from '../../i18n/useT'
 export function ViewAsBanner() {
   const viewAs = useAuthStore((s) => s.viewAs)
   const setViewAs = useAuthStore((s) => s.setViewAs)
-  const returnTo = useAuthStore((s) => s.viewAsReturnTo)
-  const navigate = useNavigate()
   const { t } = useT()
 
   if (!viewAs) return null
 
-  const leave = () => {
-    // Exactly the page it was entered from. Rebuilding a path from the
-    // employee's project landed at the top of the project instead — and for
-    // anyone without a project, at the project list — so leaving a preview
-    // meant walking back in through the project and the team list.
-    const back =
-      returnTo ??
-      (viewAs.projectId
-        ? `/admin/projects/${viewAs.projectId}/employees/team/${viewAs.id}`
-        : '/admin/projects')
-    setViewAs(null)
-    navigate(back)
-  }
+  /**
+   * Leaving is one thing: stop being them. Where that lands is not decided
+   * here at all.
+   *
+   * It used to navigate as well, which was the bug. Dropping the preview
+   * makes the owner an admin standing on an /employee route, and
+   * ProtectedRoute exists to move them off it — so two navigations raced and
+   * the guard's won, dumping you outside the project. Now only the guard
+   * navigates, and it sends you to the page the preview was entered from.
+   */
+  const leave = () => setViewAs(null)
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 bg-amber text-white flex-shrink-0">

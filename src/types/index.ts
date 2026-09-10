@@ -292,7 +292,11 @@ export interface Task {
   associatedTool?: string
   estimatedMinutes: number
   createdAt: string
-  createdBy: string
+  /**
+   * Who set it up. Null once that person has been deleted: a task outlives
+   * whoever created it, so the account going does not take the work with it.
+   */
+  createdBy: string | null
   isActive: boolean
 }
 
