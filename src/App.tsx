@@ -108,7 +108,12 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
   const initNotifications = useNotificationStore(s => s.initialize)
   const initProjects = useProjectStore(s => s.initialize)
   const initChat = useChatStore(s => s.initialize)
-  const currentUserId = useAuthStore(s => s.currentUser?.id)
+  // The real account, not whoever is being previewed. Chat rooms and usage
+  // tracking both belong to the human at the keyboard: an owner looking at
+  // somebody's side of the app must not load that person's conversations, and
+  // must certainly not be recorded as them opening the app — it would show up
+  // as their start of day and as time they spent working.
+  const currentUserId = useAuthStore(s => s.realUser?.id)
 
   useEffect(() => {
     initAuth()
@@ -130,7 +135,9 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
       // so it needs the id, not just the fact that someone is signed in.
       if (currentUserId) initChat(currentUserId)
       // How often the app is opened and for how long. Recorded for everyone;
-      // only the owner can read it back.
+      // only the owner can read it back. Keyed on the real account, so a
+      // preview is recorded against the owner doing the previewing — which is
+      // true, and is the point.
       if (currentUserId) startTracking(currentUserId)
       return
     }

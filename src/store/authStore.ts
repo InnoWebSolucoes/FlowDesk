@@ -5,7 +5,30 @@ import { User } from '../types'
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
 interface AuthState {
+  /**
+   * Who the app should behave as. Normally the signed-in account; while an
+   * owner is previewing somebody's side of FlowDesk, the person being viewed.
+   *
+   * Every employee page reads this to decide whose todos, notes, calendar and
+   * tasks to show, so swapping it here is what makes the preview real rather
+   * than a mock-up that drifts from the thing it is imitating.
+   */
   currentUser: User | null
+  /**
+   * The account actually signed in. Always the real one, never the previewed
+   * person — anything that must be true of the human at the keyboard reads
+   * this: who is being billed for the session, whose usage is recorded, whose
+   * chat rooms are loaded, and whether the preview may be entered at all.
+   */
+  realUser: User | null
+  /** The person being previewed, or null when not previewing. */
+  viewAs: User | null
+  /**
+   * Enter or leave the preview. Owner-only, and refused for anyone else here
+   * as well as by RLS — this switches what the interface shows, and showing
+   * somebody an interface they cannot use would be its own kind of lie.
+   */
+  setViewAs: (user: User | null) => void
   status: AuthStatus
   initialize: () => Promise<void>
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
@@ -38,25 +61,41 @@ async function fetchProfile(userId: string): Promise<User | null> {
   }
 }
 
-export const useAuthStore = create<AuthState>()((set) => ({
+export const useAuthStore = create<AuthState>()((set, get) => ({
   currentUser: null,
+  realUser: null,
+  viewAs: null,
   status: 'loading',
+
+  setViewAs: (user) => {
+    const real = get().realUser
+    if (!real?.isOwner) return
+    set({ viewAs: user, currentUser: user ?? real })
+  },
 
   initialize: async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (session?.user) {
       const profile = await fetchProfile(session.user.id)
-      set({ currentUser: profile, status: profile ? 'authenticated' : 'unauthenticated' })
+      set({ currentUser: profile, realUser: profile, viewAs: null, status: profile ? 'authenticated' : 'unauthenticated' })
     } else {
-      set({ currentUser: null, status: 'unauthenticated' })
+      set({ currentUser: null, realUser: null, viewAs: null, status: 'unauthenticated' })
     }
 
     supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
         const profile = await fetchProfile(session.user.id)
-        set({ currentUser: profile, status: profile ? 'authenticated' : 'unauthenticated' })
+        // A token refresh must not drop the preview: this fires on its own
+        // every hour, and being thrown back to the admin side mid-sentence
+        // would look like the app losing its place.
+        const stillPreviewing = get().viewAs
+        set({
+          realUser: profile,
+          currentUser: stillPreviewing ?? profile,
+          status: profile ? 'authenticated' : 'unauthenticated',
+        })
       } else {
-        set({ currentUser: null, status: 'unauthenticated' })
+        set({ currentUser: null, realUser: null, viewAs: null, status: 'unauthenticated' })
       }
     })
   },
@@ -70,13 +109,13 @@ export const useAuthStore = create<AuthState>()((set) => ({
     if (!profile) {
       return { success: false, error: 'Profile not found' }
     }
-    set({ currentUser: profile, status: 'authenticated' })
+    set({ currentUser: profile, realUser: profile, viewAs: null, status: 'authenticated' })
     return { success: true }
   },
 
   logout: async () => {
     await supabase.auth.signOut()
-    set({ currentUser: null, status: 'unauthenticated' })
+    set({ currentUser: null, realUser: null, viewAs: null, status: 'unauthenticated' })
   },
 
   requestPasswordReset: async (email) => {

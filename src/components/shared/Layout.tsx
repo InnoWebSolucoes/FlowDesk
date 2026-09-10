@@ -1,6 +1,7 @@
 import React from 'react'
 import { Outlet, useLocation, useMatch } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
+import { ViewAsBanner } from './ViewAsBanner'
 import { NotificationBell } from './NotificationBell'
 import { useProjectStore } from '../../store/projectStore'
 
@@ -42,6 +43,10 @@ export function Layout() {
     <div className="flex h-screen bg-bg overflow-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Above everything, including the sidebar's own chrome: forgetting
+            you are inside somebody else's account is the one failure mode
+            this feature has. */}
+        <ViewAsBanner />
         {/* Top bar */}
         <header className="h-16 bg-surface border-b border-border px-6 flex items-center justify-between flex-shrink-0 md:pl-6 pl-16">
           <h1 className="text-text-main font-semibold text-lg flex items-center gap-2 min-w-0">

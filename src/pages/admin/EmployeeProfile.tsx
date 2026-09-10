@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Globe } from 'lucide-react'
+import { ArrowLeft, Globe, Eye } from 'lucide-react'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useToolStore } from '../../store/toolStore'
 import { useAuthStore } from '../../store/authStore'
@@ -37,6 +37,8 @@ export function EmployeeProfile() {
   const { allEmployees } = useEmployeeStore()
   const { websites, getGuidelines, saveGuidelines } = useToolStore()
   const { currentUser } = useAuthStore()
+  const setViewAs = useAuthStore((s) => s.setViewAs)
+  const isOwner = !!useAuthStore((s) => s.realUser?.isOwner)
   const getProject = useProjectStore((s) => s.getProject)
   const { t, dateLocale } = useT()
 
@@ -115,14 +117,35 @@ export function EmployeeProfile() {
       </button>
 
       <div className="bg-surface rounded-xl border border-border p-5 mb-5">
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-4 flex-wrap">
           <Avatar id={emp.id} initials={emp.avatarInitials} name={emp.name} size={64} />
-          <div className="flex-1">
+          <div className="flex-1 min-w-[12rem]">
             <h2 className="text-text-main font-bold text-lg">{emp.name}</h2>
             <p className="text-text-muted text-sm">{emp.jobTitle} · {emp.department}</p>
             <p className="text-text-subtle text-xs mt-1">{emp.email}</p>
             <p className="text-text-subtle text-xs">{t('profile_joined')} {format(parseISO(emp.joinDate), 'EEE d MMM yyyy', dateLocale)}</p>
           </div>
+
+          {/* Their whole side of FlowDesk, exactly as they see it — not a
+              read-only imitation of it. The tabs on this page each show one
+              slice through a manager's lens; this is the app itself, so what
+              you are looking at cannot drift from what they are looking at.
+              Owner-only, because it is a way into somebody else's workspace.
+              Nothing done in there is recorded as them being at work: the
+              session tracking is keyed on the real account. */}
+          {isOwner && (
+            <button
+              onClick={() => {
+                setViewAs(emp)
+                navigate('/employee/tasks')
+              }}
+              className="flex items-center gap-2 bg-primary text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-primary-dark transition-colors flex-shrink-0"
+              title={t('viewas_buttonHint')}
+            >
+              <Eye size={16} />
+              {t('viewas_button').replace('{name}', emp.name.split(' ')[0])}
+            </button>
+          )}
         </div>
       </div>
 
