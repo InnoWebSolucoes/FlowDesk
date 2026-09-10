@@ -79,6 +79,33 @@ export function isTaskDueOnDate(task: Task, employeeId: string, date: Date): boo
 }
 
 /**
+ * The day a task counts for, for one person, when it is being worked on today.
+ *
+ * Completion is recorded per day, so this is the key both sides of that have
+ * to agree on: the day a completion is written against, and the day it is
+ * looked up under. They did not agree, and the result was work coming back
+ * from the dead.
+ *
+ * A task owed from an earlier day still shows in Today, because overdue work
+ * carries forward. Ticking it wrote the log against *today*, while the task
+ * belonged to its own earlier day — so the next morning the lookup for that
+ * earlier day found nothing, and a task finished weeks ago was pending again.
+ * Every day, forever, with an Overdue badge on it.
+ *
+ * So: whichever day the task is actually for. The do date if it has one, the
+ * date of a one-off if it does not, and today for a recurrence — which comes
+ * round again tomorrow and is genuinely a different piece of work each time.
+ */
+export function taskOccurrenceDay(task: Task, employeeId: string, today: string): string {
+  const planned = task.schedules?.find((s) => s.employeeId === employeeId)?.doDate
+  if (planned) return planned
+  if (task.frequency.type === 'one-off' && task.frequency.date) {
+    return task.frequency.date.slice(0, 10)
+  }
+  return today
+}
+
+/**
  * Returns all tasks assigned to this employee that are due on this specific date.
  */
 export function getTasksDueOnDate(tasks: Task[], employeeId: string, date: Date): Task[] {

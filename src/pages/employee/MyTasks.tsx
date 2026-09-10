@@ -5,7 +5,7 @@ import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskCard } from '../../components/shared/TaskCard'
 import {
-  getTasksDueOnDate, getTasksDueThrough,
+  getTasksDueOnDate, getTasksDueThrough, taskOccurrenceDay,
   getTasksDueThisWeekCumulative, getTasksDueThisMonthCumulative,
 } from '../../utils/taskScheduler'
 import { Task } from '../../types'
@@ -147,8 +147,24 @@ export function MyTasks({
   // what today's recurrence happens to produce. A task due yesterday is still
   // owed, and leaving it off is how work quietly disappears.
   const todayTasksRaw = getTasksDueThrough(tasks, empId, today)
-  const completedToday = completionLogs.filter(l => l.employeeId === empId && l.dueDate === todayStr)
-  const completedIds = new Set(completedToday.map(l => l.taskId))
+
+  // Done is looked up under the day the task is for, not under today. A task
+  // owed from an earlier day carries forward into this list, and checking only
+  // today's logs meant one finished last month read as pending every morning
+  // since. The tick below writes to the same day, so the two agree.
+  const dayOf = (task: Task) => taskOccurrenceDay(task, empId, todayStr)
+  const isDone = (task: Task) =>
+    completionLogs.some(
+      (l) => l.employeeId === empId && l.taskId === task.id && l.dueDate === dayOf(task),
+    )
+  const completedIds = new Set(todayTasksRaw.filter(isDone).map((task) => task.id))
+
+  // The logs behind those, for the "all done at HH:mm" line. Filtered by task
+  // rather than by date, because a task finished on its own earlier day still
+  // belongs to today's list and its log is the one that timed the finish.
+  const completedToday = completionLogs.filter(
+    (l) => l.employeeId === empId && completedIds.has(l.taskId),
+  )
 
   // Apply filters to today tasks
   const todayTasks = todayTasksRaw.filter(task => {
@@ -171,8 +187,19 @@ export function MyTasks({
 
   // No-ops when reading somebody else's: the cards still show what is done,
   // they just are not buttons any more.
-  const handleComplete = (taskId: string) => { if (!readOnly) completeTask(taskId, empId, todayStr) }
-  const handleUncomplete = (taskId: string) => { if (!readOnly) uncompleteTask(taskId, empId, todayStr) }
+  //
+  // Written against the day the task is for, which for overdue work is not
+  // today. Logging it under today is what made a finished task come back.
+  const dayOfId = (taskId: string) => {
+    const task = tasks.find((x) => x.id === taskId)
+    return task ? dayOf(task) : todayStr
+  }
+  const handleComplete = (taskId: string) => {
+    if (!readOnly) completeTask(taskId, empId, dayOfId(taskId))
+  }
+  const handleUncomplete = (taskId: string) => {
+    if (!readOnly) uncompleteTask(taskId, empId, dayOfId(taskId))
+  }
 
   const morning: Task[] = []
   const afternoon: Task[] = []
@@ -196,8 +223,35 @@ export function MyTasks({
     const d = addDays(today, i - 1)
     return { date: d, dateStr: format(d, 'yyyy-MM-dd') }
   })
+  /**
+   * What lands on a given day in the week and month grids.
+   *
+   * Today is the exception, deliberately: it shows what the Today tab shows,
+   * which includes work still owed from earlier days. Asking the recurrence
+   * alone what belongs on today gave a different answer from the tab right
+   * next to it — a task overdue since last week appeared in Today and was
+   * missing from today's cell in the same week's grid.
+   */
+  const tasksOn = (date: Date, dateStr: string) =>
+    dateStr === todayStr ? todayTasksRaw : getTasksDueOnDate(tasks, empId, date)
+
+  /**
+   * How many of those are finished. Counted by looking each task up rather
+   * than by counting logs for the day, so it can never exceed the list: a log
+   * outlives the task it was for, and counting logs produced "14/9 done".
+   */
+  const doneOn = (list: Task[], dateStr: string) =>
+    list.filter((task) =>
+      completionLogs.some(
+        (l) =>
+          l.employeeId === empId &&
+          l.taskId === task.id &&
+          l.dueDate === (dateStr === todayStr ? dayOf(task) : dateStr),
+      ),
+    ).length
+
   const weekTaskMap = Object.fromEntries(
-    weekDays.map(({ date, dateStr }) => [dateStr, getTasksDueOnDate(tasks, empId, date)]),
+    weekDays.map(({ date, dateStr }) => [dateStr, tasksOn(date, dateStr)]),
   ) as Record<string, Task[]>
 
   const toggleDay = (ds: string) => {
@@ -288,7 +342,7 @@ export function MyTasks({
       return
     }
     const monthWeek = monthByWeek.find(({ days }) =>
-      days.some(({ date }) => getTasksDueOnDate(tasks, empId, date).some((x) => x.id === id))
+      days.some(({ date, dateStr }) => tasksOn(date, dateStr).some((x) => x.id === id))
     )
     if (monthWeek) {
       setTab('month')
@@ -470,7 +524,7 @@ export function MyTasks({
           />
           {weekDays.map(({ date, dateStr }) => {
             const dayTasks = weekTaskMap[dateStr] ?? []
-            const done = completionLogs.filter(l => l.employeeId === empId && l.dueDate === dateStr).length
+            const done = doneOn(dayTasks, dateStr)
             const total = dayTasks.length
             const rate = total > 0 ? Math.round((done / total) * 100) : 0
             const isPast = date < today && dateStr !== todayStr
@@ -510,13 +564,13 @@ export function MyTasks({
                       <TaskCard
                         key={task.id}
                         task={task}
-                        isCompleted={isTaskCompleted(task.id, empId, dateStr)}
+                        isCompleted={isTaskCompleted(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
                         isInProgress={isInProgressFn(task.id, empId, dateStr)}
                         category={categories.find(c => c.id === task.categoryId)}
-                        onComplete={() => completeTask(task.id, empId, dateStr)}
-                        onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
-                        onSetInProgress={readOnly ? undefined : () => setInProgress(task.id, empId, dateStr)}
-                        onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, dateStr)}
+                        onComplete={() => completeTask(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
+                        onUncomplete={() => uncompleteTask(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
+                        onSetInProgress={readOnly ? undefined : () => setInProgress(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
+                        onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
                         currentUserId={empId}
                         dueDate={dateStr}
                         highlighted={highlight.isHighlighted(task.id)}
@@ -543,9 +597,9 @@ export function MyTasks({
             const weekEnd = days[days.length - 1].dateStr
             let totalWeek = 0, doneWeek = 0
             days.forEach(({ date, dateStr }) => {
-              const dt = getTasksDueOnDate(tasks, empId, date)
+              const dt = tasksOn(date, dateStr)
               totalWeek += dt.length
-              doneWeek += completionLogs.filter(l => l.employeeId === empId && l.dueDate === dateStr).length
+              doneWeek += doneOn(dt, dateStr)
             })
             const isExpanded = expandedWeeks.has(wn)
 
@@ -569,7 +623,7 @@ export function MyTasks({
                 {isExpanded && (
                   <div className="px-4 pb-4 space-y-4">
                     {days.map(({ date, dateStr }) => {
-                      const dt = getTasksDueOnDate(tasks, empId, date)
+                      const dt = tasksOn(date, dateStr)
                       if (dt.length === 0) return null
                       return (
                         <div key={dateStr}>
@@ -579,13 +633,13 @@ export function MyTasks({
                               <TaskCard
                                 key={task.id}
                                 task={task}
-                                isCompleted={isTaskCompleted(task.id, empId, dateStr)}
+                                isCompleted={isTaskCompleted(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
                                 isInProgress={isInProgressFn(task.id, empId, dateStr)}
                                 category={categories.find(c => c.id === task.categoryId)}
-                                onComplete={() => completeTask(task.id, empId, dateStr)}
-                                onUncomplete={() => uncompleteTask(task.id, empId, dateStr)}
-                                onSetInProgress={readOnly ? undefined : () => setInProgress(task.id, empId, dateStr)}
-                                onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, dateStr)}
+                                onComplete={() => completeTask(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
+                                onUncomplete={() => uncompleteTask(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
+                                onSetInProgress={readOnly ? undefined : () => setInProgress(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
+                                onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, dateStr === todayStr ? dayOf(task) : dateStr)}
                                 currentUserId={empId}
                                 dueDate={dateStr}
                                 highlighted={highlight.isHighlighted(task.id)}
