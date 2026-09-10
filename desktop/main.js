@@ -12,7 +12,13 @@ const { FlowdeskSync } = require('./sync')
 const config = require('./config')
 
 const DIVIDER_W = 12
-const COLLAPSED_W = 16
+// Nothing, when Claude is hidden. This used to be a 16px strip down the right
+// edge of the window that opened the side column on any click — directly on
+// top of where every page keeps its scrollbar. Reaching for the scrollbar,
+// or a click that overshot the edge, opened Claude as a column nobody had
+// asked for. The column now opens only on purpose: Ctrl+Shift+C, or Toggle
+// Claude Panel in the menu. The pixels go back to the page.
+const COLLAPSED_W = 0
 const MIN_RATIO = 0.2
 const MAX_RATIO = 0.85
 const CLAUDE_URL = 'https://claude.ai/'

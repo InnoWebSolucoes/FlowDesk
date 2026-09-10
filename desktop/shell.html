@@ -63,9 +63,10 @@
   window.addEventListener('pointerup', stop)
   window.addEventListener('blur', stop)
 
-  divider.addEventListener('click', (e) => {
-    if (collapsed && e.target !== toggleBtn) window.shellAPI.toggle()
-  })
+  // No "click the collapsed strip to open Claude" any more. The strip has no
+  // width when collapsed, and this handler is gone as well so that the edge of
+  // the window can never become a way to open the column by accident again —
+  // it opens on purpose, from the shortcut or the menu, or not at all.
   divider.addEventListener('dblclick', () => {
     // Make sure the presses that produced this double click left nothing held.
     stop()
