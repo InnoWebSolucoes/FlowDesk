@@ -14,15 +14,32 @@ export function getWeekOfMonth(date: Date): number {
 }
 
 /**
- * Returns whether a task is due on a specific date for a given employee.
+ * Whether a task lands on a given day for a given person.
+ *
+ * A do date wins outright. Somebody has said which day this is happening on,
+ * and that beats working it out from the recurrence — so a weekly task moved
+ * to Thursday is on Thursday and nowhere else, rather than on Thursday *and*
+ * every Monday its rule would otherwise produce.
+ *
+ * This is the rule the calendar has always applied. The day-by-day breakdowns
+ * in My Tasks did not: they went straight to the recurrence, so once do dates
+ * became the only date a task carries, work planned for today stopped showing
+ * in the week and month views at all. One rule, in one place, for both.
  */
 export function isTaskDueOnDate(task: Task, employeeId: string, date: Date): boolean {
   if (!task.isActive) return false
   if (!task.assignedTo.includes(employeeId)) return false
 
+  const planned = task.schedules?.find((s) => s.employeeId === employeeId)?.doDate
+  if (planned) return planned === format(date, 'yyyy-MM-dd')
+
   // A recurrence describes what happens from now on, not what should have
   // happened before the task existed. Without this a new monthly task appears
   // as months of missed work the moment it is created.
+  //
+  // Only for the recurrence: an explicit do date is somebody's decision about
+  // a specific day, and second-guessing it against the creation date would
+  // silently drop a task deliberately planned for earlier in the week.
   if (task.createdAt) {
     const created = startOfDay(parseISO(task.createdAt))
     if (startOfDay(date) < created) return false

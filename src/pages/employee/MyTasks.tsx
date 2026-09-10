@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { format, startOfWeek, addDays, startOfMonth, getDaysInMonth } from 'date-fns'
+import { format, addDays } from 'date-fns'
 import { ChevronDown, ChevronRight, PartyPopper, Search } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
@@ -186,17 +186,19 @@ export function MyTasks({
     else afternoon.push(task)
   })
 
-  const monday = startOfWeek(today, { weekStartsOn: 1 })
-  const weekTaskMap = Object.fromEntries(
-    Array.from({ length: 5 }, (_, i) => {
-      const d = addDays(startOfWeek(today, { weekStartsOn: 1 }), i)
-      return [format(d, 'yyyy-MM-dd'), getTasksDueOnDate(tasks, empId, d)]
-    })
-  ) as Record<string, Task[]>
-  const weekDays = Array.from({ length: 5 }, (_, i) => {
-    const d = addDays(monday, i)
+  // Yesterday, today, and the next five — the calendar's week exactly, so the
+  // two views of the same week line up rather than disagreeing about which
+  // days a week contains. Monday-to-Friday was the old shape: it put today at
+  // the far right on a Friday, hid the weekend entirely, and on a Monday
+  // showed four days nobody had reached yet and none of the work still owed
+  // from the days just gone.
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(today, i - 1)
     return { date: d, dateStr: format(d, 'yyyy-MM-dd') }
   })
+  const weekTaskMap = Object.fromEntries(
+    weekDays.map(({ date, dateStr }) => [dateStr, getTasksDueOnDate(tasks, empId, date)]),
+  ) as Record<string, Task[]>
 
   const toggleDay = (ds: string) => {
     setExpandedDays(prev => {
@@ -217,25 +219,23 @@ export function MyTasks({
       completionLogs.some((l) => l.employeeId === empId && l.taskId === task.id)
     ).length
 
-  const daysInMonth = getDaysInMonth(today)
+  // Four weeks rolling from yesterday, in rows of seven — the calendar's month,
+  // which is also four weeks and also does not care where the calendar month
+  // happens to start. A real month spent half its width on days already gone,
+  // and on the 28th showed three days and called it a month.
+  //
+  // Weekends are in it now. They were skipped, which was defensible when a
+  // task's day came from a weekday recurrence, but a do date can land on a
+  // Saturday and work planned for one simply vanished from the view.
+  const monthDays = Array.from({ length: 28 }, (_, i) => {
+    const d = addDays(today, i - 1)
+    return { date: d, dateStr: format(d, 'yyyy-MM-dd') }
+  })
 
   const monthByWeek: { weekNum: number; days: { date: Date; dateStr: string }[] }[] = []
-  let currentWeek: { date: Date; dateStr: string }[] = []
-  let weekNum = 0
-
-  for (let d = 1; d <= daysInMonth; d++) {
-    const date = new Date(today.getFullYear(), today.getMonth(), d)
-    const dow = date.getDay()
-    if (dow === 0 || dow === 6) continue
-
-    if (dow === 1 && currentWeek.length > 0) {
-      monthByWeek.push({ weekNum, days: currentWeek })
-      weekNum++
-      currentWeek = []
-    }
-    currentWeek.push({ date, dateStr: format(date, 'yyyy-MM-dd') })
+  for (let i = 0; i < monthDays.length; i += 7) {
+    monthByWeek.push({ weekNum: i / 7, days: monthDays.slice(i, i + 7) })
   }
-  if (currentWeek.length > 0) monthByWeek.push({ weekNum, days: currentWeek })
 
   const toggleWeek = (n: number) => {
     setExpandedWeeks(prev => {
@@ -558,7 +558,7 @@ export function MyTasks({
                   <div className="flex items-center gap-3">
                     {isExpanded ? <ChevronDown size={15} className="text-text-subtle" /> : <ChevronRight size={15} className="text-text-subtle" />}
                     <span className="text-sm font-medium text-text-main">
-                      {t('mytasks_week')} {wn + 1}, {format(new Date(weekStart), 'd MMM', dateLocale)}, {format(new Date(weekEnd), 'd MMM', dateLocale)}
+                      {format(new Date(weekStart), 'd MMM', dateLocale)} – {format(new Date(weekEnd), 'd MMM', dateLocale)}
                     </span>
                   </div>
                   <span className="text-xs text-text-muted">

@@ -257,7 +257,6 @@ const en = {
   mytasks_done: 'done',
   mytasks_todayBadge: 'Today',
   mytasks_of: 'of',
-  mytasks_week: 'Week',
 
   // Toolbox
   toolbox_websites: 'Websites',
@@ -972,7 +971,6 @@ const pt: typeof en = {
   mytasks_done: 'feito',
   mytasks_todayBadge: 'Hoje',
   mytasks_of: 'de',
-  mytasks_week: 'Semana',
 
   // Toolbox
   toolbox_websites: 'Sites',

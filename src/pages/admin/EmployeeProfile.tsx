@@ -136,12 +136,19 @@ export function EmployeeProfile() {
 
       {/* Their work in the same four cuts, in the same order: today, this
           week, this month, then everything. The first three are the very
-          component the employee looks at — read-only and one period at a
-          time — so what a manager sees of somebody's day is that person's
-          actual day rather than a second, differently-shaped summary of it
-          that can quietly disagree with it. The fourth is the task manager
-          that was here already, which is the only one of the four you can
-          edit from. */}
+          component the employee looks at, one period at a time, so what a
+          manager sees of somebody's day is that person's actual day rather
+          than a second, differently-shaped summary that can quietly disagree
+          with it. The fourth is the task manager that was here already.
+
+          All four are editable. They were read-only, on the reasoning that a
+          stray click should not tick off somebody else's work — but that made
+          the view something to look at and nothing to act on, and a manager
+          who watched the work happen had to go elsewhere to record it. The
+          completion is written against the employee, not the manager, which
+          is what marking somebody's work done should mean. RLS allows it:
+          completion_logs and task_statuses both let is_admin() write any
+          row. */}
       {tab === 'tasks' && (
         <div>
           <div className="flex items-center gap-1 mb-5 overflow-x-auto">
@@ -163,7 +170,7 @@ export function EmployeeProfile() {
           {taskSection === 'all' ? (
             <TaskManager preselectedEmployee={emp.id} />
           ) : (
-            <MyTasks employeeId={emp.id} section={taskSection} readOnly />
+            <MyTasks employeeId={emp.id} section={taskSection} />
           )}
         </div>
       )}
@@ -190,7 +197,12 @@ export function EmployeeProfile() {
           same board (project + their own owner id), so assigned work is the
           filled purple block and their own todos are the outlined one. Rendering
           anything else here would be a second, differently coloured calendar
-          claiming to be theirs. Read-only — their plan is theirs to change. */}
+          claiming to be theirs.
+
+          Editable, unlike their work log and notes. A manager reschedules
+          work and ticks off what they watched get done, and having to leave
+          for the task manager to move a single day made this something to
+          look at rather than something to work from. */}
       {tab === 'calendar' && (
         !empProject ? (
           <p className="text-text-muted text-sm py-8">{t('profile_notOnProject')}</p>
@@ -199,7 +211,6 @@ export function EmployeeProfile() {
             project={empProject}
             ownerId={emp.id}
             basePath={`/admin/projects/${empProject.id}`}
-            readOnly
           />
         )
       )}
