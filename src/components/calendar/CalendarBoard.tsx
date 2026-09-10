@@ -12,7 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useAuthStore } from '../../store/authStore'
-import { isTaskDueOnDate } from '../../utils/taskScheduler'
+import { taskOccurrences, TaskOccurrence } from '../../utils/taskScheduler'
 import { personColor, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
@@ -53,6 +53,12 @@ interface Block {
   ownerName?: string
   /** For a task block: whose assignment this is, so it can be rescheduled. */
   employeeId?: string
+  /**
+   * For a task block: the day this occurrence is for. Usually the day it is
+   * shown on, but not for work carried forward from an earlier day — and the
+   * tick has to be logged against the occurrence, not against where it sits.
+   */
+  occDate?: string
   /** For a task block: whether that person has done it on the day shown. */
   done?: boolean
   /** Started but not finished, so it can be shown as under way. */
@@ -102,7 +108,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   } = useProjectStore()
 
   const {
-    tasks, completeTask, uncompleteTask, isTaskCompleted,
+    tasks, completionLogs, completeTask, uncompleteTask, isTaskCompleted,
     setInProgress, clearInProgress, isInProgress,
   } = useTaskStore()
   const { employees } = useEmployeeStore()
@@ -198,6 +204,27 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
     else setCursor((c) => addWeeks(c, 4 * dir))
   }
 
+  // Every task occurrence on screen, placed on its day by the same rule My
+  // Tasks uses, so a task is never on one day here and another day there.
+  const occurrencesByDay = useMemo(() => {
+    const map = new Map<string, { occ: TaskOccurrence; employeeId: string }[]>()
+    if (days.length === 0) return map
+    const owners = canOverlay ? [...overlaid] : ownerId ? [ownerId] : []
+    const range = {
+      from: dayKey(days[0]),
+      to: dayKey(days[days.length - 1]),
+      today: dayKey(new Date()),
+    }
+    for (const emp of owners) {
+      for (const occ of taskOccurrences(tasks, emp, completionLogs, range)) {
+        const list = map.get(occ.showOn) ?? []
+        list.push({ occ, employeeId: emp })
+        map.set(occ.showOn, list)
+      }
+    }
+    return map
+  }, [days, tasks, completionLogs, canOverlay, overlaid, ownerId])
+
   // The lists on this board. The store holds whatever was loaded last, so
   // without this the panel can be handed another owner's lists.
   const boardLists = useMemo(
@@ -246,32 +273,21 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       }
 
       // Assigned work belongs on the calendar too, otherwise an employee has
-      // to hold two lists in their head. Shown on the day it is planned for;
-      // if nobody has planned it, on the days its recurrence puts it on, so
-      // it is not invisible.
-      const scheduleOwners = canOverlay ? [...overlaid] : [ownerId!]
-      if (visible('do')) for (const empIdForCal of scheduleOwners) {
-        const who = employees.find((e) => e.id === empIdForCal)
-        for (const task of tasks) {
-          if (!task.isActive || !task.assignedTo.includes(empIdForCal)) continue
-
-          if (!isTaskDueOnDate(task, empIdForCal, parseISO(day))) continue
-
-          // One kind of task block now. There used to be two — the work on
-          // its do date, and a faded red marker on its deadline — and a task
-          // with both put the same title on the calendar twice, in two
-          // colours, meaning two different things. Every day a task appears
-          // on is a day it is meant to be worked on.
+      // to hold two lists in their head. Placed by taskOccurrences: on its own
+      // day until that day is over, then carried forward a day at a time until
+      // it is done, then left on the day it was done.
+      if (visible('do')) {
+        for (const { occ, employeeId: empIdForCal } of occurrencesByDay.get(day) ?? []) {
+          const who = employees.find((e) => e.id === empIdForCal)
           blocks.push({
-            key: `task-${task.id}-${empIdForCal}`,
-            label: task.title,
+            key: `task-${occ.task.id}-${empIdForCal}-${occ.date}`,
+            label: occ.task.title,
             color: personColor(empIdForCal),
-            task,
+            task: occ.task,
             employeeId: empIdForCal,
-            // The day it is shown on is the day it counts for: a recurring
-            // task is done again each time it comes round.
-            done: isTaskCompleted(task.id, empIdForCal, day),
-            started: isInProgress(task.id, empIdForCal, day),
+            occDate: occ.date,
+            done: occ.completed,
+            started: isInProgress(occ.task.id, empIdForCal, occ.date),
             ownerName: canOverlay ? who?.name : undefined,
           })
         }
@@ -299,7 +315,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       return blocks
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay, otherPersonsBoard],
+    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -950,7 +966,7 @@ function DayGrid({
                       : b.todo
                         ? () => onToggleDone(b.todo!.id)
                         : b.task && b.employeeId
-                          ? () => onToggleTask(b.task!.id, b.employeeId!, key)
+                          ? () => onToggleTask(b.task!.id, b.employeeId!, b.occDate ?? key)
                           : undefined
                   }
                   onContext={
@@ -1091,7 +1107,7 @@ function MonthGrid({
                       : b.todo
                         ? () => onToggleDone(b.todo!.id)
                         : b.task && b.employeeId
-                          ? () => onToggleTask(b.task!.id, b.employeeId!, key)
+                          ? () => onToggleTask(b.task!.id, b.employeeId!, b.occDate ?? key)
                           : undefined
                   }
                   onContext={

@@ -1,4 +1,4 @@
-import { Task } from '../types'
+import { Task, CompletionLog } from '../types'
 import {
   format, startOfWeek, endOfWeek, addDays, getDay, parseISO,
   startOfMonth, endOfMonth, isWithinInterval, startOfDay, isBefore,
@@ -68,28 +68,122 @@ export function isTaskDueOnDate(task: Task, employeeId: string, date: Date): boo
 }
 
 /**
- * The day a task counts for, for one person, when it is being worked on today.
- *
- * Completion is recorded per day, so this is the key both sides of that have
- * to agree on: the day a completion is written against, and the day it is
- * looked up under. They did not agree, and the result was work coming back
- * from the dead.
- *
- * A task owed from an earlier day still shows in Today, because overdue work
- * carries forward. Ticking it wrote the log against *today*, while the task
- * belonged to its own earlier day — so the next morning the lookup for that
- * earlier day found nothing, and a task finished weeks ago was pending again.
- * Every day, forever, with an Overdue badge on it.
- *
- * So: whichever day the task is actually for. A one-off's own date, and today
- * for a recurrence — which comes round again tomorrow and is genuinely a
- * different piece of work each time.
+ * One piece of work on one day: a task, and the day it is for.
  */
-export function taskOccurrenceDay(task: Task, _employeeId: string, today: string): string {
-  if (task.frequency.type === 'one-off' && task.frequency.date) {
-    return task.frequency.date.slice(0, 10)
+export interface TaskOccurrence {
+  task: Task
+  /** The day this occurrence is for. Its identity, and the key its completion is logged under. */
+  date: string
+  /** The single day it is shown on. See taskOccurrences for the rule. */
+  showOn: string
+  completed: boolean
+  completedAt: string | null
+  /** Missed and still owed, so moved forward onto today. */
+  carried: boolean
+}
+
+const keyOf = (d: Date) => format(d, 'yyyy-MM-dd')
+const shiftKey = (key: string, days: number) => keyOf(addDays(parseISO(key), days))
+
+/**
+ * Every occurrence of every task for one person that is shown between two
+ * days, each placed on the one day it belongs on.
+ *
+ * The rule, from the point of view of the person doing the work:
+ *   - A task lives on its own day until that day is over.
+ *   - If it is not done by midnight it moves to the next day, and keeps moving
+ *     a day at a time until it is done.
+ *   - Once done, it stays on the day it was done.
+ *
+ * The calendar and My Tasks both read this. They used to decide separately —
+ * the calendar from the recurrence alone, My Tasks from "anything due in the
+ * last sixty days", with done checked against today — so the same task sat on
+ * different days in each, and a weekly Monday task stayed on Today every day
+ * for two months even after it was ticked.
+ *
+ * A repeating task carries forward only until its next occurrence arrives.
+ * Taken literally, a daily task missed for three weeks would put fifteen
+ * copies of itself on today. So a miss moves forward until the next one is
+ * due, and then stays on its own day as a miss — still counted as missed —
+ * while the new one takes its place. At most one carried copy per repeating
+ * task; a one-off carries until it is done.
+ *
+ * A one-off happens exactly once, so any completion by this person finishes
+ * it, whatever day the log was written under. One-offs used to be logged
+ * against the day they were ticked rather than their own date, and without
+ * this those old ticks would not count and finished work would come back.
+ *
+ * `today` is the real today. A view looking at another week passes that
+ * week's days as the range, but work only moves forward in real time.
+ */
+export function taskOccurrences(
+  tasks: Task[],
+  employeeId: string,
+  logs: CompletionLog[],
+  range: { from: string; to: string; today: string },
+  lookbackDays = 60,
+): TaskOccurrence[] {
+  const { from, to, today } = range
+
+  const byTaskDay = new Map<string, CompletionLog>()
+  const latestByTask = new Map<string, CompletionLog>()
+  for (const l of logs) {
+    if (l.employeeId !== employeeId) continue
+    byTaskDay.set(`${l.taskId}|${l.dueDate}`, l)
+    const prev = latestByTask.get(l.taskId)
+    if (!prev || l.completedAt > prev.completedAt) latestByTask.set(l.taskId, l)
   }
-  return today
+
+  // Far enough back to find anything still being carried, far enough forward
+  // to cover both the range and today.
+  const lookback = shiftKey(today, -lookbackDays)
+  const genFrom = from < lookback ? from : lookback
+  const genTo = to > today ? to : today
+
+  const out: TaskOccurrence[] = []
+
+  const place = (task: Task, date: string, next: string | null, log: CompletionLog | null) => {
+    let showOn: string
+    let carried = false
+    if (log) {
+      const doneDay = keyOf(parseISO(log.completedAt))
+      // Finished after its next occurrence had already replaced it: it was
+      // never on anyone's list that day, so it stays on its own day.
+      if (next && next <= doneDay) showOn = date
+      else showOn = doneDay > date ? doneDay : date
+    } else if (date >= today) {
+      showOn = date
+    } else if (next && next <= today) {
+      showOn = date
+    } else {
+      showOn = today
+      carried = true
+    }
+    if (showOn < from || showOn > to) return
+    out.push({ task, date, showOn, completed: !!log, completedAt: log?.completedAt ?? null, carried })
+  }
+
+  for (const task of tasks) {
+    if (!task.isActive || !task.assignedTo.includes(employeeId)) continue
+
+    if (task.frequency.type === 'one-off') {
+      const date = task.frequency.date ? task.frequency.date.slice(0, 10) : null
+      if (!date || !isTaskDueOnDate(task, employeeId, parseISO(date))) continue
+      place(task, date, null, byTaskDay.get(`${task.id}|${date}`) ?? latestByTask.get(task.id) ?? null)
+      continue
+    }
+
+    const dates: string[] = []
+    for (let d = parseISO(genFrom); keyOf(d) <= genTo; d = addDays(d, 1)) {
+      if (isTaskDueOnDate(task, employeeId, d)) dates.push(keyOf(d))
+    }
+    for (let i = 0; i < dates.length; i++) {
+      const next = i + 1 < dates.length ? dates[i + 1] : null
+      place(task, dates[i], next, byTaskDay.get(`${task.id}|${dates[i]}`) ?? null)
+    }
+  }
+
+  return out
 }
 
 /**
@@ -145,58 +239,6 @@ export function getTasksDueThisMonth(
   return result
 }
 
-/**
- * Everything this employee must finish on or before `through`.
- *
- * This is what the My Tasks tabs ask for, and it is deliberately cumulative:
- * "this week" means everything due by the end of the week, today's work
- * included, not just Monday-to-Friday's recurrences. Anything already overdue
- * is included too — a task that was due yesterday is still owed today, and
- * dropping it off the list is how work goes missing.
- *
- * A task counts when its frequency puts it on any day in range — a one-off on
- * its date, a recurrence on the days its rule produces.
- */
-export function getTasksDueThrough(
-  tasks: Task[],
-  employeeId: string,
-  through: Date,
-  options: { from?: Date } = {},
-): Task[] {
-  const end = startOfDay(through)
-  // Overdue work carries forward unless a start is given explicitly.
-  const from = options.from ? startOfDay(options.from) : null
-
-  const inRange = (d: Date) => {
-    const day = startOfDay(d)
-    if (day > end) return false
-    return from ? day >= from : true
-  }
-
-  return tasks.filter((task) => {
-    if (!task.isActive) return false
-    if (!task.assignedTo.includes(employeeId)) return false
-
-    // Otherwise, does its recurrence put it on any day in the window? Walk the
-    // days rather than reasoning about the rule, which keeps this correct for
-    // every frequency type without duplicating the matching logic.
-    const walkFrom = from ?? startOfDay(addDays(end, -60))
-    for (let d = walkFrom; d <= end; d = addDays(d, 1)) {
-      if (isTaskDueOnDate(task, employeeId, d)) return true
-    }
-    return false
-  })
-}
-
-/** Everything owed by the end of the week containing `date`. */
-export function getTasksDueThisWeekCumulative(tasks: Task[], employeeId: string, date: Date): Task[] {
-  return getTasksDueThrough(tasks, employeeId, endOfWeek(date, { weekStartsOn: 1 }))
-}
-
-/** Everything owed by the end of the month containing `date`. */
-export function getTasksDueThisMonthCumulative(tasks: Task[], employeeId: string, date: Date): Task[] {
-  return getTasksDueThrough(tasks, employeeId, endOfMonth(date))
-}
 
 /**
  * Format a date for display: "Mon 16 Mar 2025"

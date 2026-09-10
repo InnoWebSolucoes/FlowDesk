@@ -42,6 +42,12 @@ interface TaskCardProps {
    */
   showTiming?: boolean
   /**
+   * When this occurrence was finished, if the caller already knows. My Tasks
+   * does, from the occurrence it placed; looking it up here by date misses a
+   * one-off whose tick was logged under a different day.
+   */
+  completedAtOverride?: string | null
+  /**
    * Rings the card and scrolls it into view. Set when a notification pointed
    * at this task, so the reader is not left hunting a long list for it.
    */
@@ -122,6 +128,7 @@ export function TaskCard({
   onEdit,
   onDelete,
   showTiming,
+  completedAtOverride,
   highlighted,
   highlightRef,
 }: TaskCardProps) {
@@ -137,11 +144,13 @@ export function TaskCard({
     return () => clearInterval(id)
   }, [isInProgress, isCompleted])
 
-  const completedAt = currentUserId && dueDate
-    ? completionLogs.find(
-        (l) => l.taskId === task.id && l.employeeId === currentUserId && l.dueDate === dueDate,
-      )?.completedAt ?? null
-    : null
+  const completedAt = completedAtOverride !== undefined
+    ? completedAtOverride
+    : currentUserId && dueDate
+      ? completionLogs.find(
+          (l) => l.taskId === task.id && l.employeeId === currentUserId && l.dueDate === dueDate,
+        )?.completedAt ?? null
+      : null
   const startedAt = currentUserId && dueDate
     ? inProgressSince(task.id, currentUserId, dueDate)
     : null
