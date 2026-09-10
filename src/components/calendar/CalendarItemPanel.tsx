@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import {
-  X, Trash2, Link2, FolderOpen, ExternalLink, Lock, Users as UsersIcon, Globe, Check,
+  X, Link2, FolderOpen, ExternalLink, Lock, Users as UsersIcon, Globe, Check, Pencil,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -56,6 +56,11 @@ export function CalendarItemPanel({
   } = useProjectStore()
   const navigate = useNavigate()
   const [picking, setPicking] = useState(false)
+  // Reading unless asked otherwise. Opening an item to check what it says
+  // should not put a cursor in every field.
+  const [editing, setEditing] = useState(false)
+
+  const title = todo?.title ?? entry?.title ?? ''
 
   const root = basePath ?? `/admin/projects/${projectId}`
 
@@ -92,36 +97,61 @@ export function CalendarItemPanel({
           className="bg-surface rounded-xl border border-border w-full max-w-xl flex flex-col max-h-[85vh]"
           onClick={(e) => e.stopPropagation()}
         >
-          <header className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border flex-shrink-0">
-            <div className="min-w-0">
-              {todo ? (
+          <header className="flex items-start gap-3 px-5 py-4 border-b border-border flex-shrink-0">
+            {/* flex-1 as well as min-w-0. min-w-0 only lets it shrink; without
+                something telling it to grow, the title was squeezed into
+                whatever the close button left over and wrapped down the left
+                edge of a mostly empty header. */}
+            <div className="min-w-0 flex-1">
+              {editing ? (
                 <textarea
-                  value={todo.title}
-                  readOnly={readOnly}
-                  onChange={(e) => updateTodo(todo.id, { title: e.target.value })}
-                  rows={Math.min(3, Math.ceil(todo.title.length / 46) || 1)}
-                  className="w-full bg-transparent text-text-main font-semibold text-base outline-none focus:bg-surface-2 rounded px-1 -ml-1 resize-none leading-snug"
+                  value={title}
+                  autoFocus
+                  onChange={(e) =>
+                    todo
+                      ? updateTodo(todo.id, { title: e.target.value })
+                      : updateCalendarEntry(entry!.id, { title: e.target.value })
+                  }
+                  rows={Math.min(4, Math.ceil(title.length / 46) || 1)}
+                  className="w-full bg-surface-2 text-text-main font-semibold text-base outline-none focus:ring-1 focus:ring-primary/40 rounded px-2 -ml-2 resize-none leading-snug"
                 />
               ) : (
-                <textarea
-                  value={entry!.title}
-                  readOnly={readOnly}
-                  onChange={(e) => updateCalendarEntry(entry!.id, { title: e.target.value })}
-                  rows={Math.min(3, Math.ceil(entry!.title.length / 46) || 1)}
-                  className="w-full bg-transparent text-text-main font-semibold text-base outline-none focus:bg-surface-2 rounded px-1 -ml-1 resize-none leading-snug"
-                />
+                <h3 className="text-text-main font-semibold text-base leading-snug break-words">
+                  {title}
+                </h3>
               )}
               <p className="text-text-subtle text-xs mt-0.5">
                 {todo ? 'Todo' : KIND_STYLE[entry!.kind].label}
               </p>
             </div>
+
+            {/* Reading by default, editing on purpose. Everything here used to
+                be live the moment the panel opened, so opening something to
+                check what it said meant one stray keystroke away from
+                changing it. */}
+            {!readOnly && (
+              <button
+                onClick={() => setEditing((v) => !v)}
+                className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                  editing
+                    ? 'bg-primary text-white'
+                    : 'text-text-muted hover:bg-surface-2 hover:text-text-main'
+                }`}
+              >
+                {editing ? <Check size={13} /> : <Pencil size={13} />}
+                {editing ? t('cal_done') : t('cal_edit')}
+              </button>
+            )}
+
             <button onClick={onClose} className="text-text-subtle hover:text-text-main p-1 flex-shrink-0">
               <X size={18} />
             </button>
           </header>
 
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            {todo ? <TodoBody todo={todo} readOnly={readOnly} /> : <EntryBody entry={entry!} readOnly={readOnly} />}
+            {todo
+              ? <TodoBody todo={todo} readOnly={readOnly} editing={editing} />
+              : <EntryBody entry={entry!} readOnly={readOnly} editing={editing} />}
 
             <section>
               <div className="flex items-center justify-between mb-2">
@@ -135,10 +165,6 @@ export function CalendarItemPanel({
                   </button>
                 )}
               </div>
-
-              {linked.length === 0 && (
-                <p className="text-xs text-text-subtle italic">{t('cal_nothingLinkedAttachTheContractBrie')}</p>
-              )}
 
               <div className="space-y-1">
                 {linked.map(({ raw, item, cluster }) => (
@@ -165,26 +191,6 @@ export function CalendarItemPanel({
             </section>
           </div>
 
-          <footer className="px-5 py-3 border-t border-border flex items-center gap-2 flex-shrink-0">
-            {todo && (
-              <button
-                onClick={() => navigate(`${root}/todos`)}
-                className="text-xs text-primary hover:underline flex-1 text-left"
-              >{t('cal_openInTodos')}</button>
-            )}
-            {entry && <span className="flex-1" />}
-            {!readOnly && (
-              <button
-                onClick={() => {
-                  if (todo) deleteTodo(todo.id)
-                  else deleteCalendarEntry(entry!.id)
-                  onClose()
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-danger hover:bg-danger-bg"
-              >
-                <Trash2 size={13} />{t('ui_delete')}</button>
-            )}
-          </footer>
         </div>
       </div>
 
@@ -213,10 +219,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const inputClass =
   'w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary'
 
-function TodoBody({ todo, readOnly }: { todo: ProjectTodo; readOnly?: boolean }) {
+function TodoBody({
+  todo, readOnly, editing,
+}: { todo: ProjectTodo; readOnly?: boolean; editing?: boolean }) {
   const { t } = useT()
   const { employees } = useEmployeeStore()
   const { updateTodo, toggleTodo, todoLists } = useProjectStore()
+
+  // Locked unless the panel is in edit mode. Who is doing it is the one
+  // exception below: reassigning is a thing you do while reading a list, not
+  // something worth entering an edit mode for.
+  const locked = readOnly || !editing
 
   return (
     <>
@@ -238,7 +251,7 @@ function TodoBody({ todo, readOnly }: { todo: ProjectTodo; readOnly?: boolean })
       <Field label={t('cal_descriptionLabel')}>
         <textarea
           value={todo.notes}
-          readOnly={readOnly}
+          readOnly={locked}
           onChange={(e) => updateTodo(todo.id, { notes: e.target.value })}
           rows={4}
           placeholder={t('cal_whatIsThisAndWhatDoes')}
@@ -253,8 +266,8 @@ function TodoBody({ todo, readOnly }: { todo: ProjectTodo; readOnly?: boolean })
         <input
           type="date"
           value={todo.doDate ?? ''}
-          readOnly={readOnly}
-          disabled={readOnly}
+          readOnly={locked}
+          disabled={locked}
           onChange={(e) => updateTodo(todo.id, { doDate: e.target.value || null })}
           className={inputClass}
         />
@@ -282,7 +295,7 @@ function TodoBody({ todo, readOnly }: { todo: ProjectTodo; readOnly?: boolean })
         <Field label={t('cal_priorityLabel')}>
           <select
             value={todo.priority}
-            disabled={readOnly}
+            disabled={locked}
             onChange={(e) => updateTodo(todo.id, { priority: e.target.value as Priority })}
             className={inputClass}
           >
@@ -294,7 +307,7 @@ function TodoBody({ todo, readOnly }: { todo: ProjectTodo; readOnly?: boolean })
         <Field label={t('cal_listLabel')}>
           <select
             value={todo.listId ?? ''}
-            disabled={readOnly}
+            disabled={locked}
             onChange={(e) => useProjectStore.getState().moveTodoToList(todo.id, e.target.value)}
             className={inputClass}
           >
@@ -310,9 +323,12 @@ function TodoBody({ todo, readOnly }: { todo: ProjectTodo; readOnly?: boolean })
   )
 }
 
-function EntryBody({ entry, readOnly }: { entry: CalendarEntry; readOnly?: boolean }) {
+function EntryBody({
+  entry, readOnly, editing,
+}: { entry: CalendarEntry; readOnly?: boolean; editing?: boolean }) {
   const { t } = useT()
   const { updateCalendarEntry } = useProjectStore()
+  const locked = readOnly || !editing
 
   // An entry occupies whole days. Moving the first day past the last drags
   // the last with it, so the range can never invert.
@@ -336,7 +352,7 @@ function EntryBody({ entry, readOnly }: { entry: CalendarEntry; readOnly?: boole
           {(Object.keys(KIND_STYLE) as CalendarEntryKind[]).map((k) => (
             <button
               key={k}
-              disabled={readOnly}
+              disabled={locked}
               onClick={() => updateCalendarEntry(entry.id, { kind: k })}
               className="px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:cursor-default"
               style={
@@ -358,7 +374,7 @@ function EntryBody({ entry, readOnly }: { entry: CalendarEntry; readOnly?: boole
       <Field label={t('cal_notesLabel')}>
         <textarea
           value={entry.notes}
-          readOnly={readOnly}
+          readOnly={locked}
           onChange={(e) => updateCalendarEntry(entry.id, { notes: e.target.value })}
           rows={3}
           placeholder={t('cal_agendaLocationAnythingUseful')}
@@ -371,8 +387,8 @@ function EntryBody({ entry, readOnly }: { entry: CalendarEntry; readOnly?: boole
           <input
             type="date"
             value={entry.startsOn}
-            readOnly={readOnly}
-            disabled={readOnly}
+            readOnly={locked}
+            disabled={locked}
             onChange={(e) => setFirstDay(e.target.value)}
             className={inputClass}
           />
@@ -381,8 +397,8 @@ function EntryBody({ entry, readOnly }: { entry: CalendarEntry; readOnly?: boole
           <input
             type="date"
             value={entry.endsOn}
-            readOnly={readOnly}
-            disabled={readOnly}
+            readOnly={locked}
+            disabled={locked}
             onChange={(e) => setLastDay(e.target.value)}
             className={inputClass}
           />
@@ -392,7 +408,7 @@ function EntryBody({ entry, readOnly }: { entry: CalendarEntry; readOnly?: boole
       <Field label={t('cal_whoCanSeeIt')}>
         <select
           value={entry.visibility ?? ''}
-          disabled={readOnly}
+          disabled={locked}
           onChange={(e) => updateCalendarEntry(entry.id, { visibility: (e.target.value || null) as Visibility | null })}
           className={inputClass}
         >
