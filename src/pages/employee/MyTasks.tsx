@@ -28,6 +28,7 @@ function TimeBlock({
   highlight,
   readOnly,
   onEditTask,
+  showTiming,
 }: {
   label: string
   tasks: Task[]
@@ -40,6 +41,7 @@ function TimeBlock({
   highlight: ReturnType<typeof useHighlight>
   readOnly?: boolean
   onEditTask?: (task: Task) => void
+  showTiming?: boolean
 }) {
   const { isInProgress: isInProgressFn, setInProgress, clearInProgress } = useTaskStore()
 
@@ -63,6 +65,7 @@ function TimeBlock({
             currentUserId={empId}
             dueDate={todayStr}
             onEdit={onEditTask ? () => onEditTask(task) : undefined}
+            showTiming={showTiming}
             highlighted={highlight.isHighlighted(task.id)}
             highlightRef={highlight.ref}
           />
@@ -535,6 +538,7 @@ export function MyTasks({
                 highlight={highlight}
                 readOnly={readOnly}
                 onEditTask={onEditTask}
+                showTiming={manage}
               />
               <TimeBlock
                 label={t('mytasks_afternoon')}
@@ -548,6 +552,7 @@ export function MyTasks({
                 highlight={highlight}
                 readOnly={readOnly}
                 onEditTask={onEditTask}
+                showTiming={manage}
               />
               <TimeBlock
                 label={t('mytasks_endOfDay')}
@@ -561,6 +566,7 @@ export function MyTasks({
                 highlight={highlight}
                 readOnly={readOnly}
                 onEditTask={onEditTask}
+                showTiming={manage}
               />
             </>
           )}
@@ -587,6 +593,7 @@ export function MyTasks({
                       currentUserId={empId}
                       dueDate={todayStr}
                       onEdit={onEditTask ? () => onEditTask(task) : undefined}
+                      showTiming={manage}
                       highlighted={highlight.isHighlighted(task.id)}
                       highlightRef={highlight.ref}
                     />
@@ -657,6 +664,7 @@ export function MyTasks({
                         currentUserId={empId}
                         dueDate={dateStr}
                         onEdit={onEditTask ? () => onEditTask(task) : undefined}
+                      showTiming={manage}
                         highlighted={highlight.isHighlighted(task.id)}
                         highlightRef={highlight.ref}
                       />
@@ -727,6 +735,7 @@ export function MyTasks({
                                 currentUserId={empId}
                                 dueDate={dateStr}
                                 onEdit={onEditTask ? () => onEditTask(task) : undefined}
+                      showTiming={manage}
                         highlighted={highlight.isHighlighted(task.id)}
                                 highlightRef={highlight.ref}
                               />

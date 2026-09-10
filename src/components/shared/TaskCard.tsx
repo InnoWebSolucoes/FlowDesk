@@ -32,6 +32,16 @@ interface TaskCardProps {
   onEdit?: () => void
   onDelete?: () => void
   /**
+   * Show when this was finished and how long it has been under way.
+   *
+   * A manager's question, not the worker's: somebody doing the task already
+   * knows when they started it, and a running clock on your own list reads as
+   * being timed. Only the manager's view of an employee sets it — including
+   * not while previewing their side, where the point is to see exactly what
+   * they see.
+   */
+  showTiming?: boolean
+  /**
    * Rings the card and scrolls it into view. Set when a notification pointed
    * at this task, so the reader is not left hunting a long list for it.
    */
@@ -111,6 +121,7 @@ export function TaskCard({
   dueDate,
   onEdit,
   onDelete,
+  showTiming,
   highlighted,
   highlightRef,
 }: TaskCardProps) {
@@ -264,7 +275,7 @@ export function TaskCard({
           {/* When it was finished, or how long it has been under way. The
               badge said *that* it was started and never for how long, which is
               the half that tells you whether it is actually moving. */}
-          {isCompleted && completedAt && (
+          {showTiming && isCompleted && completedAt && (
             <p className="text-xs text-success mt-1 flex items-center gap-1">
               <CheckCircle2 size={11} />
               {t('taskcard_completedAt')} {new Date(completedAt).toLocaleString([], {
@@ -272,7 +283,7 @@ export function TaskCard({
               })}
             </p>
           )}
-          {!isCompleted && isInProgress && startedAt && (
+          {showTiming && !isCompleted && isInProgress && startedAt && (
             <p className="text-xs text-amber mt-1 flex items-center gap-1">
               <Timer size={11} />
               {t('taskcard_workingFor')} {elapsed(startedAt, now)} · {t('taskcard_since')}{' '}
