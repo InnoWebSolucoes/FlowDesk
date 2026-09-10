@@ -12,6 +12,7 @@ import { useLanguageStore } from '../../store/languageStore'
 import { useChatStore } from '../../store/chatStore'
 import { useT } from '../../i18n/useT'
 import { Avatar } from './Avatar'
+import { NotificationBell } from './NotificationBell'
 import {
   canDockWhatsapp, setWhatsappTab, onWhatsappState, openWhatsapp,
   canDockClaude, setClaudeTab, onClaudeState, openClaude, setSidebarWidth,
@@ -345,8 +346,15 @@ export function Sidebar() {
         </button>
       </nav>
 
-      {/* Language toggle + User section */}
+      {/* Notifications + language + user */}
       <div className={`border-t border-border py-3 space-y-2 ${mini ? 'px-2' : 'px-3'}`}>
+        {/* The bell lived in the top bar, which is gone. Here it opens
+            upwards and to the right, or it would fall off the bottom of the
+            window from this far down the sidebar. */}
+        <div className={`flex ${mini ? 'justify-center' : 'px-1'}`}>
+          <NotificationBell panelClass="left-0 bottom-full mb-2" />
+        </div>
+
         {/* Language toggle: collapsed, the flag alone carries it. */}
         <button
           onClick={toggle}

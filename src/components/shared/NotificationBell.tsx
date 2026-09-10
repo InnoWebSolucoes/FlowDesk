@@ -32,7 +32,14 @@ function notifIcon(type: AppNotification['type']) {
   }
 }
 
-export function NotificationBell() {
+export function NotificationBell({
+  /**
+   * Where the panel opens relative to the bell. The bell used to live in a
+   * top bar, where down-and-left was the only sensible direction; it sits in
+   * the sidebar now, where that would open it off the bottom of the window.
+   */
+  panelClass = 'right-0 top-full mt-2',
+}: { panelClass?: string } = {}) {
   const { t } = useT()
   const { currentUser } = useAuthStore()
   const { tasks, completionLogs } = useTaskStore()
@@ -251,7 +258,7 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-surface border border-border rounded-xl shadow-lg z-50 overflow-hidden">
+        <div className={`absolute w-80 bg-surface border border-border rounded-xl shadow-lg z-50 overflow-hidden ${panelClass}`}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <span className="text-text-main font-semibold text-sm">{t('notif_bell')}</span>

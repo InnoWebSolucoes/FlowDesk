@@ -426,7 +426,10 @@ export function Chat() {
       )}
 
       {/* ─── Rooms ─────────────────────────────────────────────────────── */}
-      <div className="w-72 border-r border-border bg-surface flex flex-col flex-shrink-0">
+      {/* pt-14 on a phone: chat fills the frame with no padding of its own,
+          so without it the floating menu button sits on top of the search
+          box now that there is no top bar for it to live in. */}
+      <div className="w-72 border-r border-border bg-surface flex flex-col flex-shrink-0 pt-14 md:pt-0">
         <div className="p-3 border-b border-border">
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-subtle" />
