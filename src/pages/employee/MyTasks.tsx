@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { format, addDays } from 'date-fns'
-import { ChevronDown, ChevronRight, PartyPopper, Search } from 'lucide-react'
+import { format, addDays, addWeeks } from 'date-fns'
+import { ChevronDown, ChevronRight, ChevronLeft, PartyPopper, Search } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskCard } from '../../components/shared/TaskCard'
@@ -147,6 +147,14 @@ export function MyTasks({
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set([0, 1, 2, 3]))
   // The task open in the editor, if any.
   const [editingTask, setEditingTask] = useState<Task | null>(null)
+  /**
+   * How far back or forward from today the view is looking, in whole periods:
+   * days on the Today tab, weeks on the week tab, four-week blocks on the
+   * month tab. The calendar has always let you step through the past and this
+   * did not, so "what did they actually do last week" was unanswerable here.
+   * Zero is now, and "Today" puts it back.
+   */
+  const [offset, setOffset] = useState(0)
   const onEditTask = manage ? (task: Task) => setEditingTask(task) : undefined
 
   // Filters (today tab only)
@@ -155,7 +163,18 @@ export function MyTasks({
   const [filterCategoryId, setFilterCategoryId] = useState('')
 
   const empId = employeeId ?? currentUser?.id ?? ''
-  const today = new Date()
+  const realToday = new Date()
+  // The day the view is anchored on. Everything below reads `today`, so
+  // stepping back moves the whole tab — the lists, the totals and the
+  // headings — rather than only the row of dates.
+  const today =
+    offset === 0
+      ? realToday
+      : tab === 'today'
+        ? addDays(realToday, offset)
+        : tab === 'week'
+          ? addWeeks(realToday, offset)
+          : addWeeks(realToday, offset * 4)
   const todayStr = format(today, 'yyyy-MM-dd')
 
   // Everything owed by the end of today, overdue work included — not just
@@ -368,8 +387,53 @@ export function MyTasks({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlight.activeId])
 
+  // What the arrows are stepping through, so the label says which period is
+  // on screen rather than leaving you counting weeks back from today.
+  const periodLabel =
+    tab === 'today'
+      ? format(today, 'EEEE d MMMM yyyy', dateLocale)
+      : tab === 'week'
+        ? `${format(weekDays[0].date, 'd MMM', dateLocale)} – ${format(weekDays[weekDays.length - 1].date, 'd MMM yyyy', dateLocale)}`
+        : `${format(monthDays[0].date, 'd MMM', dateLocale)} – ${format(monthDays[monthDays.length - 1].date, 'd MMM yyyy', dateLocale)}`
+
   return (
     <div className={section ? 'animate-fade-in' : 'max-w-2xl mx-auto animate-fade-in'}>
+      {/* Stepping back through the past, the way the calendar does. A manager
+          asking "what did they actually do last week" had no way to look
+          before today at all. One period at a time, whichever period the tab
+          is showing. */}
+      {manage && (
+        <div className="flex items-center gap-1 mb-4">
+          <button
+            onClick={() => setOffset((o) => o - 1)}
+            title={t('mytasks_previousPeriod')}
+            className="p-1.5 rounded-md text-text-muted hover:bg-surface-2 transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            onClick={() => setOffset((o) => o + 1)}
+            title={t('mytasks_nextPeriod')}
+            className="p-1.5 rounded-md text-text-muted hover:bg-surface-2 transition-colors"
+          >
+            <ChevronRight size={16} />
+          </button>
+          {offset !== 0 && (
+            <button
+              onClick={() => setOffset(0)}
+              className="ml-1 px-2.5 py-1 rounded-md text-xs font-medium text-text-muted hover:bg-surface-2 border border-border transition-colors"
+            >
+              {t('ui_today')}
+            </button>
+          )}
+          <span className="ml-2 text-sm font-medium text-text-main">{periodLabel}</span>
+          {offset !== 0 && (
+            <span className="ml-2 text-[11px] text-amber bg-amber/10 px-1.5 py-0.5 rounded">
+              {t('mytasks_notNow')}
+            </span>
+          )}
+        </div>
+      )}
       {!section && (
         <div className="border-b border-border flex gap-0 mb-6">
           {TABS.map(tab_ => (

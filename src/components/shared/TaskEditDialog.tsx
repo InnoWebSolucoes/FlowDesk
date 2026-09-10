@@ -56,15 +56,18 @@ export function TaskEditDialog({ task, onClose }: { task: Task; onClose: () => v
     }
   }
 
+  const recurring = task.frequency?.type && task.frequency.type !== 'one-off'
+
   return (
     <div
       className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 overflow-y-auto"
       onClick={onClose}
     >
-      <div
-        className="w-full max-w-lg my-8"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
+        {/* Deleting is a bin beside Cancel inside the form, not a panel under
+            it. It was below, which meant scrolling past the whole editor to
+            reach it — a long way to go for the one control you already knew
+            you wanted. */}
         <TaskForm
           initial={task}
           onSave={save}
@@ -72,30 +75,37 @@ export function TaskEditDialog({ task, onClose }: { task: Task; onClose: () => v
           categories={categories}
           employees={staff}
           onAddCategory={addCategory}
+          onDelete={() => setConfirmDelete(true)}
         />
 
-        <div className="bg-surface rounded-xl border border-border mt-3 p-4">
-          {error && (
-            <p className="text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2 mb-3">
-              {error}
+        {/* What deleting actually costs, which differs. A one-off is one
+            piece of work. A recurring task is every occurrence it has ever
+            produced and every one it would have produced — so that is said
+            plainly rather than left for the manager to discover. */}
+        {confirmDelete && (
+          <div className="bg-surface rounded-xl border border-danger/40 mt-3 p-4">
+            <p className="text-sm text-text-main font-medium mb-1">
+              {recurring ? t('task_deleteRecurringTitle') : t('task_deleteOneOffTitle')}
             </p>
-          )}
+            <p className="text-xs text-text-muted mb-3">
+              {recurring ? t('task_deleteRecurringBody') : t('task_deleteOneOffBody')}
+            </p>
 
-          {/* Deleting sits below the form rather than inside it, behind its own
-              confirmation: it is the one action here that cannot be undone, and
-              a manager going quickly through a week should not lose a task to a
-              mis-aimed click. */}
-          {confirmDelete ? (
+            {error && (
+              <p className="text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2 mb-3">
+                {error}
+              </p>
+            )}
+
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-text-main flex-1 min-w-[12rem]">
-                {t('task_deleteConfirm')}
-              </span>
               <button
                 disabled={busy}
                 onClick={remove}
                 className="bg-danger text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                {busy ? t('ui_deleting') : t('ui_delete')}
+                {busy
+                  ? t('ui_deleting')
+                  : recurring ? t('task_deleteRecurringConfirm') : t('ui_delete')}
               </button>
               <button
                 onClick={() => setConfirmDelete(false)}
@@ -104,15 +114,14 @@ export function TaskEditDialog({ task, onClose }: { task: Task; onClose: () => v
                 {t('ui_cancel')}
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="text-sm text-danger hover:underline"
-            >
-              {t('taskcard_delete')}
-            </button>
-          )}
-        </div>
+          </div>
+        )}
+
+        {error && !confirmDelete && (
+          <p className="text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2 mt-3">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   )

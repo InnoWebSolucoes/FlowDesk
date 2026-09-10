@@ -16,30 +16,19 @@ export function getWeekOfMonth(date: Date): number {
 /**
  * Whether a task lands on a given day for a given person.
  *
- * A do date wins outright. Somebody has said which day this is happening on,
- * and that beats working it out from the recurrence — so a weekly task moved
- * to Thursday is on Thursday and nowhere else, rather than on Thursday *and*
- * every Monday its rule would otherwise produce.
- *
- * This is the rule the calendar has always applied. The day-by-day breakdowns
- * in My Tasks did not: they went straight to the recurrence, so once do dates
- * became the only date a task carries, work planned for today stopped showing
- * in the week and month views at all. One rule, in one place, for both.
+ * The frequency is the whole answer: a one-off on its date, everything else on
+ * the days its rule produces. There was briefly a per-assignee do date that
+ * overrode this, which gave a one-off two dates meaning the same thing and let
+ * a do date silently cancel a weekly task's recurrence. One date, and it lives
+ * in the frequency.
  */
 export function isTaskDueOnDate(task: Task, employeeId: string, date: Date): boolean {
   if (!task.isActive) return false
   if (!task.assignedTo.includes(employeeId)) return false
 
-  const planned = task.schedules?.find((s) => s.employeeId === employeeId)?.doDate
-  if (planned) return planned === format(date, 'yyyy-MM-dd')
-
   // A recurrence describes what happens from now on, not what should have
   // happened before the task existed. Without this a new monthly task appears
   // as months of missed work the moment it is created.
-  //
-  // Only for the recurrence: an explicit do date is somebody's decision about
-  // a specific day, and second-guessing it against the creation date would
-  // silently drop a task deliberately planned for earlier in the week.
   if (task.createdAt) {
     const created = startOfDay(parseISO(task.createdAt))
     if (startOfDay(date) < created) return false
@@ -92,13 +81,11 @@ export function isTaskDueOnDate(task: Task, employeeId: string, date: Date): boo
  * earlier day found nothing, and a task finished weeks ago was pending again.
  * Every day, forever, with an Overdue badge on it.
  *
- * So: whichever day the task is actually for. The do date if it has one, the
- * date of a one-off if it does not, and today for a recurrence — which comes
- * round again tomorrow and is genuinely a different piece of work each time.
+ * So: whichever day the task is actually for. A one-off's own date, and today
+ * for a recurrence — which comes round again tomorrow and is genuinely a
+ * different piece of work each time.
  */
-export function taskOccurrenceDay(task: Task, employeeId: string, today: string): string {
-  const planned = task.schedules?.find((s) => s.employeeId === employeeId)?.doDate
-  if (planned) return planned
+export function taskOccurrenceDay(task: Task, _employeeId: string, today: string): string {
   if (task.frequency.type === 'one-off' && task.frequency.date) {
     return task.frequency.date.slice(0, 10)
   }
@@ -167,14 +154,8 @@ export function getTasksDueThisMonth(
  * is included too — a task that was due yesterday is still owed today, and
  * dropping it off the list is how work goes missing.
  *
- * A task counts when either date lands in range:
- *   - the do date this person was given, the day the work is meant to happen;
- *     or
- *   - a day its recurrence puts it on.
- *
- * The do date took the deadline's place here. They answered different
- * questions — "finish by" against "work on" — but only one of them is left,
- * and it is the one that says when the work actually lands.
+ * A task counts when its frequency puts it on any day in range — a one-off on
+ * its date, a recurrence on the days its rule produces.
  */
 export function getTasksDueThrough(
   tasks: Task[],
@@ -195,11 +176,6 @@ export function getTasksDueThrough(
   return tasks.filter((task) => {
     if (!task.isActive) return false
     if (!task.assignedTo.includes(employeeId)) return false
-
-    // A do date is the strongest signal: somebody has said which day this is
-    // happening on, which beats working it out from the recurrence.
-    const planned = task.schedules.find((sc) => sc.employeeId === employeeId)?.doDate
-    if (planned && inRange(parseISO(planned))) return true
 
     // Otherwise, does its recurrence put it on any day in the window? Walk the
     // days rather than reasoning about the rule, which keeps this correct for

@@ -24,9 +24,6 @@ const defaultTask = (): Omit<Task, 'id' | 'createdAt' | 'createdBy' | 'projectId
   categoryId: '',
   priority: 'medium',
   estimatedMinutes: 30,
-  // Optional: a recurring task often has no single day, and a manager may want
-  // the employee to choose. Empty is a real value.
-  schedules: [],
   isActive: true,
 })
 
@@ -44,6 +41,7 @@ export function TaskForm({
   employees,
   onAddCategory,
   defaultAssignee,
+  onDelete,
 }: {
   initial?: Task
   onSave: (data: any) => void
@@ -53,6 +51,11 @@ export function TaskForm({
   onAddCategory: (cat: Omit<Category, 'id'>) => Promise<Category>
   /** Whose profile this was opened from, so the task starts assigned to them. */
   defaultAssignee?: string
+  /**
+   * Offered as a bin beside Cancel. Only where deleting is on the table —
+   * the create form has nothing to delete yet.
+   */
+  onDelete?: () => void
 }) {
   const { t } = useT()
   const DAY_NAMES = [t('task_sun'), t('task_mon'), t('task_tue'), t('task_wed'), t('task_thu'), t('task_fri'), t('task_sat')]
@@ -68,12 +71,6 @@ export function TaskForm({
           categoryId: categories[0]?.id ?? '',
           assignedTo: defaultAssignee ? [defaultAssignee] : [],
         }
-  )
-  // The do date lives per assignee, but the form offers one box: a manager
-  // setting a day means "this happens on this day", not a different day each.
-  // Editing shows whichever day the assignees already share.
-  const [doDate, setDoDate] = useState<string>(
-    initial?.schedules.find((sc) => sc.doDate)?.doDate ?? '',
   )
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [newCatName, setNewCatName] = useState('')
@@ -104,16 +101,7 @@ export function TaskForm({
     if (!validate()) return
     // '' is a typing state, not a value. 0 is how "no estimate" is stored.
     const mins = parseInt(String(form.estimatedMinutes), 10)
-    // One box, one day, spread across everyone it is assigned to. Cleared, the
-    // schedules go empty and the task falls back to its recurrence.
-    const schedules = doDate
-      ? form.assignedTo.map((employeeId: string) => ({ employeeId, doDate }))
-      : []
-    onSave({
-      ...form,
-      schedules,
-      estimatedMinutes: Number.isFinite(mins) && mins > 0 ? mins : 0,
-    })
+    onSave({ ...form, estimatedMinutes: Number.isFinite(mins) && mins > 0 ? mins : 0 })
   }
 
   const toggleDay = (day: number) => {
@@ -312,6 +300,11 @@ export function TaskForm({
           </div>
         )}
 
+        {/* The day it gets done — and the only date on this form. There was
+            briefly a second "do date" box below the frequency, so a one-off
+            asked for its day twice and the two could disagree. A recurring
+            task has no date field at all: its days come from the rule above,
+            which is the whole point of setting one. */}
         {form.frequency.type === 'one-off' && (
           <div className="mt-2">
             <label className={lbl}>{t('task_onDate')}</label>
@@ -327,21 +320,6 @@ export function TaskForm({
         )}
       </div>
 
-      {/* The day the work happens. This replaced the deadline: there is one
-          date now, and it is the one the calendar is built from. It is stored
-          per assignee, so setting it here plans the same day for everyone the
-          task goes to and each of them can move their own afterwards. */}
-      <div>
-        <label className={lbl}>{t('task_doDate')}</label>
-        <input
-          type="date"
-          className={inp}
-          value={doDate}
-          onChange={e => setDoDate(e.target.value)}
-        />
-        <p className="text-text-subtle text-[11px] mt-1">{t('task_doDateHint')}</p>
-      </div>
-
       <div className="flex gap-2 pt-1">
         <button onClick={handleSave}
           className="flex-1 bg-primary text-white text-sm font-medium py-2.5 rounded-lg hover:bg-primary-dark transition-colors">
@@ -351,6 +329,14 @@ export function TaskForm({
           className="px-4 py-2.5 border border-border text-text-muted text-sm rounded-lg hover:bg-surface-2 transition-colors">
           {t('task_cancel')}
         </button>
+        {/* Beside Cancel, where you already are, rather than at the bottom of
+            a panel below the form. */}
+        {onDelete && (
+          <button onClick={onDelete} title={t('taskcard_delete')}
+            className="px-3 py-2.5 border border-border text-text-subtle rounded-lg hover:border-danger/50 hover:text-danger hover:bg-danger-bg transition-colors">
+            <Trash2 size={15} />
+          </button>
+        )}
       </div>
     </div>
   )

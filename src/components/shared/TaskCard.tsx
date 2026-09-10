@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Clock, CheckCircle2, Circle, Timer, MessageSquare, Paperclip, Pencil, Trash2 } from 'lucide-react'
 import { Task, Category } from '../../types'
 import { Badge } from './Badge'
 import { useChatStore } from '../../store/chatStore'
+import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
 import { useT } from '../../i18n/useT'
 import { differenceInDays, parseISO } from 'date-fns'
@@ -36,6 +37,20 @@ interface TaskCardProps {
    */
   highlighted?: boolean
   highlightRef?: (node: HTMLElement | null) => void
+}
+
+/** "2h 14m", "45m", "3d 2h" — how long something has been going. */
+function elapsed(fromIso: string, nowMs: number): string {
+  const mins = Math.max(0, Math.floor((nowMs - new Date(fromIso).getTime()) / 60_000))
+  if (mins < 60) return `${mins}m`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) {
+    const rest = mins % 60
+    return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
+  }
+  const days = Math.floor(hours / 24)
+  const restH = hours % 24
+  return restH === 0 ? `${days}d` : `${days}d ${restH}h`
 }
 
 const priorityColors: Record<string, string> = {
@@ -99,6 +114,27 @@ export function TaskCard({
   highlighted,
   highlightRef,
 }: TaskCardProps) {
+  const { completionLogs, inProgressSince } = useTaskStore()
+
+  // Re-read the clock once a minute, and only while something is actually
+  // under way: without it "working for 5m" would sit there saying 5m for the
+  // rest of the afternoon.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!isInProgress || isCompleted) return
+    const id = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [isInProgress, isCompleted])
+
+  const completedAt = currentUserId && dueDate
+    ? completionLogs.find(
+        (l) => l.taskId === task.id && l.employeeId === currentUserId && l.dueDate === dueDate,
+      )?.completedAt ?? null
+    : null
+  const startedAt = currentUserId && dueDate
+    ? inProgressSince(task.id, currentUserId, dueDate)
+    : null
+
   const [animating, setAnimating] = useState(false)
   const [opening, setOpening] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
@@ -225,6 +261,27 @@ export function TaskCard({
             <p className="text-xs text-text-muted mt-0.5 line-clamp-2">{task.description}</p>
           )}
 
+          {/* When it was finished, or how long it has been under way. The
+              badge said *that* it was started and never for how long, which is
+              the half that tells you whether it is actually moving. */}
+          {isCompleted && completedAt && (
+            <p className="text-xs text-success mt-1 flex items-center gap-1">
+              <CheckCircle2 size={11} />
+              {t('taskcard_completedAt')} {new Date(completedAt).toLocaleString([], {
+                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+              })}
+            </p>
+          )}
+          {!isCompleted && isInProgress && startedAt && (
+            <p className="text-xs text-amber mt-1 flex items-center gap-1">
+              <Timer size={11} />
+              {t('taskcard_workingFor')} {elapsed(startedAt, now)} · {t('taskcard_since')}{' '}
+              {new Date(startedAt).toLocaleString([], {
+                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+              })}
+            </p>
+          )}
+
           <div className="flex items-center justify-between mt-1.5">
             <div className="flex items-center gap-2 flex-wrap">
               {category && <Badge label={category.name} color={category.color} size="sm" />}
@@ -241,6 +298,11 @@ export function TaskCard({
               )}
             </div>
 
+            {/* One group, pinned right. These used to be four direct children
+                of a justify-between row, so the browser spread them evenly
+                across the whole card and the pencil ended up nowhere near the
+                paperclip it belongs beside. */}
+            <div className="flex items-center gap-2.5 flex-shrink-0">
             {/* What the work produced, kept against the task. */}
             <button
               onClick={() => setShowFiles(true)}
@@ -283,6 +345,7 @@ export function TaskCard({
                 <Trash2 size={13} />
               </button>
             )}
+            </div>
           </div>
         </div>
       </div>

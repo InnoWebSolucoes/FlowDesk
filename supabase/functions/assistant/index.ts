@@ -200,7 +200,7 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           priority: { type: 'string', enum: ['low', 'medium', 'high'] },
           category_name: { type: 'string', description: 'Existing category name, or a new one.' },
           estimated_minutes: { type: 'number' },
-          do_date: { type: 'string', description: 'The day it is to be done, YYYY-MM-DD. The only date a task has.' },
+          do_date: { type: 'string', description: 'The day it is to be done, YYYY-MM-DD. Only meaningful for a one-off, where it becomes the task's date; a repeating task gets its days from its frequency.' },
           frequency_type: {
             type: 'string',
             enum: ['daily', 'weekly', 'monthly', 'one-off'],
@@ -402,7 +402,7 @@ Deno.serve(async (req) => {
     // board, not what anyone was actually given to do.
     db
       .from('tasks')
-      .select('id,title,description,frequency,priority,is_active,created_at,task_assignments(employee_id,do_date)')
+      .select('id,title,description,frequency,priority,is_active,created_at,task_assignments(employee_id)')
       .eq('project_id', projectId)
       .limit(200),
     db
@@ -474,11 +474,12 @@ Deno.serve(async (req) => {
       if (mine.length === 0) return `${p.name} [${p.id}]: no tasks assigned`
 
       const lines = mine.map((t) => {
-        const assignment = (t.task_assignments ?? []).find((a: any) => a.employee_id === p.id)
-        const planned = assignment?.do_date
-        const overdue = planned && planned < today
+        // A task's day is its frequency's: a one-off's date, or the rule.
+        // There is no per-assignee day any more.
+        const onceOn = t.frequency?.type === 'one-off' ? t.frequency?.date : null
+        const overdue = onceOn && onceOn < today
         return `  - ${t.title} [${t.id}] — ${freqText(t.frequency)}, ${t.priority} priority`
-          + `${planned ? `, planned for ${planned}${overdue ? ' (OVERDUE)' : ''}` : ', no day set'}`
+          + `${onceOn ? `${overdue ? ' (OVERDUE)' : ''}` : ''}`
           + ` — ${statusOf(t.id, p.id)}`
       })
       return `${p.name} [${p.id}]: ${mine.length} task(s)
@@ -495,8 +496,10 @@ ${lines.join('\n')}`
 Today is ${now.toISOString().slice(0, 10)} (${now.toLocaleDateString('en-GB', { weekday: 'long' })}). The user's timezone is ${timezone}.
 
 DO DATES — there is one date and this is it:
-- do_date is the day the work is to be done. Todos and tasks have no separate deadline; that was removed, so never ask for one, offer one, or say a thing is "due" on some other day.
-- When someone asks when to fit something in, or says something must be done by a date, you are choosing a do_date. The calendar is organised by day only — there are no times on it.
+- A todo has one date, do_date: the day it is to be done.
+- A task has one date too, and it lives in its frequency. A one-off happens on its date; a daily, weekly or monthly task gets its days from the rule and has no date of its own. Never give a repeating task a specific day — set its frequency instead.
+- There is no deadline, on either. It was removed. Never ask for one, offer one, or say a thing is "due" on some other day.
+- When someone asks when to fit something in, or says something must be done by a date, you are choosing that one date. The calendar is organised by day only — there are no times on it.
 
 Current project description:
 ${project.description || '(empty)'}

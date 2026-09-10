@@ -94,8 +94,6 @@ const en = {
   ai_assignNobody: 'Nobody selected — this task will be skipped.',
   mytasks_owedThisWeek: 'Due by the end of this week',
   mytasks_owedThisMonth: 'Due by the end of this month',
-  task_doDate: 'Do date (optional)',
-  task_doDateHint: 'The day it gets done. Leave empty and the employee decides.',
   task_saveChanges: 'Save Changes',
   task_createTask: 'Create Task',
   task_cancel: 'Cancel',
@@ -114,6 +112,11 @@ const en = {
   task_colTime: 'Time',
   task_deleteConfirm: 'Delete this task?',
   task_couldNotSave: 'That task could not be saved.',
+  task_deleteOneOffTitle: 'Delete this task?',
+  task_deleteOneOffBody: 'It happens once, so this removes it and the record of it. This cannot be undone.',
+  task_deleteRecurringTitle: 'Delete this task and every time it repeats?',
+  task_deleteRecurringBody: 'This is a repeating task. Deleting it removes every occurrence — past and future — for everyone it is assigned to. There is no way to delete only one day. This cannot be undone.',
+  task_deleteRecurringConfirm: 'Delete it forever',
   task_couldNotDelete: 'That task could not be deleted.',
   task_freqDaily: 'Daily',
   task_freqWeekly: 'Weekly',
@@ -258,6 +261,9 @@ const en = {
   mytasks_noTasksBadge: 'No tasks',
   mytasks_done: 'done',
   mytasks_todayBadge: 'Today',
+  mytasks_previousPeriod: 'Back',
+  mytasks_nextPeriod: 'Forward',
+  mytasks_notNow: 'Not this week',
   mytasks_of: 'of',
 
   // Toolbox
@@ -291,6 +297,9 @@ const en = {
   taskcard_min: 'min',
   taskcard_discuss: 'Discuss in chat',
   taskcard_edit: 'Edit task',
+  taskcard_completedAt: 'Completed',
+  taskcard_workingFor: 'Working for',
+  taskcard_since: 'since',
   taskcard_delete: 'Delete task',
 
   // Stat Card
@@ -812,8 +821,6 @@ const pt: typeof en = {
   ai_assignNobody: 'Ninguém selecionado — esta tarefa será ignorada.',
   mytasks_owedThisWeek: 'A entregar até ao fim desta semana',
   mytasks_owedThisMonth: 'A entregar até ao fim deste mês',
-  task_doDate: 'Dia de execução (opcional)',
-  task_doDateHint: 'O dia em que é feito. Deixe vazio e o funcionário decide.',
   task_saveChanges: 'Salvar Alterações',
   task_createTask: 'Criar Tarefa',
   task_cancel: 'Cancelar',
@@ -832,6 +839,11 @@ const pt: typeof en = {
   task_colTime: 'Tempo',
   task_deleteConfirm: 'Excluir esta tarefa?',
   task_couldNotSave: 'Não foi possível guardar essa tarefa.',
+  task_deleteOneOffTitle: 'Eliminar esta tarefa?',
+  task_deleteOneOffBody: 'Acontece uma só vez, portanto isto remove-a e o registo dela. Não pode ser desfeito.',
+  task_deleteRecurringTitle: 'Eliminar esta tarefa e todas as suas repetições?',
+  task_deleteRecurringBody: 'Esta tarefa repete-se. Eliminá-la remove todas as ocorrências — passadas e futuras — para todos a quem está atribuída. Não é possível eliminar apenas um dia. Não pode ser desfeito.',
+  task_deleteRecurringConfirm: 'Eliminar para sempre',
   task_couldNotDelete: 'Não foi possível eliminar essa tarefa.',
   task_freqDaily: 'Diário',
   task_freqWeekly: 'Semanal',
@@ -976,6 +988,9 @@ const pt: typeof en = {
   mytasks_noTasksBadge: 'Sem tarefas',
   mytasks_done: 'feito',
   mytasks_todayBadge: 'Hoje',
+  mytasks_previousPeriod: 'Anterior',
+  mytasks_nextPeriod: 'Seguinte',
+  mytasks_notNow: 'Fora desta semana',
   mytasks_of: 'de',
 
   // Toolbox
@@ -1009,6 +1024,9 @@ const pt: typeof en = {
   taskcard_min: 'min',
   taskcard_discuss: 'Discutir na conversa',
   taskcard_edit: 'Editar tarefa',
+  taskcard_completedAt: 'Concluída',
+  taskcard_workingFor: 'A trabalhar há',
+  taskcard_since: 'desde',
   taskcard_delete: 'Eliminar tarefa',
 
   // Stat Card

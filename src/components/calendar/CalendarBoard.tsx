@@ -37,8 +37,6 @@ function menuPos(x: number, y: number, rows: number, width = 192) {
 // drag to now that the calendar is day-based.
 type DragState =
   | { kind: 'todo'; id: string; label: string }
-  // A task's do date belongs to the assignment, not the task, so moving one
-  // has to say whose plan is being changed.
   | { kind: 'entry'; id: string; label: string }
   | { kind: 'unscheduled'; id: string; label: string }
 
@@ -49,7 +47,7 @@ interface Block {
   outlined?: boolean
   todo?: ProjectTodo
   entry?: CalendarEntry
-  /** An assigned task, on the day it is planned for. */
+  /** An assigned task, on a day its frequency puts it on. */
   task?: Task
   /** Whose block this is, when other people's calendars are overlaid. */
   ownerName?: string
@@ -257,12 +255,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         for (const task of tasks) {
           if (!task.isActive || !task.assignedTo.includes(empIdForCal)) continue
 
-          const sched = task.schedules.find((x) => x.employeeId === empIdForCal)
-          const planned = sched?.doDate
-          const showsToday =
-            planned === day ||
-            (!planned && isTaskDueOnDate(task, empIdForCal, parseISO(day)))
-          if (!showsToday) continue
+          if (!isTaskDueOnDate(task, empIdForCal, parseISO(day))) continue
 
           // One kind of task block now. There used to be two — the work on
           // its do date, and a faded red marker on its deadline — and a task

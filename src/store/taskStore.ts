@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
-import { TaskSchedule, Task, CompletionLog, Category, TaskComment, TaskAttachment, TaskFile, ActivityLog } from '../types'
+import { Task, CompletionLog, Category, TaskComment, TaskAttachment, TaskFile, ActivityLog } from '../types'
 import { getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOfDay } from '../utils/taskScheduler'
 import { format } from 'date-fns'
 
@@ -15,6 +15,8 @@ interface TaskState {
   categories: Category[]
   loading: boolean
   taskStatuses: Record<string, 'in_progress'>
+  /** Same keys as taskStatuses, holding the moment work began. */
+  taskStartedAt: Record<string, string>
   taskComments: TaskComment[]
   activityLogs: ActivityLog[]
 
@@ -24,16 +26,7 @@ interface TaskState {
   /** Stop listening for live task changes. */
   teardown: () => void
 
-  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'schedules'> & { schedules?: TaskSchedule[] }) => Promise<void>
-  /**
-   * When one person plans to do a task. Stored on their assignment, so two
-   * people assigned the same task can schedule it independently.
-   */
-  setTaskDoDate: (
-    taskId: string,
-    employeeId: string,
-    schedule: { doDate: string | null },
-  ) => Promise<void>
+  addTask: (task: Omit<Task, 'id' | 'createdAt'>) => Promise<void>
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>
   deleteTask: (id: string) => Promise<void>
 
@@ -44,6 +37,8 @@ interface TaskState {
   setInProgress: (taskId: string, empId: string, date: string) => Promise<void>
   clearInProgress: (taskId: string, empId: string, date: string) => Promise<void>
   isInProgress: (taskId: string, empId: string, date: string) => boolean
+  /** When they pressed start, so "how long has this been going" is answerable. */
+  inProgressSince: (taskId: string, empId: string, date: string) => string | null
 
   addComment: (comment: Omit<TaskComment, 'id' | 'createdAt'> & { attachments: TaskAttachment[] }) => Promise<TaskComment>
   deleteComment: (commentId: string) => Promise<void>
@@ -76,10 +71,6 @@ function toTask(row: any): Task {
     title: row.title,
     description: row.description,
     assignedTo: (row.task_assignments ?? []).map((a: any) => a.employee_id),
-    schedules: (row.task_assignments ?? []).map((a: any) => ({
-      employeeId: a.employee_id,
-      doDate: a.do_date ?? null,
-    })),
     frequency: row.frequency,
     categoryId: row.category_id,
     priority: row.priority,
@@ -176,6 +167,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   categories: [],
   loading: false,
   taskStatuses: {},
+  taskStartedAt: {},
   taskComments: [],
   activityLogs: [],
 
@@ -206,23 +198,9 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   refresh: async () => {
     set({ loading: true })
 
-    // The scheduling columns arrive with the task-dates migration. Asking for
-    // them before it has run makes PostgREST reject the whole query, which
-    // emptied the task list entirely and looked exactly like every task having
-    // been deleted. Fall back to the shape that has always existed instead.
-    const fetchTasks = async () => {
-      const withDates = await supabase
-        .from('tasks')
-        .select('*, task_assignments(employee_id, do_date)')
-
-      if (!withDates.error) return withDates
-
-      console.warn(
-        '[tasks] scheduling columns missing, falling back — run the task-dates migration:',
-        withDates.error.message,
-      )
-      return supabase.from('tasks').select('*, task_assignments(employee_id)')
-    }
+    // Only who a task is assigned to. The day it happens comes from the task's
+    // own frequency, so the assignment carries no date any more.
+    const fetchTasks = () => supabase.from('tasks').select('*, task_assignments(employee_id)')
 
     const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes] = await Promise.all([
       fetchTasks(),
@@ -234,8 +212,13 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     ])
 
     const taskStatuses: Record<string, 'in_progress'> = {}
+    const taskStartedAt: Record<string, string> = {}
     for (const row of statusesRes.data ?? []) {
-      taskStatuses[`${row.task_id}:${row.employee_id}:${row.due_date}`] = 'in_progress'
+      const key = `${row.task_id}:${row.employee_id}:${row.due_date}`
+      taskStatuses[key] = 'in_progress'
+      // Absent until the started_at migration has run, in which case the
+      // duration simply is not shown rather than the whole row being lost.
+      if (row.started_at) taskStartedAt[key] = row.started_at
     }
 
     // A failed fetch must not be mistaken for "there are no tasks": blanking
@@ -251,6 +234,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       categories: categoriesRes.data ?? [],
       completionLogs: (logsRes.data ?? []).map(toCompletionLog),
       taskStatuses,
+      taskStartedAt,
       taskComments: (commentsRes.data ?? []).map(toComment),
       activityLogs: (activityRes.data ?? []).map(toActivityLog),
       loading: false,
@@ -282,27 +266,9 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     }
 
     if (task.assignedTo.length > 0) {
-      // A planned day travels with the assignment, so a task created with one
-      // already sits on the right day rather than needing scheduling by hand.
-      const doDateFor = (employeeId: string) =>
-        task.schedules?.find((sc) => sc.employeeId === employeeId)?.doDate ?? null
-
-      const rows = task.assignedTo.map((employeeId) => ({
-        task_id: data.id,
-        employee_id: employeeId,
-        do_date: doDateFor(employeeId),
-      }))
-
-      let { error: assignError } = await supabase.from('task_assignments').insert(rows)
-
-      // do_date arrives with the task-dates migration; without it, still make
-      // the assignment rather than losing the task.
-      if (assignError) {
-        console.warn('[addTask] retrying assignments without do_date:', assignError.message)
-        ;({ error: assignError } = await supabase
-          .from('task_assignments')
-          .insert(task.assignedTo.map((employeeId) => ({ task_id: data.id, employee_id: employeeId }))))
-      }
+      const { error: assignError } = await supabase
+        .from('task_assignments')
+        .insert(task.assignedTo.map((employeeId) => ({ task_id: data.id, employee_id: employeeId })))
 
       // The task exists but reaches nobody, which looks identical to a task
       // that was never created. Say so rather than leaving it orphaned.
@@ -312,16 +278,11 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       }
     }
 
-    // Carry the do dates into the local row too, or a task created with a day
-    // shows up unplanned until the next full reload.
     set((s) => applyTasks(s.scopedProjectId, [
       ...s.allTasks,
       toTask({
         ...data,
-        task_assignments: task.assignedTo.map((id) => ({
-          employee_id: id,
-          do_date: task.schedules?.find((sc) => sc.employeeId === id)?.doDate ?? null,
-        })),
+        task_assignments: task.assignedTo.map((id) => ({ employee_id: id })),
       }),
     ]))
   },
@@ -345,39 +306,16 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       }
     }
 
-    // The do date is the task's only date now, so it has to survive an edit.
-    // Assignments are rewritten wholesale here, and they used to be reinserted
-    // without do_date — which silently unplanned every assignee the moment
-    // anything else about the task was saved. Fall back to whatever the
-    // assignment already had, so an edit that does not mention days keeps them.
-    const existing = get().allTasks.find((t) => t.id === id)
-    const doDateFor = (employeeId: string) =>
-      (updates.schedules ?? existing?.schedules ?? []).find((sc) => sc.employeeId === employeeId)
-        ?.doDate ?? null
-
     if (updates.assignedTo !== undefined) {
       await supabase.from('task_assignments').delete().eq('task_id', id)
       if (updates.assignedTo.length > 0) {
         const { error } = await supabase.from('task_assignments').insert(
-          updates.assignedTo.map((employeeId) => ({
-            task_id: id,
-            employee_id: employeeId,
-            do_date: doDateFor(employeeId),
-          })),
+          updates.assignedTo.map((employeeId) => ({ task_id: id, employee_id: employeeId })),
         )
         if (error) {
           console.error('[updateTask] assignments failed:', error)
           throw new Error(error.message)
         }
-      }
-    } else if (updates.schedules !== undefined) {
-      // Days changed but not who is doing it: update the rows in place.
-      for (const sc of updates.schedules) {
-        await supabase
-          .from('task_assignments')
-          .update({ do_date: sc.doDate || null })
-          .eq('task_id', id)
-          .eq('employee_id', sc.employeeId)
       }
     }
 
@@ -394,36 +332,6 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       throw new Error(error.message)
     }
     set((s) => applyTasks(s.scopedProjectId, s.allTasks.filter((t) => t.id !== id)))
-  },
-
-  setTaskDoDate: async (taskId, employeeId, schedule) => {
-    const patch = {
-      do_date: schedule.doDate || null,
-    }
-    const { error } = await supabase
-      .from('task_assignments')
-      .update(patch)
-      .eq('task_id', taskId)
-      .eq('employee_id', employeeId)
-
-    if (error) {
-      console.error('[setTaskDoDate] failed:', error)
-      throw new Error(error.message)
-    }
-
-    set((s) => applyTasks(s.scopedProjectId, s.allTasks.map((t) => {
-      if (t.id !== taskId) return t
-      const schedules = t.schedules.some((x) => x.employeeId === employeeId)
-        ? t.schedules.map((x) =>
-            x.employeeId === employeeId
-              ? { ...x, doDate: schedule.doDate }
-              : x)
-        : [...t.schedules, {
-            employeeId,
-            doDate: schedule.doDate,
-          }]
-      return { ...t, schedules }
-    })))
   },
 
   completeTask: async (taskId, employeeId, dueDate) => {
@@ -481,8 +389,29 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
 
   setInProgress: async (taskId, empId, date) => {
     const key = `${taskId}:${empId}:${date}`
-    await supabase.from('task_statuses').upsert({ task_id: taskId, employee_id: empId, due_date: date, status: 'in_progress' })
-    set((s) => ({ taskStatuses: { ...s.taskStatuses, [key]: 'in_progress' } }))
+    // Stamped here rather than left to the column default, so re-starting
+    // something restarts the clock instead of keeping the first attempt's.
+    const startedAt = new Date().toISOString()
+    const row: Record<string, unknown> = {
+      task_id: taskId, employee_id: empId, due_date: date, status: 'in_progress',
+      started_at: startedAt,
+    }
+    let { error } = await supabase.from('task_statuses').upsert(row)
+    if (error) {
+      // started_at arrives with its own migration; without it, still record
+      // that the work has begun rather than refusing the press.
+      console.warn('[setInProgress] retrying without started_at:', error.message)
+      const { started_at: _drop, ...legacy } = row
+      ;({ error } = await supabase.from('task_statuses').upsert(legacy))
+    }
+    if (error) {
+      console.error('[setInProgress] failed:', error)
+      return
+    }
+    set((s) => ({
+      taskStatuses: { ...s.taskStatuses, [key]: 'in_progress' },
+      taskStartedAt: { ...s.taskStartedAt, [key]: startedAt },
+    }))
     await get().addActivityLog({ taskId, actorId: empId, action: 'in_progress' })
   },
 
@@ -492,7 +421,9 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     set((s) => {
       const next = { ...s.taskStatuses }
       delete next[key]
-      return { taskStatuses: next }
+      const nextStarted = { ...s.taskStartedAt }
+      delete nextStarted[key]
+      return { taskStatuses: next, taskStartedAt: nextStarted }
     })
   },
 
@@ -500,6 +431,9 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     const key = `${taskId}:${empId}:${date}`
     return get().taskStatuses[key] === 'in_progress'
   },
+
+  inProgressSince: (taskId, empId, date) =>
+    get().taskStartedAt[`${taskId}:${empId}:${date}`] ?? null,
 
   addComment: async (comment) => {
     const { data, error } = await supabase

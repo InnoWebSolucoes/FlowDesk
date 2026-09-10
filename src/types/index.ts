@@ -272,13 +272,6 @@ export interface Category {
   color: string
 }
 
-/** When one person plans to do a task they were assigned. */
-export interface TaskSchedule {
-  employeeId: string
-  /** The day they intend to do it. This is what their calendar shows. */
-  doDate: string | null
-}
-
 export interface Task {
   id: string
   projectId: string
@@ -286,11 +279,13 @@ export interface Task {
   description: string
   assignedTo: string[] // employee IDs
   /**
-   * When the work happens, one row per person the task is assigned to. This
-   * is the only date a task carries now: the separate deadline it used to
-   * have is gone, and a do date is what "it must be done" means.
+   * When the work happens — and the only place a task's dates come from.
+   *
+   * A one-off carries its day in `frequency.date`; everything else produces
+   * its days from the rule. There was briefly a per-assignee do date beside
+   * this, which meant a one-off had two date fields that both meant "the day
+   * it gets done" and could disagree with each other. One date, here.
    */
-  schedules: TaskSchedule[]
   frequency: TaskFrequency
   categoryId: string
   priority: Priority

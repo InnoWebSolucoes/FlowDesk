@@ -1,6 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { X, Clock, CalendarClock, Users, Tag, Repeat, CheckCircle2, ExternalLink } from 'lucide-react'
+import { X, Clock, Users, Tag, Repeat, CheckCircle2, ExternalLink } from 'lucide-react'
 import { format } from 'date-fns'
 import { Task } from '../../types'
 import type { TranslationKey } from '../../i18n/translations'
@@ -125,18 +125,6 @@ export function TaskPeekPanel({
               : <span className="text-text-subtle">{t('cal_nobody')}</span>)}
 
           {row(Repeat, t('taskpeek_repeats'), frequencyLabel(task.frequency, t))}
-
-          {task.schedules.length > 0 && row(CalendarClock, t('taskpeek_plannedFor'),
-            <div className="space-y-0.5">
-              {task.schedules.filter((sc) => sc.doDate).map((sc) => {
-                const who = employees.find((e) => e.id === sc.employeeId)
-                return (
-                  <p key={sc.employeeId}>
-                    {who?.name ?? t('taskpeek_someone')} · {sc.doDate}
-                  </p>
-                )
-              })}
-            </div>)}
 
           {row(Tag, t('taskpeek_category'), category?.name ?? <span className="text-text-subtle">{t('cal_none')}</span>)}
 

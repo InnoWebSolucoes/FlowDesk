@@ -336,15 +336,16 @@ export function AIOrganiser() {
         title: gt.title,
         description: gt.description,
         assignedTo: finalAssignees,
-        frequency: gt.frequency,
+        // The model returns one date, and for a one-off that date *is* the
+        // task's day — the frequency is where a task's dates live now, so it
+        // goes in there rather than beside it.
+        frequency:
+          gt.frequency?.type === 'one-off' && gt.doDate
+            ? { ...gt.frequency, date: gt.frequency.date ?? gt.doDate }
+            : gt.frequency,
         categoryId: catId,
         priority: gt.priority,
         estimatedMinutes: Number(gt.estimatedMinutes) || 0,
-        // A do date is per person, so everyone the task goes to gets the
-        // same planned day; they can move their own afterwards.
-        schedules: gt.doDate
-          ? finalAssignees.map((employeeId) => ({ employeeId, doDate: gt.doDate! }))
-          : [],
         createdBy: currentUser.id,
         isActive: true,
       }
