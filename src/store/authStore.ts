@@ -24,11 +24,18 @@ interface AuthState {
   /** The person being previewed, or null when not previewing. */
   viewAs: User | null
   /**
+   * The page the preview was entered from, so leaving puts you back exactly
+   * where you were. Rebuilding the path from the employee's project sent you
+   * to the top of it instead, which meant finding your way back through the
+   * project and the team list every time.
+   */
+  viewAsReturnTo: string | null
+  /**
    * Enter or leave the preview. Owner-only, and refused for anyone else here
    * as well as by RLS — this switches what the interface shows, and showing
    * somebody an interface they cannot use would be its own kind of lie.
    */
-  setViewAs: (user: User | null) => void
+  setViewAs: (user: User | null, returnTo?: string) => void
   status: AuthStatus
   initialize: () => Promise<void>
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
@@ -65,21 +72,29 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   currentUser: null,
   realUser: null,
   viewAs: null,
+  viewAsReturnTo: null,
   status: 'loading',
 
-  setViewAs: (user) => {
+  setViewAs: (user, returnTo) => {
     const real = get().realUser
     if (!real?.isOwner) return
-    set({ viewAs: user, currentUser: user ?? real })
+    set({
+      viewAs: user,
+      currentUser: user ?? real,
+      // Kept only while a preview is open; entering without a path leaves
+      // whatever was there rather than clearing it, so a second call to swap
+      // between employees does not lose the way back.
+      viewAsReturnTo: user ? returnTo ?? get().viewAsReturnTo : null,
+    })
   },
 
   initialize: async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (session?.user) {
       const profile = await fetchProfile(session.user.id)
-      set({ currentUser: profile, realUser: profile, viewAs: null, status: profile ? 'authenticated' : 'unauthenticated' })
+      set({ currentUser: profile, realUser: profile, viewAs: null, viewAsReturnTo: null, status: profile ? 'authenticated' : 'unauthenticated' })
     } else {
-      set({ currentUser: null, realUser: null, viewAs: null, status: 'unauthenticated' })
+      set({ currentUser: null, realUser: null, viewAs: null, viewAsReturnTo: null, status: 'unauthenticated' })
     }
 
     supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -95,7 +110,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           status: profile ? 'authenticated' : 'unauthenticated',
         })
       } else {
-        set({ currentUser: null, realUser: null, viewAs: null, status: 'unauthenticated' })
+        set({ currentUser: null, realUser: null, viewAs: null, viewAsReturnTo: null, status: 'unauthenticated' })
       }
     })
   },
@@ -109,13 +124,13 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     if (!profile) {
       return { success: false, error: 'Profile not found' }
     }
-    set({ currentUser: profile, realUser: profile, viewAs: null, status: 'authenticated' })
+    set({ currentUser: profile, realUser: profile, viewAs: null, viewAsReturnTo: null, status: 'authenticated' })
     return { success: true }
   },
 
   logout: async () => {
     await supabase.auth.signOut()
-    set({ currentUser: null, realUser: null, viewAs: null, status: 'unauthenticated' })
+    set({ currentUser: null, realUser: null, viewAs: null, viewAsReturnTo: null, status: 'unauthenticated' })
   },
 
   requestPasswordReset: async (email) => {

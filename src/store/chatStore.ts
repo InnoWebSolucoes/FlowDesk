@@ -41,7 +41,16 @@ interface ChatState {
   sendMessage: (conversationId: string, body: string, itemIds: string[]) => Promise<void>
   deleteMessage: (messageId: string, conversationId: string) => Promise<void>
   /** Hides every message in the room. The record survives for managers. */
+  /** Soft-delete every message, for everybody. Managers only. */
   clearConversation: (conversationId: string) => Promise<void>
+  /**
+   * Hide everything sent so far, for you alone. The other side keeps their
+   * copy: clearing your own list is not a reason to reach into somebody
+   * else's conversation and delete it.
+   */
+  clearForMe: (conversationId: string) => Promise<void>
+  /** When you last cleared this room, if you have. */
+  clearedAt: Record<string, string>
   /**
    * Marks a discussion finished. It leaves the list and the record stays, so a
    * manager can go back to it; nothing is deleted.
@@ -150,6 +159,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   loadedRooms: [],
   error: null,
 
+  clearedAt: {},
+
   clearError: () => set({ error: null }),
 
   loadPeople: async () => {
@@ -194,6 +205,26 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     })
 
     set({ conversations, loading: false })
+
+    // Which rooms this person has cleared for themselves, and when. Loaded
+    // alongside the rooms so the first render already hides what it should
+    // rather than flashing the old messages and then removing them.
+    const { data: clears, error: clearsErr } = await supabase
+      .from('chat_clears')
+      .select('conversation_id, cleared_at')
+      .eq('user_id', userId)
+
+    if (clearsErr) {
+      // The table arrives with its own migration; without it nobody has
+      // cleared anything, which is the correct answer in the meantime.
+      console.warn('[chat] clears unavailable:', clearsErr.message)
+    } else {
+      set({
+        clearedAt: Object.fromEntries(
+          (clears ?? []).map((c: any) => [c.conversation_id, c.cleared_at]),
+        ),
+      })
+    }
 
     // The badge cannot be derived from `messages`: that only holds rooms this
     // session has opened, so every unopened room — precisely the ones with
@@ -436,6 +467,26 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         c.id === conversationId ? { ...c, resolvedAt: now } : c,
       ),
     }))
+  },
+
+  clearForMe: async (conversationId) => {
+    const userId = await me()
+    if (!userId) return
+    const clearedAt = new Date().toISOString()
+
+    const { error } = await supabase
+      .from('chat_clears')
+      .upsert(
+        { conversation_id: conversationId, user_id: userId, cleared_at: clearedAt },
+        { onConflict: 'conversation_id,user_id' },
+      )
+
+    if (error) {
+      console.error('[chat] clear for me failed:', error.message)
+      set({ error: error.message })
+      return
+    }
+    set((s) => ({ clearedAt: { ...s.clearedAt, [conversationId]: clearedAt } }))
   },
 
   clearConversation: async (conversationId) => {

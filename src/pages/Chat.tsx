@@ -47,16 +47,22 @@ export function Chat() {
   const { allTasks } = useTaskStore()
   const {
     conversations, messages, loadMessages, sendMessage, deleteMessage, clearConversation, setResolved,
+    clearForMe, clearedAt,
     openDirect, openTaskRoom, ensureCluster, markRead, unreadCount, loadedRooms,
     people, error, clearError,
   } = useChatStore()
   const {
     items, createItem, setItemClusters, loadResources, resourcesLoadedFor, getFileUrl,
+    ensureItems,
   } = useProjectStore()
 
   const [draft, setDraft] = useState('')
   const [query, setQuery] = useState('')
   const [showResolved, setShowResolved] = useState(false)
+  // Asking before wiping a conversation. It used to go on the first click,
+  // with nothing said and no way back.
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [clearing, setClearing] = useState(false)
   // Dismissed per room, so declining once does not mean being asked again on
   // the next message.
   const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null)
@@ -147,11 +153,29 @@ export function Chat() {
     if (activeProjectId && resourcesLoadedFor !== activeProjectId) loadResources(activeProjectId)
   }, [activeProjectId, resourcesLoadedFor, loadResources])
 
+
   // A deleted message stays in the record. Managers still see it, greyed;
   // for everyone else it is gone.
-  const roomMessages = (activeId ? messages[activeId] ?? [] : []).filter(
-    (m) => !m.deletedAt || isAdmin,
-  )
+  // Two independent filters. A soft-deleted message is gone for everyone but
+  // a manager; a message before your own clear is gone for you and nobody
+  // else. Clearing your side of a chat must not reach into theirs.
+  const myClear = activeId ? clearedAt[activeId] : undefined
+  const roomMessages = (activeId ? messages[activeId] ?? [] : [])
+    .filter((m) => !m.deletedAt || isAdmin)
+    .filter((m) => !myClear || m.createdAt > myClear)
+
+  // Whatever the open room's messages point at, fetched regardless of which
+  // project it belongs to. Without this a file shared from another project —
+  // or shared before this room's project could be resolved at all — rendered
+  // as "this file is gone" while sitting there perfectly intact.
+  const attachedIds = roomMessages.flatMap((m) => m.itemIds)
+  const attachedKey = attachedIds.join(',')
+  useEffect(() => {
+    if (attachedIds.length > 0) ensureItems(attachedIds)
+    // Keyed on the ids themselves: the array is rebuilt every render, so
+    // depending on it directly would refetch forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachedKey, ensureItems])
 
   // Stay pinned to the newest message, the way a chat should — but only when
   // one arrives. The count also changes when a message is deleted, and being
@@ -520,8 +544,8 @@ export function Chat() {
 
                 {roomMessages.length > 0 && (
                   <button
-                    onClick={() => clearConversation(active.id)}
-                    title={t('chat_clear')}
+                    onClick={() => setConfirmClear(true)}
+                    title={isAdmin ? t('chat_clearEveryone') : t('chat_clearMine')}
                     className="flex items-center gap-1.5 text-xs text-text-muted hover:text-danger px-2.5 py-1.5 rounded-lg hover:bg-surface-2 transition-colors"
                   >
                     <Trash2 size={13} />
@@ -790,6 +814,54 @@ export function Chat() {
           onChoose={(target) => uploadInto(choosingTarget, target)}
         />
       )}
+
+      {/* Clearing a chat, and saying plainly whose copy goes. A manager
+          clears it for everyone, which is what the button has always done.
+          Anyone else clears their own side only — reaching across to delete
+          the other person's copy of a conversation they were part of was
+          never the intent, and now is not possible. */}
+      {confirmClear && active && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => setConfirmClear(false)}
+        >
+          <div
+            className="bg-surface rounded-xl border border-border w-full max-w-sm p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-text-main font-semibold text-base mb-2">
+              {isAdmin ? t('chat_clearEveryoneTitle') : t('chat_clearMineTitle')}
+            </h3>
+            <p className="text-text-muted text-sm mb-4">
+              {isAdmin ? t('chat_clearEveryoneBody') : t('chat_clearMineBody')}
+            </p>
+            <div className="flex gap-2">
+              <button
+                disabled={clearing}
+                onClick={async () => {
+                  setClearing(true)
+                  try {
+                    if (isAdmin) await clearConversation(active.id)
+                    else await clearForMe(active.id)
+                    setConfirmClear(false)
+                  } finally {
+                    setClearing(false)
+                  }
+                }}
+                className="flex-1 bg-danger text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                {clearing ? t('ui_deleting') : t('chat_clearConfirm')}
+              </button>
+              <button
+                onClick={() => setConfirmClear(false)}
+                className="flex-1 border border-border text-text-muted text-sm px-4 py-2 rounded-lg hover:bg-surface-2 transition-colors"
+              >
+                {t('ui_cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -888,6 +960,7 @@ function UploadTargetDialog({
           </button>
         </div>
       </div>
+
     </div>
   )
 }

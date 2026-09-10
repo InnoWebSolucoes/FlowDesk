@@ -36,6 +36,16 @@ interface ProjectState {
 
   // Resources
   loadResources: (projectId: string) => Promise<void>
+  /**
+   * Pull in specific documents by id, whatever project they belong to.
+   *
+   * Chat needs it: a message's attachments are resource items, and the panel
+   * only ever loads one project's worth. A file shared from anywhere else —
+   * or before the room's project could be worked out at all — was not in the
+   * list, and the chip rendered "this file is gone" over a document that was
+   * sitting there perfectly intact.
+   */
+  ensureItems: (itemIds: string[]) => Promise<void>
   createCluster: (projectId: string, parentClusterId: string | null, input: Partial<ResourceCluster>) => Promise<ResourceCluster | null>
   updateCluster: (id: string, updates: Partial<ResourceCluster>) => Promise<void>
   deleteCluster: (id: string) => Promise<void>
@@ -450,6 +460,39 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   getProject: (id) => get().projects.find((p) => p.id === id),
 
   // ─── Resources ────────────────────────────────────────────────────────────
+
+  ensureItems: async (itemIds) => {
+    const have = new Set(get().items.map((i) => i.id))
+    const missing = [...new Set(itemIds)].filter((id) => id && !have.has(id))
+    if (missing.length === 0) return
+
+    // Same shape as loadResources, with the same fallback: the access join
+    // only resolves once its migration has run.
+    let { data, error } = await supabase
+      .from('resource_items')
+      .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id), resource_item_access(user_id)')
+      .in('id', missing)
+
+    if (error) {
+      ;({ data, error } = await supabase
+        .from('resource_items')
+        .select('*, resource_item_links(*), resource_item_versions(*), resource_item_clusters(cluster_id)')
+        .in('id', missing))
+    }
+
+    // RLS may legitimately hide some of them, and that is a real "gone" —
+    // what is not real is calling a document gone because nobody asked for it.
+    if (error || !data) {
+      console.warn('[ensureItems] could not fetch:', error?.message)
+      return
+    }
+
+    set((st) => {
+      const known = new Set(st.items.map((i) => i.id))
+      const added = data!.map(toItem).filter((i) => !known.has(i.id))
+      return added.length > 0 ? { items: [...st.items, ...added] } : {}
+    })
+  },
 
   loadResources: async (projectId) => {
     // The access join only resolves once the resource-access migration has run;

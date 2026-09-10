@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Globe, Eye } from 'lucide-react'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useToolStore } from '../../store/toolStore'
@@ -32,6 +32,7 @@ type TaskSection = typeof TASK_SECTIONS[number]
 export function EmployeeProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   // Unscoped: the profile renders outside the project shell, where the scoped
   // list has been cleared.
   const { allEmployees } = useEmployeeStore()
@@ -136,7 +137,8 @@ export function EmployeeProfile() {
           {isOwner && (
             <button
               onClick={() => {
-                setViewAs(emp)
+                // Where to come back to: this page, as it is now.
+                setViewAs(emp, location.pathname + location.search)
                 navigate('/employee/tasks')
               }}
               className="flex items-center gap-2 bg-primary text-white text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-primary-dark transition-colors flex-shrink-0"

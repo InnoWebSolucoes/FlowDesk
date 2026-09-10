@@ -108,12 +108,18 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
   const initNotifications = useNotificationStore(s => s.initialize)
   const initProjects = useProjectStore(s => s.initialize)
   const initChat = useChatStore(s => s.initialize)
-  // The real account, not whoever is being previewed. Chat rooms and usage
-  // tracking both belong to the human at the keyboard: an owner looking at
-  // somebody's side of the app must not load that person's conversations, and
-  // must certainly not be recorded as them opening the app — it would show up
-  // as their start of day and as time they spent working.
-  const currentUserId = useAuthStore(s => s.realUser?.id)
+  // Two ids, because they answer different questions.
+  //
+  // Tracking belongs to the human at the keyboard: previewing somebody must
+  // never be recorded as them opening the app, or it becomes their start of
+  // day and time they spent working.
+  const realUserId = useAuthStore(s => s.realUser?.id)
+  // Chat belongs to whoever the app is behaving as. Loading the owner's rooms
+  // while the page thought it was the employee is what put three "InnoWeb
+  // Admin" rows in the list: every one of the owner's direct rooms had a
+  // member who was not the previewed employee, so each fell back to naming
+  // the owner. Their side of the app should show their conversations.
+  const chatUserId = useAuthStore(s => s.currentUser?.id)
 
   useEffect(() => {
     initAuth()
@@ -133,12 +139,12 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
       initNotifications()
       // Chat is per-person — whose rooms these are decides what comes back —
       // so it needs the id, not just the fact that someone is signed in.
-      if (currentUserId) initChat(currentUserId)
+      if (chatUserId) initChat(chatUserId)
       // How often the app is opened and for how long. Recorded for everyone;
       // only the owner can read it back. Keyed on the real account, so a
       // preview is recorded against the owner doing the previewing — which is
       // true, and is the point.
-      if (currentUserId) startTracking(currentUserId)
+      if (realUserId) startTracking(realUserId)
       return
     }
 
@@ -156,7 +162,7 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
     tearDownProjects()
     tearDownChat()
     stopTracking()
-  }, [authStatus, currentUserId])
+  }, [authStatus, realUserId, chatUserId])
 
   if (authStatus === 'loading') return <LoadingScreen />
 

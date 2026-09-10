@@ -29,14 +29,56 @@ interface ToolState {
   getGuidelines: (employeeId: string) => Guidelines | undefined
 }
 
+/** Does this look like a web address rather than a name? */
+function looksLikeUrl(v: string | null | undefined): boolean {
+  const s = (v ?? '').trim()
+  if (!s) return false
+  if (/^https?:\/\//i.test(s)) return true
+  // A bare domain: something.something, no spaces.
+  return /^[^\s/]+\.[a-z]{2,}(\/|$)/i.test(s)
+}
+
+/**
+ * A website row, with the two fields put back the right way round when they
+ * were entered swapped.
+ *
+ * The add form was three unlabelled boxes with the address first, so the URL
+ * went into the name and the name into the URL. The label then read
+ * "https://drive.google.com" and the favicon was looked up for a hostname
+ * that never existed — which is why every tile showed the generic globe.
+ *
+ * FIX_SWAPPED_WEBSITES.sql repairs the stored rows, but relying on a script
+ * having been run is how this survived two rounds of being reported fixed.
+ * Corrected on the way in as well, so the list is right whether or not the
+ * database has been tidied: only when the name really is an address and the
+ * url really is not, which cannot touch a row that was entered correctly.
+ */
 function toWebsite(row: any): Website {
+  const swapped = looksLikeUrl(row.name) && !looksLikeUrl(row.url)
+  const url = swapped ? row.name : row.url
+  const name = swapped ? row.url : row.name
+
   return {
     id: row.id,
-    name: row.name,
-    url: row.url,
+    // A name that is still just the address reads as no name at all, so it
+    // falls back to the hostname — "drive.google.com" rather than the whole
+    // truncated URL.
+    name: (name ?? '').trim() || hostOf(url) || (url ?? ''),
+    url,
     description: row.description,
     assignedTo: (row.website_assignments ?? []).map((a: any) => a.employee_id),
     faviconUrl: row.favicon_url ?? undefined,
+  }
+}
+
+/** The hostname, for when a site has no name worth showing. */
+function hostOf(url: string | null | undefined): string {
+  const raw = (url ?? '').trim()
+  if (!raw) return ''
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.replace(/^www\./, '')
+  } catch {
+    return raw.replace(/^https?:\/\//i, '').split('/')[0]
   }
 }
 

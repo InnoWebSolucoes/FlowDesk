@@ -16,16 +16,22 @@ import { useT } from '../../i18n/useT'
 export function ViewAsBanner() {
   const viewAs = useAuthStore((s) => s.viewAs)
   const setViewAs = useAuthStore((s) => s.setViewAs)
+  const returnTo = useAuthStore((s) => s.viewAsReturnTo)
   const navigate = useNavigate()
   const { t } = useT()
 
   if (!viewAs) return null
 
   const leave = () => {
-    // Back to their profile, which is where the preview was entered from.
-    const back = viewAs.projectId
-      ? `/admin/projects/${viewAs.projectId}/employees/team/${viewAs.id}`
-      : '/admin/projects'
+    // Exactly the page it was entered from. Rebuilding a path from the
+    // employee's project landed at the top of the project instead — and for
+    // anyone without a project, at the project list — so leaving a preview
+    // meant walking back in through the project and the team list.
+    const back =
+      returnTo ??
+      (viewAs.projectId
+        ? `/admin/projects/${viewAs.projectId}/employees/team/${viewAs.id}`
+        : '/admin/projects')
     setViewAs(null)
     navigate(back)
   }
