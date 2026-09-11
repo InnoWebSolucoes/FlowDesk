@@ -6,7 +6,7 @@ import { EmptyState } from '../../components/shared/EmptyState'
 import { format, parseISO } from 'date-fns'
 import { useT } from '../../i18n/useT'
 import { Document } from '../../types'
-import { Favicon } from '../../components/shared/Favicon'
+import { WebsiteGrid } from '../../components/shared/WebsiteGrid'
 import { DocumentThumb } from '../../components/shared/DocumentThumb'
 import { fileKind } from '../../components/resources/ResourceThumbnail'
 
@@ -256,37 +256,18 @@ export function Toolbox() {
             />
           ) : (
             // Icons with their names under them, the way a desktop or a
-            // phone home screen reads: the whole tile is the link, so there
-            // is no separate Open button to aim at.
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-              {myWebsites.map(w => (
-                <a
-                  key={w.id}
-                  href={w.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={w.description || w.url}
-                  className="group flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-surface-2 transition-colors"
-                >
-                  <Favicon
-                    url={w.url}
-                    name={w.name}
-                    className="w-10 h-10 rounded-xl object-contain bg-surface border border-border p-1.5 shadow-sm group-hover:shadow transition-shadow"
-                    letterClassName="w-10 h-10 rounded-xl bg-primary-light border border-border shadow-sm flex items-center justify-center text-primary font-semibold"
-                  />
-                  <span className="text-text-main text-xs text-center leading-tight line-clamp-2 w-full">
-                    {w.name}
-                  </span>
-                </a>
-              ))}
-            </div>
+            // phone home screen reads: the whole tile is the link. Edit sites
+            // turns them editable.
+            <WebsiteGrid sites={myWebsites} employeeId={empId} canManage />
           )}
         </div>
       )}
 
       {tab === 'documents' && (
-        <div className="flex gap-5">
-          <div className="w-44 flex-shrink-0">
+        // Folders above the files on a phone, beside them on anything wider:
+        // a fixed 11rem column plus the file grid was wider than a phone screen.
+        <div className="flex flex-col md:flex-row gap-5">
+          <div className="md:w-44 flex-shrink-0">
             <div className="space-y-0.5">
               <button
                 onClick={() => setSelectedFolder(null)}

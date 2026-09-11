@@ -615,16 +615,10 @@ function attachContextMenu(view, label) {
       items.push({ label: 'Copy Image Address', click: () => clipboard.writeText(srcURL) })
     }
 
-    // Nothing actionable under the cursor: show no menu rather than an empty
-    // box. The inspector stays available for us without cluttering the rest.
-    if (!items.length) {
-      items.push({
-        label: 'Inspect Element',
-        click: () => {
-          view.webContents.inspectElement(params.x, params.y)
-        },
-      })
-    }
+    // Nothing actionable under the cursor: no menu at all. This used to offer
+    // Inspect Element, a developer tool that appeared in front of everyone who
+    // right-clicked an empty part of the app.
+    if (!items.length) return
 
     Menu.buildFromTemplate(items).popup({ window: win })
   })

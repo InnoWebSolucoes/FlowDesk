@@ -15,6 +15,12 @@ interface ToolState {
   addWebsite: (website: Omit<Website, 'id'>) => Promise<void>
   updateWebsite: (id: string, updates: Partial<Website>) => Promise<void>
   deleteWebsite: (id: string) => Promise<void>
+  /**
+   * Take a site off one person's list. A site can be on several lists, so
+   * this never deletes it for anyone else; it goes altogether only when
+   * nobody has it any more.
+   */
+  removeWebsiteFor: (websiteId: string, employeeId: string) => Promise<void>
 
   uploadDocument: (employeeId: string, file: File, folderId?: string) => Promise<void>
   deleteDocument: (id: string) => Promise<void>
@@ -185,7 +191,12 @@ export const useToolStore = create<ToolState>()((set, get) => ({
     if (updates.faviconUrl !== undefined) patch.favicon_url = updates.faviconUrl
 
     if (Object.keys(patch).length > 0) {
-      await supabase.from('websites').update(patch).eq('id', id)
+      // Checked: an edit refused here used to look saved until the next reload.
+      const { error } = await supabase.from('websites').update(patch).eq('id', id)
+      if (error) {
+        console.error('[updateWebsite] failed:', error)
+        throw new Error(error.message)
+      }
     }
 
     if (updates.assignedTo !== undefined) {
@@ -203,6 +214,35 @@ export const useToolStore = create<ToolState>()((set, get) => ({
   deleteWebsite: async (id) => {
     await supabase.from('websites').delete().eq('id', id)
     set((s) => ({ websites: s.websites.filter((w) => w.id !== id) }))
+  },
+
+  removeWebsiteFor: async (websiteId, employeeId) => {
+    // Through a function, because an employee can only see their own
+    // assignment: they cannot tell whether anyone else has the site, so they
+    // cannot know whether deleting the whole row is safe. The function can.
+    const { error } = await supabase.rpc('remove_website_from_list', {
+      p_website: websiteId,
+      p_employee: employeeId,
+    })
+    if (error) {
+      // Until that migration has run, take it off this person's list directly.
+      // The site row stays behind, where only the owner could ever see it.
+      console.warn('[removeWebsiteFor] falling back to removing the assignment:', error.message)
+      const { error: direct } = await supabase
+        .from('website_assignments')
+        .delete()
+        .eq('website_id', websiteId)
+        .eq('employee_id', employeeId)
+      if (direct) {
+        console.error('[removeWebsiteFor] failed:', direct)
+        throw new Error(direct.message)
+      }
+    }
+    set((s) => ({
+      websites: s.websites
+        .map((w) => (w.id === websiteId ? { ...w, assignedTo: w.assignedTo.filter((a) => a !== employeeId) } : w))
+        .filter((w) => w.id !== websiteId || w.assignedTo.length > 0),
+    }))
   },
 
   uploadDocument: async (employeeId, file, folderId) => {

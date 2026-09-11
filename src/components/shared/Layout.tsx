@@ -23,7 +23,10 @@ export function Layout() {
             resolves against nothing and the page collapses to its content.
             Chat scrolls its own panes, so scrolling here is for everything
             else. */}
-        <main className={`flex-1 min-h-0 ${isChat ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        {/* overflow-x-hidden as well: overflow-y-auto on its own makes sideways
+            overflow scrollable too, and on a phone that let a page wider
+            than the screen be dragged left and right. */}
+        <main className={`flex-1 min-h-0 overflow-x-hidden ${isChat ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {/* Capped and centred: with the sidebar collapsed the window is
               wide enough that a full-bleed row leaves its title at one edge
               and its dates at the other, with nothing in between. */}

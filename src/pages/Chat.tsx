@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Send, Paperclip, Search, MessageSquare, CheckSquare, Trash2, Download, CheckCircle2,
-  FolderOpen, X, Link2, ArrowRight,
+  FolderOpen, X, Link2, ArrowRight, ArrowLeft,
 } from 'lucide-react'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
 import { useAuthStore } from '../store/authStore'
@@ -428,8 +428,14 @@ export function Chat() {
       {/* ─── Rooms ─────────────────────────────────────────────────────── */}
       {/* pt-14 on a phone: chat fills the frame with no padding of its own,
           so without it the floating menu button sits on top of the search
-          box now that there is no top bar for it to live in. */}
-      <div className="w-72 border-r border-border bg-surface flex flex-col flex-shrink-0 pt-14 md:pt-0">
+          box now that there is no top bar for it to live in.
+
+          On a phone the list and the open room take turns at the full width,
+          the way a messaging app does: side by side they were wider than the
+          screen, and the page scrolled sideways to show the rest. */}
+      <div className={`w-full md:w-72 border-r border-border bg-surface flex-col flex-shrink-0 pt-14 md:pt-0 ${
+        active ? 'hidden md:flex' : 'flex'
+      }`}>
         <div className="p-3 border-b border-border">
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-subtle" />
@@ -511,7 +517,7 @@ export function Chat() {
       </div>
 
       {/* ─── The open room ─────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <div className={`flex-1 flex-col min-w-0 min-h-0 ${active ? 'flex' : 'hidden md:flex'}`}>
         {!active ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3">
             <MessageSquare size={40} className="text-text-subtle" />
@@ -522,14 +528,22 @@ export function Chat() {
           <>
             {/* Header. A task room says what it is about, and that label is the
                 way back to the task itself. */}
-            <div className="px-5 py-3 border-b border-border bg-surface flex items-center justify-between gap-3">
-              <div className="min-w-0">
+            <div className="px-3 md:px-5 py-3 pt-14 md:pt-3 border-b border-border bg-surface flex items-center justify-between gap-2 md:gap-3 flex-wrap">
+              {/* Back to the list, on a phone where the list is not beside it. */}
+              <button
+                onClick={() => setActiveId(null)}
+                className="md:hidden p-1.5 -ml-1 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors flex-shrink-0"
+                title={t('chat_backToList')}
+              >
+                <ArrowLeft size={16} />
+              </button>
+              <div className="min-w-0 flex-1">
                 <p className="text-text-main font-semibold text-sm truncate">{titleOf(active)}</p>
                 <p className="text-text-subtle text-xs">
                   {active.kind === 'task' ? t('chat_taskThread') : t('chat_direct')}
                 </p>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-1 md:gap-2 flex-shrink-0 flex-wrap">
                 {active.kind === 'task' && (
                   <button
                     onClick={() => setResolved(active.id, !active.resolvedAt)}
@@ -583,7 +597,7 @@ export function Chat() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-1">
+            <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4 space-y-1">
               {roomMessages.length === 0 ? (
                 <div className="py-16 flex flex-col items-center gap-2">
                   <MessageSquare size={28} className="text-text-subtle" />
@@ -619,7 +633,7 @@ export function Chat() {
                             className={grouped ? 'invisible' : ''}
                           />
                         )}
-                        <div className={`max-w-[70%] group ${mine ? 'items-end' : 'items-start'} flex flex-col`}>
+                        <div className={`max-w-[85%] md:max-w-[70%] min-w-0 group ${mine ? 'items-end' : 'items-start'} flex flex-col`}>
                           {!grouped && (
                             <span className="text-[11px] text-text-subtle mb-0.5 px-1">
                               {mine ? t('chat_you') : nameOf(m.authorId)} · {format(parseISO(m.createdAt), 'HH:mm')}

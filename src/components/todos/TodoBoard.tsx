@@ -465,7 +465,7 @@ export function TodoBoard({
     // left the rows stopping short of it with empty page beside them.
     <div>
       {/* List tabs */}
-      <div className="flex items-center gap-1 border-b border-border mb-4 overflow-x-auto">
+      <div className="flex items-center gap-1 border-b border-border mb-4 flex-wrap">
         {lists.map((list) => {
           const isActive = list.id === currentListId
           const isRenaming = renamingListId === list.id

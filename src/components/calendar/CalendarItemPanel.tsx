@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   X, Link2, FolderOpen, ExternalLink, Lock, Users as UsersIcon, Globe, Check, Pencil,
 } from 'lucide-react'
@@ -12,6 +12,9 @@ import { ResourceLinkPicker, LinkKey } from '../shared/ResourceLinkPicker'
 import { KIND_STYLE } from './calendarShared'
 import { useT } from '../../i18n/useT'
 import { useEmployeeStore } from '../../store/employeeStore'
+import { useTaskStore } from '../../store/taskStore'
+import { useAuthStore } from '../../store/authStore'
+import { format } from 'date-fns'
 
 const VISIBILITY: { value: Visibility | ''; label: string; Icon: typeof Lock }[] = [
   { value: '', label: 'Default for my role', Icon: UsersIcon },
@@ -62,6 +65,26 @@ export function CalendarItemPanel({
 
   const title = todo?.title ?? entry?.title ?? ''
 
+  // The title being typed, held here until it is committed. Writing the store
+  // on every keystroke waited for the network before the box showed the
+  // letter, so letters landed out of order or vanished, and every write
+  // re-rendered the whole calendar behind the panel, which was the flicker.
+  const [titleDraft, setTitleDraft] = useState(title)
+  useEffect(() => {
+    if (!editing) setTitleDraft(title)
+  }, [title, editing])
+
+  const commitTitle = () => {
+    const next = titleDraft.trim()
+    if (!next) {
+      setTitleDraft(title)
+      return
+    }
+    if (next === title) return
+    if (todo) updateTodo(todo.id, { title: next })
+    else if (entry) updateCalendarEntry(entry.id, { title: next })
+  }
+
   const root = basePath ?? `/admin/projects/${projectId}`
 
   const links = todo?.links ?? entry?.links ?? []
@@ -105,14 +128,18 @@ export function CalendarItemPanel({
             <div className="min-w-0 flex-1">
               {editing ? (
                 <textarea
-                  value={title}
+                  value={titleDraft}
                   autoFocus
-                  onChange={(e) =>
-                    todo
-                      ? updateTodo(todo.id, { title: e.target.value })
-                      : updateCalendarEntry(entry!.id, { title: e.target.value })
-                  }
-                  rows={Math.min(4, Math.ceil(title.length / 46) || 1)}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={commitTitle}
+                  onKeyDown={(e) => {
+                    // A title is one line: Enter finishes it rather than breaking it.
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      ;(e.target as HTMLTextAreaElement).blur()
+                    }
+                  }}
+                  rows={Math.min(4, Math.ceil(titleDraft.length / 46) || 1)}
                   className="w-full bg-surface-2 text-text-main font-semibold text-base outline-none focus:ring-1 focus:ring-primary/40 rounded px-2 -ml-2 resize-none leading-snug"
                 />
               ) : (
@@ -150,7 +177,7 @@ export function CalendarItemPanel({
 
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
             {todo
-              ? <TodoBody todo={todo} readOnly={readOnly} editing={editing} />
+              ? <TodoBody todo={todo} readOnly={readOnly} editing={editing} onClose={onClose} />
               : <EntryBody entry={entry!} readOnly={readOnly} editing={editing} />}
 
             <section>
@@ -220,16 +247,71 @@ const inputClass =
   'w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary'
 
 function TodoBody({
-  todo, readOnly, editing,
-}: { todo: ProjectTodo; readOnly?: boolean; editing?: boolean }) {
+  todo, readOnly, editing, onClose,
+}: { todo: ProjectTodo; readOnly?: boolean; editing?: boolean; onClose: () => void }) {
   const { t } = useT()
   const { employees } = useEmployeeStore()
-  const { updateTodo, toggleTodo, todoLists } = useProjectStore()
+  const { updateTodo, toggleTodo, deleteTodo, todoLists } = useProjectStore()
+  const addTask = useTaskStore((s) => s.addTask)
+  const realUser = useAuthStore((s) => s.realUser)
 
   // Locked unless the panel is in edit mode. Who is doing it is the one
   // exception below: reassigning is a thing you do while reading a list, not
   // something worth entering an edit mode for.
   const locked = readOnly || !editing
+
+  // Held while typing and saved when the box loses focus, for the same reason
+  // as the title: a store write per keystroke dropped letters and redrew the
+  // calendar behind the panel.
+  const [notesDraft, setNotesDraft] = useState(todo.notes)
+  useEffect(() => {
+    if (locked) setNotesDraft(todo.notes)
+  }, [todo.notes, locked])
+  const commitNotes = () => {
+    if (notesDraft !== todo.notes) updateTodo(todo.id, { notes: notesDraft })
+  }
+
+  // Giving a todo to an employee makes it their work: an assigned task, on
+  // their calendar in their colour and in their My Tasks, rather than a todo
+  // with a name beside it on somebody else's board. Only the owner creates
+  // tasks, so for anyone else this stays a note on the todo.
+  const canConvert = !readOnly && !!realUser?.isOwner
+  const [converting, setConverting] = useState(false)
+  const [assignError, setAssignError] = useState('')
+
+  const assign = async (personId: string) => {
+    setAssignError('')
+    const person = employees.find((e) => e.id === personId)
+    if (!person || person.role !== 'employee' || !canConvert || !realUser) {
+      updateTodo(todo.id, { assigneeId: personId || null })
+      return
+    }
+    setConverting(true)
+    try {
+      // A task needs a day; a todo with none becomes today's.
+      await addTask({
+        projectId: todo.projectId,
+        title: todo.title,
+        description: todo.notes,
+        assignedTo: [person.id],
+        frequency: { type: 'one-off', date: todo.doDate ?? format(new Date(), 'yyyy-MM-dd') },
+        categoryId: '',
+        priority: todo.priority,
+        estimatedMinutes: 0,
+        createdBy: realUser.id,
+        isActive: true,
+      })
+      // Only once the task exists, so a refused create never loses the todo.
+      await deleteTodo(todo.id)
+      // The todo is gone, and the task now lives on their calendar and in
+      // their My Tasks; there is nothing left here to look at.
+      onClose()
+    } catch (err) {
+      setAssignError((err as Error).message || t('cal_couldNotAssign'))
+    } finally {
+      setConverting(false)
+    }
+  }
 
   return (
     <>
@@ -250,9 +332,10 @@ function TodoBody({
 
       <Field label={t('cal_descriptionLabel')}>
         <textarea
-          value={todo.notes}
+          value={notesDraft}
           readOnly={locked}
-          onChange={(e) => updateTodo(todo.id, { notes: e.target.value })}
+          onChange={(e) => setNotesDraft(e.target.value)}
+          onBlur={commitNotes}
           rows={4}
           placeholder={t('cal_whatIsThisAndWhatDoes')}
           className={`${inputClass} resize-y`}
@@ -278,8 +361,8 @@ function TodoBody({
       <Field label={t('cal_assignedTo')}>
         <select
           value={todo.assigneeId ?? ''}
-          disabled={readOnly}
-          onChange={(e) => updateTodo(todo.id, { assigneeId: e.target.value || null })}
+          disabled={readOnly || converting}
+          onChange={(e) => assign(e.target.value)}
           className={inputClass}
         >
           <option value="">{t('cal_nobodyInParticular')}</option>
@@ -289,6 +372,10 @@ function TodoBody({
             </option>
           ))}
         </select>
+        {canConvert && (
+          <p className="text-[11px] text-text-subtle mt-1">{t('cal_assignBecomesTask')}</p>
+        )}
+        {assignError && <p className="text-[11px] text-danger mt-1">{assignError}</p>}
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
@@ -329,6 +416,14 @@ function EntryBody({
   const { t } = useT()
   const { updateCalendarEntry } = useProjectStore()
   const locked = readOnly || !editing
+
+  const [notesDraft, setNotesDraft] = useState(entry.notes)
+  useEffect(() => {
+    if (locked) setNotesDraft(entry.notes)
+  }, [entry.notes, locked])
+  const commitNotes = () => {
+    if (notesDraft !== entry.notes) updateCalendarEntry(entry.id, { notes: notesDraft })
+  }
 
   // An entry occupies whole days. Moving the first day past the last drags
   // the last with it, so the range can never invert.
@@ -373,9 +468,10 @@ function EntryBody({
 
       <Field label={t('cal_notesLabel')}>
         <textarea
-          value={entry.notes}
+          value={notesDraft}
           readOnly={locked}
-          onChange={(e) => updateCalendarEntry(entry.id, { notes: e.target.value })}
+          onChange={(e) => setNotesDraft(e.target.value)}
+          onBlur={commitNotes}
           rows={3}
           placeholder={t('cal_agendaLocationAnythingUseful')}
           className={`${inputClass} resize-y`}

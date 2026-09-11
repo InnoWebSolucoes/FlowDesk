@@ -256,7 +256,8 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       title: task.title,
       description: task.description,
       frequency: task.frequency,
-      category_id: task.categoryId,
+      // A task made from a todo has no category yet, and an empty string is not a uuid.
+      category_id: task.categoryId || null,
       priority: task.priority,
       associated_tool: task.associatedTool ?? null,
       estimated_minutes: task.estimatedMinutes,

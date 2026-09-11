@@ -9,7 +9,7 @@ import { MyTasks } from '../employee/MyTasks'
 import { Analytics } from './Analytics'
 import { AppUsagePanel } from '../../components/charts/AppUsagePanel'
 import { EmptyState } from '../../components/shared/EmptyState'
-import { Favicon } from '../../components/shared/Favicon'
+import { WebsiteGrid } from '../../components/shared/WebsiteGrid'
 import { TodoBoard } from '../../components/todos/TodoBoard'
 import { NoteBoard } from '../../components/notes/NoteBoard'
 import { CalendarBoard } from '../../components/calendar/CalendarBoard'
@@ -151,7 +151,10 @@ export function EmployeeProfile() {
         </div>
       </div>
 
-      <div className="border-b border-border flex gap-0 mb-6">
+      {/* Eight tabs wrap on a phone rather than running off the edge; a
+          row that scrolled sideways was what let the whole page scroll
+          sideways. */}
+      <div className="border-b border-border flex flex-wrap gap-0 mb-6">
         {TABS.map(tab_ => (
           <button key={tab_} onClick={() => setTab(tab_)} className={tabCls(tab_)}>
             {tabLabels[tab_]}
@@ -176,7 +179,7 @@ export function EmployeeProfile() {
           row. */}
       {tab === 'tasks' && (
         <div>
-          <div className="flex items-center gap-1 mb-5 overflow-x-auto">
+          <div className="flex items-center gap-1 mb-5 flex-wrap">
             {TASK_SECTIONS.map((s) => (
               <button
                 key={s}
@@ -267,29 +270,9 @@ export function EmployeeProfile() {
             ) : (
               // The same icon grid the employee sees in their own Toolbox:
               // this is a view of their tools, so it should look like their
-              // tools rather than a different list of the same sites.
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-                {empWebsites.map(w => (
-                  <a
-                    key={w.id}
-                    href={w.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={w.description || w.url}
-                    className="group flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-surface-2 transition-colors"
-                  >
-                    <Favicon
-                      url={w.url}
-                      name={w.name}
-                      className="w-10 h-10 rounded-xl object-contain bg-surface border border-border p-1.5 shadow-sm group-hover:shadow transition-shadow"
-                      letterClassName="w-10 h-10 rounded-xl bg-primary-light border border-border shadow-sm flex items-center justify-center text-primary font-semibold"
-                    />
-                    <span className="text-text-main text-xs text-center leading-tight line-clamp-2 w-full">
-                      {w.name}
-                    </span>
-                  </a>
-                ))}
-              </div>
+              // tools rather than a different list of the same sites. The
+              // owner can edit and remove them here, as they can in theirs.
+              <WebsiteGrid sites={empWebsites} employeeId={emp.id} canManage={isOwner} />
             )}
           </div>
         </div>

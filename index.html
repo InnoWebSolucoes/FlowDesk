@@ -3,7 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Phones: the page is always exactly the width of the screen, with no
+         pinch or double-tap zoom. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <script>
+      // iOS Safari ignores user-scalable=no, so its pinch gesture is stopped here.
+      document.addEventListener('gesturestart', function (e) { e.preventDefault() }, { passive: false })
+    </script>
     <title>FlowDesk</title>
   </head>
   <body>

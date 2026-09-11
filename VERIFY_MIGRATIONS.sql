@@ -102,4 +102,13 @@ select
     join pg_namespace nsp on nsp.oid = rel.relnamespace
     where nsp.nspname = 'public' and rel.relname = 'task_statuses'
       and con.contype = 'c' and pg_get_constraintdef(con.oid) ilike '%missed%'
-  ) then 'OK' else 'MISSING — run 20261002000000_task_missed_status.sql' end;
+  ) then 'OK' else 'MISSING — run 20261002000000_task_missed_status.sql' end
+
+union all
+
+select
+  'remove_website_from_list exists',
+  case when exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'remove_website_from_list'
+  ) then 'OK' else 'MISSING — run 20261003000000_toolbox_remove_from_list.sql' end;

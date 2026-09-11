@@ -34,7 +34,7 @@ export function ProjectTeamLayout() {
 
   return (
     <div>
-      <nav className={`items-center gap-1 mb-5 overflow-x-auto ${onProfile ? 'hidden' : 'flex'}`}>
+      <nav className={`items-center gap-1 mb-5 flex-wrap ${onProfile ? 'hidden' : 'flex'}`}>
         {tabs.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
