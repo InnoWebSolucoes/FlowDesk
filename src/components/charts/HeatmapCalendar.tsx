@@ -8,8 +8,7 @@ interface Props {
   weeks?: number
 }
 
-function getRateColor(rate: number, hasData: boolean, isWeekend: boolean): string {
-  if (isWeekend) return '#ECEAE3'
+function getRateColor(rate: number, hasData: boolean): string {
   if (!hasData) return '#F5F4EF'
   if (rate === 0) return '#F5F4EF'
   if (rate < 50) return '#C6E2D2'
@@ -36,7 +35,7 @@ export function HeatmapCalendar({ dailyStats, weeks = 12 }: Props) {
     columns.push(days)
   }
 
-  // Day labels (Mon, Wed, Fri)
+  // Day labels, all seven: no day of the week is treated differently
   const dayLabels = [t('day_mon'), t('day_tue'), t('day_wed'), t('day_thu'), t('day_fri'), t('day_sat'), t('day_sun')]
 
   // Month labels
@@ -69,9 +68,7 @@ export function HeatmapCalendar({ dailyStats, weeks = 12 }: Props) {
           <div className="flex flex-col gap-1 mr-1">
             {dayLabels.map((d, i) => (
               <div key={i} className="w-4 h-4 flex items-center justify-center">
-                {(i === 0 || i === 2 || i === 4) && (
-                  <span className="text-xs text-text-subtle">{d.charAt(0)}</span>
-                )}
+                <span className="text-xs text-text-subtle">{d.charAt(0)}</span>
               </div>
             ))}
           </div>
@@ -82,11 +79,10 @@ export function HeatmapCalendar({ dailyStats, weeks = 12 }: Props) {
               {week.map((day, di) => {
                 const dateStr = format(day, 'yyyy-MM-dd')
                 const isFuture = day > today
-                const isWeekend = di === 5 || di === 6
                 const stat = statMap[dateStr]
                 const hasData = !!stat && stat.assigned > 0
                 const rate = stat?.completionRate ?? 0
-                const bg = isFuture ? '#F5F4EF' : getRateColor(rate, hasData, isWeekend)
+                const bg = isFuture ? '#F5F4EF' : getRateColor(rate, hasData)
 
                 return (
                   <div

@@ -442,7 +442,7 @@ export interface ActivityLog {
   id: string
   taskId: string
   actorId: string
-  action: 'completed' | 'uncompleted' | 'in_progress' | 'commented' | 'file_uploaded'
+  action: 'completed' | 'uncompleted' | 'in_progress' | 'commented' | 'file_uploaded' | 'missed'
   detail?: string
   timestamp: string
 }

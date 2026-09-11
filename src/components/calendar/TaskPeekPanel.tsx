@@ -20,7 +20,7 @@ const DAY_KEYS = [
 function frequencyLabel(f: Task['frequency'], t: (k: TranslationKey) => string): string {
   const day = (n: number) => t(DAY_KEYS[n] ?? 'task_mon')
   if (!f) return '—'
-  if (f.type === 'daily') return t('taskpeek_everyWeekday')
+  if (f.type === 'daily') return t('taskpeek_everyDay')
   if (f.type === 'weekly') {
     const days = (f.days ?? []).map((d: number) => day(d)).join(', ')
     return days ? `${t('taskpeek_weekly')} · ${days}` : t('taskpeek_weekly')

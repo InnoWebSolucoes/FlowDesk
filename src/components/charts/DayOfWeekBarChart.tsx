@@ -12,11 +12,12 @@ interface Props {
   height?: number
 }
 
-const DAY_INDICES = [1, 2, 3, 4, 5] // Mon–Fri
+// All seven. Saturday and Sunday are working days, so they get a bar like any other.
+const DAY_INDICES = [1, 2, 3, 4, 5, 6, 0]
 
 export function DayOfWeekBarChart({ dailyStats, height = 220 }: Props) {
   const { t } = useT()
-  const DAY_NAMES = [t('day_mon'), t('day_tue'), t('day_wed'), t('day_thu'), t('day_fri')]
+  const DAY_NAMES = [t('day_mon'), t('day_tue'), t('day_wed'), t('day_thu'), t('day_fri'), t('day_sat'), t('day_sun')]
 
   const dayTotals: Record<number, { sum: number; count: number }> = {}
   DAY_INDICES.forEach(d => { dayTotals[d] = { sum: 0, count: 0 } })

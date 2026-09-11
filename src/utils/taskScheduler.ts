@@ -35,13 +35,13 @@ export function isTaskDueOnDate(task: Task, employeeId: string, date: Date): boo
   }
 
   const dayOfWeek = getDay(date) // 0=Sun, 1=Mon, ..., 6=Sat
-  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5
 
   const { frequency } = task
 
   switch (frequency.type) {
     case 'daily':
-      return isWeekday
+      // Every day. Saturday and Sunday are working days like any other.
+      return true
 
     case 'weekly': {
       const days = frequency.days ?? []
@@ -78,89 +78,150 @@ export interface TaskOccurrence {
   showOn: string
   completed: boolean
   completedAt: string | null
-  /** Missed and still owed, so moved forward onto today. */
+  /** Nothing has happened to it and its day is over, so it has moved forward onto today. */
   carried: boolean
+  /** Started, or marked as missed. Either one stops it moving. */
+  status: 'in_progress' | 'missed' | null
 }
 
 const keyOf = (d: Date) => format(d, 'yyyy-MM-dd')
 const shiftKey = (key: string, days: number) => keyOf(addDays(parseISO(key), days))
 
+/** A status somebody set on one occurrence: started, or marked as missed. */
+export interface TaskStatusRow {
+  taskId: string
+  employeeId: string
+  date: string
+  status: 'in_progress' | 'missed'
+  /** When it was set. Null on rows from before that was recorded. */
+  at: string | null
+}
+
+/**
+ * The store keeps statuses as two maps keyed `task:employee:day`; the rule
+ * wants rows. Ids are uuids and days are yyyy-MM-dd, none of which contain a
+ * colon, so the key splits cleanly.
+ */
+export function statusRowsFrom(
+  statuses: Record<string, string>,
+  startedAt: Record<string, string>,
+): TaskStatusRow[] {
+  const rows: TaskStatusRow[] = []
+  for (const [key, status] of Object.entries(statuses)) {
+    const [taskId, employeeId, date] = key.split(':')
+    if (!taskId || !employeeId || !date) continue
+    rows.push({
+      taskId,
+      employeeId,
+      date,
+      status: status === 'missed' ? 'missed' : 'in_progress',
+      at: startedAt[key] ?? null,
+    })
+  }
+  return rows
+}
+
 /**
  * Every occurrence of every task for one person that is shown between two
  * days, each placed on the one day it belongs on.
  *
- * The rule, from the point of view of the person doing the work:
+ * The rule:
  *   - A task lives on its own day until that day is over.
- *   - If it is not done by midnight it moves to the next day, and keeps moving
- *     a day at a time until it is done.
- *   - Once done, it stays on the day it was done.
+ *   - If nothing has happened to it by midnight — not completed, not started,
+ *     not marked as missed — it moves to the next day. It moves; it is not
+ *     copied. It keeps moving a day at a time for as long as nothing happens.
+ *   - The moment something does, it stops on the day that happened and stays.
  *
- * The calendar and My Tasks both read this. They used to decide separately —
- * the calendar from the recurrence alone, My Tasks from "anything due in the
- * last sixty days", with done checked against today — so the same task sat on
- * different days in each, and a weekly Monday task stayed on Today every day
- * for two months even after it was ticked.
+ * Every occurrence moves on its own. A daily task nobody touched all week puts
+ * a copy on today for each day it was due: that is the backlog, and showing
+ * only one would hide the work. Marking one missed is how somebody says "this
+ * one is not coming with me" — it stops on the day it was marked.
  *
- * A repeating task carries forward only until its next occurrence arrives.
- * Taken literally, a daily task missed for three weeks would put fifteen
- * copies of itself on today. So a miss moves forward until the next one is
- * due, and then stays on its own day as a miss — still counted as missed —
- * while the new one takes its place. At most one carried copy per repeating
- * task; a one-off carries until it is done.
+ * Saturday and Sunday are ordinary days here, as everywhere.
  *
- * A one-off happens exactly once, so any completion by this person finishes
- * it, whatever day the log was written under. One-offs used to be logged
- * against the day they were ticked rather than their own date, and without
- * this those old ticks would not count and finished work would come back.
+ * The calendar and My Tasks both read this, so they cannot disagree about
+ * which day a task is on.
+ *
+ * A one-off happens exactly once, so any completion or status this person
+ * recorded for it applies, whatever day it was recorded under. One-offs used
+ * to be logged against the day they were ticked rather than their own date,
+ * and without this those old records would not count.
  *
  * `today` is the real today. A view looking at another week passes that
  * week's days as the range, but work only moves forward in real time.
+ *
+ * The lookback bounds how far back untouched work is gathered from: a year.
+ * Anything older than that and still untouched is not brought forward.
  */
 export function taskOccurrences(
   tasks: Task[],
   employeeId: string,
   logs: CompletionLog[],
   range: { from: string; to: string; today: string },
-  lookbackDays = 60,
+  statuses: TaskStatusRow[] = [],
+  lookbackDays = 365,
 ): TaskOccurrence[] {
   const { from, to, today } = range
 
-  const byTaskDay = new Map<string, CompletionLog>()
-  const latestByTask = new Map<string, CompletionLog>()
+  const logByTaskDay = new Map<string, CompletionLog>()
+  const latestLogByTask = new Map<string, CompletionLog>()
   for (const l of logs) {
     if (l.employeeId !== employeeId) continue
-    byTaskDay.set(`${l.taskId}|${l.dueDate}`, l)
-    const prev = latestByTask.get(l.taskId)
-    if (!prev || l.completedAt > prev.completedAt) latestByTask.set(l.taskId, l)
+    logByTaskDay.set(`${l.taskId}|${l.dueDate}`, l)
+    const prev = latestLogByTask.get(l.taskId)
+    if (!prev || l.completedAt > prev.completedAt) latestLogByTask.set(l.taskId, l)
   }
 
-  // Far enough back to find anything still being carried, far enough forward
-  // to cover both the range and today.
+  const statusByTaskDay = new Map<string, TaskStatusRow>()
+  const latestStatusByTask = new Map<string, TaskStatusRow>()
+  for (const r of statuses) {
+    if (r.employeeId !== employeeId) continue
+    statusByTaskDay.set(`${r.taskId}|${r.date}`, r)
+    const prev = latestStatusByTask.get(r.taskId)
+    if (!prev || (r.at ?? '') > (prev.at ?? '')) latestStatusByTask.set(r.taskId, r)
+  }
+
+  // Far enough back to gather anything still moving, far enough forward to
+  // cover both the range and today.
   const lookback = shiftKey(today, -lookbackDays)
   const genFrom = from < lookback ? from : lookback
   const genTo = to > today ? to : today
 
   const out: TaskOccurrence[] = []
 
-  const place = (task: Task, date: string, next: string | null, log: CompletionLog | null) => {
+  const place = (
+    task: Task,
+    date: string,
+    log: CompletionLog | null,
+    status: TaskStatusRow | null,
+  ) => {
+    // The days something happened to it. The earliest is where it stopped:
+    // once started, it did not keep moving on to the day it was finished.
+    const happened: string[] = []
+    if (log) happened.push(keyOf(parseISO(log.completedAt)))
+    if (status) happened.push(status.at ? keyOf(parseISO(status.at)) : date)
+
     let showOn: string
     let carried = false
-    if (log) {
-      const doneDay = keyOf(parseISO(log.completedAt))
-      // Finished after its next occurrence had already replaced it: it was
-      // never on anyone's list that day, so it stays on its own day.
-      if (next && next <= doneDay) showOn = date
-      else showOn = doneDay > date ? doneDay : date
+    if (happened.length > 0) {
+      const first = happened.sort()[0]
+      showOn = first > date ? first : date
     } else if (date >= today) {
-      showOn = date
-    } else if (next && next <= today) {
       showOn = date
     } else {
       showOn = today
       carried = true
     }
     if (showOn < from || showOn > to) return
-    out.push({ task, date, showOn, completed: !!log, completedAt: log?.completedAt ?? null, carried })
+    out.push({
+      task,
+      date,
+      showOn,
+      carried,
+      completed: !!log,
+      completedAt: log?.completedAt ?? null,
+      status: status?.status ?? null,
+    })
   }
 
   for (const task of tasks) {
@@ -169,17 +230,24 @@ export function taskOccurrences(
     if (task.frequency.type === 'one-off') {
       const date = task.frequency.date ? task.frequency.date.slice(0, 10) : null
       if (!date || !isTaskDueOnDate(task, employeeId, parseISO(date))) continue
-      place(task, date, null, byTaskDay.get(`${task.id}|${date}`) ?? latestByTask.get(task.id) ?? null)
+      place(
+        task,
+        date,
+        logByTaskDay.get(`${task.id}|${date}`) ?? latestLogByTask.get(task.id) ?? null,
+        statusByTaskDay.get(`${task.id}|${date}`) ?? latestStatusByTask.get(task.id) ?? null,
+      )
       continue
     }
 
-    const dates: string[] = []
     for (let d = parseISO(genFrom); keyOf(d) <= genTo; d = addDays(d, 1)) {
-      if (isTaskDueOnDate(task, employeeId, d)) dates.push(keyOf(d))
-    }
-    for (let i = 0; i < dates.length; i++) {
-      const next = i + 1 < dates.length ? dates[i + 1] : null
-      place(task, dates[i], next, byTaskDay.get(`${task.id}|${dates[i]}`) ?? null)
+      if (!isTaskDueOnDate(task, employeeId, d)) continue
+      const date = keyOf(d)
+      place(
+        task,
+        date,
+        logByTaskDay.get(`${task.id}|${date}`) ?? null,
+        statusByTaskDay.get(`${task.id}|${date}`) ?? null,
+      )
     }
   }
 
@@ -194,7 +262,7 @@ export function getTasksDueOnDate(tasks: Task[], employeeId: string, date: Date)
 }
 
 /**
- * Returns tasks grouped by ISO date string for Mon-Fri of the week containing weekStartDate.
+ * Returns tasks grouped by ISO date string for all seven days of the week containing weekStartDate.
  */
 export function getTasksDueThisWeek(
   tasks: Task[],
@@ -204,7 +272,7 @@ export function getTasksDueThisWeek(
   const result: Record<string, Task[]> = {}
   const monday = startOfWeek(weekStartDate, { weekStartsOn: 1 })
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     const day = addDays(monday, i)
     const dateKey = format(day, 'yyyy-MM-dd')
     result[dateKey] = getTasksDueOnDate(tasks, employeeId, day)
@@ -214,7 +282,7 @@ export function getTasksDueThisWeek(
 }
 
 /**
- * Returns tasks grouped by day-of-month number for all weekdays in the given month/year.
+ * Returns tasks grouped by day-of-month number for every day in the given month/year.
  */
 export function getTasksDueThisMonth(
   tasks: Task[],
@@ -227,8 +295,6 @@ export function getTasksDueThisMonth(
 
   for (let day = 1; day <= daysInMonth; day++) {
     const date = new Date(year, month, day)
-    const dayOfWeek = getDay(date)
-    if (dayOfWeek === 0 || dayOfWeek === 6) continue // skip weekends
 
     const tasks_due = getTasksDueOnDate(tasks, employeeId, date)
     if (tasks_due.length > 0) {

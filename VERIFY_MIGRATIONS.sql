@@ -89,4 +89,17 @@ select
     select count(*) from information_schema.columns
     where table_schema = 'public' and column_name = 'due_date'
       and table_name in ('completion_logs', 'task_files', 'task_statuses')
-  ) = 3 then 'OK' else 'PROBLEM — a completion-tracking column has been dropped' end;
+  ) = 3 then 'OK' else 'PROBLEM — a completion-tracking column has been dropped' end
+
+union all
+
+select
+  'task_statuses allows missed',
+  case when exists (
+    select 1
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace nsp on nsp.oid = rel.relnamespace
+    where nsp.nspname = 'public' and rel.relname = 'task_statuses'
+      and con.contype = 'c' and pg_get_constraintdef(con.oid) ilike '%missed%'
+  ) then 'OK' else 'MISSING — run 20261002000000_task_missed_status.sql' end;

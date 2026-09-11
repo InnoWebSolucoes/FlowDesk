@@ -294,7 +294,7 @@ export function TaskForm({
               <p className="text-xs text-text-muted mb-1">{t('task_dayOfWeek')}</p>
               <select className={inp} value={form.frequency.dayOfWeek ?? 1}
                 onChange={e => setFreq('dayOfWeek', parseInt(e.target.value))}>
-                {[1,2,3,4,5].map(d => <option key={d} value={d}>{DAY_NAMES[d]}</option>)}
+                {[1,2,3,4,5,6,0].map(d => <option key={d} value={d}>{DAY_NAMES[d]}</option>)}
               </select>
             </div>
           </div>

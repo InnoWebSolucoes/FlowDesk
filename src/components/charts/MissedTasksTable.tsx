@@ -28,8 +28,6 @@ export function MissedTasksTable({ tasks, completionLogs, employees, employeeId 
 
   for (let i = 1; i <= 30; i++) {
     const date = subDays(today, i)
-    const dow = date.getDay()
-    if (dow === 0 || dow === 6) continue
     const dateStr = format(date, 'yyyy-MM-dd')
 
     for (const emp of empList) {

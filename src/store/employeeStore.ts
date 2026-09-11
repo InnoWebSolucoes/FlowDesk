@@ -230,8 +230,6 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
 
     for (let i = 29; i >= 0; i--) {
       const date = subDays(today, i)
-      const dow = date.getDay()
-      if (dow === 0 || dow === 6) continue
 
       const dateStr = format(date, 'yyyy-MM-dd')
       const dueTasks = getTasksDueOnDate(tasks, employeeId, date)

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
-  Circle, CheckCircle2, Timer, Users, X,
+  Circle, CheckCircle2, Timer, Users, X, Ban,
 } from 'lucide-react'
 import {
   addDays, addWeeks, format,
@@ -12,7 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useAuthStore } from '../../store/authStore'
-import { taskOccurrences, TaskOccurrence } from '../../utils/taskScheduler'
+import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/taskScheduler'
 import { personColor, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
@@ -63,6 +63,8 @@ interface Block {
   done?: boolean
   /** Started but not finished, so it can be shown as under way. */
   started?: boolean
+  /** Marked as missed: it stopped here and will not move on. */
+  missed?: boolean
   /**
    * Something the person put on their own todo list, rather than work
    * assigned to them. Outlined in their colour on white, so at a glance a
@@ -109,7 +111,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
 
   const {
     tasks, completionLogs, completeTask, uncompleteTask, isTaskCompleted,
-    setInProgress, clearInProgress, isInProgress,
+    setInProgress, clearInProgress, isInProgress, isMissed, clearMissed, taskStatuses, taskStartedAt,
   } = useTaskStore()
   const { employees } = useEmployeeStore()
   const currentUserId = useAuthStore((s) => s.currentUser?.id)
@@ -210,20 +212,22 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
     const map = new Map<string, { occ: TaskOccurrence; employeeId: string }[]>()
     if (days.length === 0) return map
     const owners = canOverlay ? [...overlaid] : ownerId ? [ownerId] : []
+    // Started and missed both stop a task moving, so the rule needs them.
+    const statusRows = statusRowsFrom(taskStatuses, taskStartedAt)
     const range = {
       from: dayKey(days[0]),
       to: dayKey(days[days.length - 1]),
       today: dayKey(new Date()),
     }
     for (const emp of owners) {
-      for (const occ of taskOccurrences(tasks, emp, completionLogs, range)) {
+      for (const occ of taskOccurrences(tasks, emp, completionLogs, range, statusRows)) {
         const list = map.get(occ.showOn) ?? []
         list.push({ occ, employeeId: emp })
         map.set(occ.showOn, list)
       }
     }
     return map
-  }, [days, tasks, completionLogs, canOverlay, overlaid, ownerId])
+  }, [days, tasks, completionLogs, taskStatuses, taskStartedAt, canOverlay, overlaid, ownerId])
 
   // The lists on this board. The store holds whatever was loaded last, so
   // without this the panel can be handed another owner's lists.
@@ -287,7 +291,8 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
             employeeId: empIdForCal,
             occDate: occ.date,
             done: occ.completed,
-            started: isInProgress(occ.task.id, empIdForCal, occ.date),
+            started: occ.status === 'in_progress',
+            missed: occ.status === 'missed',
             ownerName: canOverlay ? who?.name : undefined,
           })
         }
@@ -449,6 +454,9 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         // Done -> back to the beginning.
         await uncompleteTask(taskId, employeeId, day)
         await clearInProgress(taskId, employeeId, day)
+      } else if (isMissed(taskId, employeeId, day)) {
+        // Missed -> open again, which puts it back into moving forward.
+        await clearMissed(taskId, employeeId, day)
       } else if (isInProgress(taskId, employeeId, day)) {
         // Started -> done. Completing supersedes the started flag, so it is
         // cleared rather than left behind to reappear on un-completing.
@@ -1199,7 +1207,7 @@ function BlockChip({
         compact ? 'px-1.5 py-1 text-[11px]' : 'px-2.5 py-2'
       } ${
         // Done work fades and strikes through, whichever kind it is.
-        block.todo?.isCompleted || block.done ? 'line-through opacity-45' : ''
+        block.todo?.isCompleted || block.done ? 'line-through opacity-45' : block.missed ? 'opacity-45' : ''
       }`}
       style={
         block.ownWork
@@ -1238,6 +1246,8 @@ function BlockChip({
           >
             {block.todo?.isCompleted || block.done ? (
               <CheckCircle2 size={15} />
+            ) : block.missed ? (
+              <Ban size={15} />
             ) : block.started ? (
               // Under way, the same timer My Tasks shows, so ticking once
               // says something visible rather than appearing to do nothing.
@@ -1250,7 +1260,10 @@ function BlockChip({
         <span className="min-w-0 flex-1">
           {/* Two lines before it clips: one line cut most titles mid-word,
               and a calendar box has the room now. */}
-          <span className="line-clamp-2 break-words">{block.label}</span>
+          <span className="line-clamp-2 break-words">
+            {block.missed && <span className="font-semibold">{t('taskcard_missed')} · </span>}
+            {block.label}
+          </span>
           {/* Whose it is, when the team's calendars are overlaid on yours. */}
           {block.ownerName && (
             <span className="opacity-60"> · {block.ownerName}</span>

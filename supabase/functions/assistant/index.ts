@@ -209,7 +209,7 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           frequency_days: {
             type: 'array',
             items: { type: 'number' },
-            description: 'For weekly: days 0-6 where 1=Mon.',
+            description: 'For weekly: days 0-6 where 0=Sun, 1=Mon … 6=Sat. Saturday and Sunday are normal working days.',
           },
         },
         required: ['title', 'assignee_ids'],
@@ -456,7 +456,7 @@ Deno.serve(async (req) => {
 
   const freqText = (f: any): string => {
     if (!f || typeof f !== 'object') return 'once'
-    if (f.type === 'daily') return 'every weekday'
+    if (f.type === 'daily') return 'every day, weekends included'
     if (f.type === 'weekly') return `weekly (days ${(f.days ?? []).join(',')})`
     if (f.type === 'monthly') return `monthly (week ${f.weekOfMonth}, day ${f.dayOfWeek})`
     if (f.type === 'one-off') return `one-off${f.date ? ` on ${f.date}` : ''}`

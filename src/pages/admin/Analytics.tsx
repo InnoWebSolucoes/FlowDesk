@@ -52,7 +52,6 @@ export function Analytics({ forEmployeeId }: Props) {
   const taskMissMap: Record<string, number> = {}
   for (let i = 1; i <= 30; i++) {
     const d = new Date(today); d.setDate(d.getDate() - i)
-    if (d.getDay() === 0 || d.getDay() === 6) continue
     const ds = format(d, 'yyyy-MM-dd')
     for (const emp of employees) {
       for (const task of getTasksDueOnDate(tasks, emp.id, d)) {

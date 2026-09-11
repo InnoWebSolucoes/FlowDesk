@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock, CheckCircle2, Circle, Timer, MessageSquare, Paperclip, Pencil, Trash2 } from 'lucide-react'
+import { Clock, CheckCircle2, Circle, Timer, MessageSquare, Paperclip, Pencil, Trash2, Ban } from 'lucide-react'
 import { Task, Category } from '../../types'
 import { Badge } from './Badge'
 import { useChatStore } from '../../store/chatStore'
@@ -47,6 +47,11 @@ interface TaskCardProps {
    * one-off whose tick was logged under a different day.
    */
   completedAtOverride?: string | null
+  /** Marked as missed: it stopped on its day and will not move on. */
+  isMissed?: boolean
+  /** Offered where the person may mark it; absent on a read-only view. */
+  onMarkMissed?: () => void
+  onClearMissed?: () => void
   /**
    * Rings the card and scrolls it into view. Set when a notification pointed
    * at this task, so the reader is not left hunting a long list for it.
@@ -129,6 +134,9 @@ export function TaskCard({
   onDelete,
   showTiming,
   completedAtOverride,
+  isMissed,
+  onMarkMissed,
+  onClearMissed,
   highlighted,
   highlightRef,
 }: TaskCardProps) {
@@ -223,6 +231,19 @@ export function TaskCard({
         </button>
       )
     }
+    if (isMissed) {
+      return (
+        <button
+          onClick={onClearMissed}
+          disabled={!onClearMissed}
+          className="flex-shrink-0 mt-0.5 disabled:cursor-default"
+          aria-label={t('taskcard_undoMissed')}
+          title={onClearMissed ? t('taskcard_undoMissed') : t('taskcard_missed')}
+        >
+          <Ban size={18} className="text-danger" />
+        </button>
+      )
+    }
     if (isInProgress) {
       return (
         <button
@@ -260,7 +281,7 @@ export function TaskCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span
-              className={`text-sm font-medium ${isCompleted ? 'line-through text-text-muted' : 'text-text-main'}`}
+              className={`text-sm font-medium ${isCompleted ? 'line-through text-text-muted' : isMissed ? 'text-text-muted' : 'text-text-main'}`}
             >
               {task.title}
             </span>
@@ -274,7 +295,13 @@ export function TaskCard({
                 {t('status_inProgress')}
               </span>
             )}
-            <DeadlineBadge task={task} />
+            {isMissed ? (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-danger/10 text-danger flex-shrink-0">
+                {t('taskcard_missed')}
+              </span>
+            ) : (
+              <DeadlineBadge task={task} />
+            )}
           </div>
 
           {task.description && (
@@ -347,6 +374,20 @@ export function TaskCard({
                 two rather than hidden behind a hover: on a touch screen
                 there is no hover, and a manager going through somebody's
                 week is exactly who needs these. */}
+            {/* Missed stops it moving on to tomorrow. Only while it is still open:
+                a finished task was not missed, and one already marked shows
+                its own undo on the status icon. */}
+            {onMarkMissed && !isCompleted && !isMissed && (
+              <button
+                onClick={onMarkMissed}
+                title={t('taskcard_markMissedHint')}
+                className="flex items-center gap-1 text-[11px] font-medium text-text-subtle hover:text-danger transition-colors"
+              >
+                <Ban size={13} />
+                {t('taskcard_markMissed')}
+              </button>
+            )}
+
             {onEdit && (
               <button
                 onClick={onEdit}

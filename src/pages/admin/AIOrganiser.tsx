@@ -97,7 +97,7 @@ export function AIOrganiser() {
 
   function freqLabel(freq: any): string {
     if (!freq) return '-'
-    if (freq.type === 'daily') return t('task_freqDaily') + ' (Mon-Fri)'
+    if (freq.type === 'daily') return t('task_freqDaily')
     if (freq.type === 'weekly') {
       const days = (freq.days ?? []).map((d: number) => DAY_NAMES_EN[d]).join(', ')
       return `${t('task_freqWeekly')}: ${days}`

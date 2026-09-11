@@ -14,7 +14,8 @@ interface TaskState {
   completionLogs: CompletionLog[]
   categories: Category[]
   loading: boolean
-  taskStatuses: Record<string, 'in_progress'>
+  /** Keyed `task:employee:day`. Started and missed share the one row, so they exclude each other. */
+  taskStatuses: Record<string, 'in_progress' | 'missed'>
   /** Same keys as taskStatuses, holding the moment work began. */
   taskStartedAt: Record<string, string>
   taskComments: TaskComment[]
@@ -39,6 +40,14 @@ interface TaskState {
   isInProgress: (taskId: string, empId: string, date: string) => boolean
   /** When they pressed start, so "how long has this been going" is answerable. */
   inProgressSince: (taskId: string, empId: string, date: string) => string | null
+  /**
+   * Mark one occurrence as missed. It stops on the day it was marked and never
+   * moves on. Shares the status row with "in progress", so it replaces it.
+   */
+  markMissed: (taskId: string, empId: string, date: string) => Promise<void>
+  /** Take a missed mark back, which lets the task start moving forward again. */
+  clearMissed: (taskId: string, empId: string, date: string) => Promise<void>
+  isMissed: (taskId: string, empId: string, date: string) => boolean
 
   addComment: (comment: Omit<TaskComment, 'id' | 'createdAt'> & { attachments: TaskAttachment[] }) => Promise<TaskComment>
   deleteComment: (commentId: string) => Promise<void>
@@ -211,11 +220,11 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       supabase.from('activity_logs').select('*'),
     ])
 
-    const taskStatuses: Record<string, 'in_progress'> = {}
+    const taskStatuses: Record<string, 'in_progress' | 'missed'> = {}
     const taskStartedAt: Record<string, string> = {}
     for (const row of statusesRes.data ?? []) {
       const key = `${row.task_id}:${row.employee_id}:${row.due_date}`
-      taskStatuses[key] = 'in_progress'
+      taskStatuses[key] = row.status === 'missed' ? 'missed' : 'in_progress'
       // Absent until the started_at migration has run, in which case the
       // duration simply is not shown rather than the whole row being lost.
       if (row.started_at) taskStartedAt[key] = row.started_at
@@ -434,6 +443,50 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
 
   inProgressSince: (taskId, empId, date) =>
     get().taskStartedAt[`${taskId}:${empId}:${date}`] ?? null,
+
+  markMissed: async (taskId, empId, date) => {
+    const key = `${taskId}:${empId}:${date}`
+    // When it was marked, which is the day it stops on.
+    const at = new Date().toISOString()
+    const { error } = await supabase.from('task_statuses').upsert({
+      task_id: taskId, employee_id: empId, due_date: date, status: 'missed', started_at: at,
+    })
+    if (error) {
+      // Refused until the missed-status migration has run: the column's check
+      // only allowed 'in_progress'.
+      console.error('[markMissed] failed:', error)
+      return
+    }
+    set((s) => ({
+      taskStatuses: { ...s.taskStatuses, [key]: 'missed' as const },
+      taskStartedAt: { ...s.taskStartedAt, [key]: at },
+    }))
+    await get().addActivityLog({ taskId, actorId: empId, action: 'missed' })
+  },
+
+  clearMissed: async (taskId, empId, date) => {
+    const key = `${taskId}:${empId}:${date}`
+    const { error } = await supabase
+      .from('task_statuses')
+      .delete()
+      .eq('task_id', taskId)
+      .eq('employee_id', empId)
+      .eq('due_date', date)
+    if (error) {
+      console.error('[clearMissed] failed:', error)
+      return
+    }
+    set((s) => {
+      const next = { ...s.taskStatuses }
+      delete next[key]
+      const nextAt = { ...s.taskStartedAt }
+      delete nextAt[key]
+      return { taskStatuses: next, taskStartedAt: nextAt }
+    })
+  },
+
+  isMissed: (taskId, empId, date) =>
+    get().taskStatuses[`${taskId}:${empId}:${date}`] === 'missed',
 
   addComment: async (comment) => {
     const { data, error } = await supabase

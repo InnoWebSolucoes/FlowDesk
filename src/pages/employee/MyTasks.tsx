@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, ChevronLeft, PartyPopper, Search } from 'luc
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskCard } from '../../components/shared/TaskCard'
-import { taskOccurrences, TaskOccurrence } from '../../utils/taskScheduler'
+import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/taskScheduler'
 import { Task } from '../../types'
 import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
@@ -35,7 +35,8 @@ function OccurrenceCard({
   showTiming?: boolean
 }) {
   const {
-    completionLogs, completeTask, uncompleteTask, isInProgress, setInProgress, clearInProgress,
+    completionLogs, completeTask, uncompleteTask, setInProgress, clearInProgress,
+    markMissed, clearMissed,
   } = useTaskStore()
   const { task, date } = occ
 
@@ -60,13 +61,17 @@ function OccurrenceCard({
     <TaskCard
       task={task}
       isCompleted={occ.completed}
-      isInProgress={isInProgress(task.id, empId, date)}
+      // From the occurrence, so the card and the day it is placed on agree.
+      isInProgress={occ.status === 'in_progress'}
+      isMissed={occ.status === 'missed'}
       category={categories.find((c) => c.id === task.categoryId)}
       onComplete={() => { if (!readOnly) completeTask(task.id, empId, date) }}
       onUncomplete={undo}
       // A manager reading somebody's day does not start it for them.
       onSetInProgress={readOnly ? undefined : () => setInProgress(task.id, empId, date)}
       onClearInProgress={readOnly ? undefined : () => clearInProgress(task.id, empId, date)}
+      onMarkMissed={readOnly ? undefined : () => markMissed(task.id, empId, date)}
+      onClearMissed={readOnly ? undefined : () => clearMissed(task.id, empId, date)}
       currentUserId={empId}
       dueDate={date}
       completedAtOverride={occ.completedAt}
@@ -131,8 +136,9 @@ function OwedSummary({ label, total, done }: { label: string; total: number; don
  * somebody's day should be the day that person is actually looking at.
  *
  * Which day a task is on comes from taskOccurrences, the same rule the
- * calendar uses: on its own day until that day is over, then carried forward a
- * day at a time until it is done, then left on the day it was done.
+ * calendar uses: on its own day until that day is over, then moved forward a
+ * day at a time while nothing has happened to it, and stopped on the day it is
+ * completed, started or marked missed.
  */
 export function MyTasks({
   employeeId,
@@ -155,7 +161,7 @@ export function MyTasks({
   manage?: boolean
 } = {}) {
   const { currentUser } = useAuthStore()
-  const { tasks, categories, completionLogs } = useTaskStore()
+  const { tasks, categories, completionLogs, taskStatuses, taskStartedAt } = useTaskStore()
   const { t, dateLocale } = useT()
   // Controlled from outside when a single section was asked for, so the
   // manager's four-section view drives which period is on screen.
@@ -230,13 +236,16 @@ export function MyTasks({
   const occurrences = useMemo(
     () =>
       empId
-        ? taskOccurrences(tasks, empId, completionLogs, {
-            from: rangeFrom,
-            to: rangeTo,
-            today: realTodayStr,
-          })
+        ? taskOccurrences(
+            tasks,
+            empId,
+            completionLogs,
+            { from: rangeFrom, to: rangeTo, today: realTodayStr },
+            // Started and missed both stop a task moving on.
+            statusRowsFrom(taskStatuses, taskStartedAt),
+          )
         : [],
-    [tasks, empId, completionLogs, rangeFrom, rangeTo, realTodayStr],
+    [tasks, empId, completionLogs, taskStatuses, taskStartedAt, rangeFrom, rangeTo, realTodayStr],
   )
 
   const byDay = useMemo(() => {
