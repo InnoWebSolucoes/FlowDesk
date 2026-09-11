@@ -82,6 +82,21 @@ export interface TaskOccurrence {
   carried: boolean
   /** Started, or marked as missed. Either one stops it moving. */
   status: 'in_progress' | 'missed' | null
+  /**
+   * The owner dragged this one day of the task to another day. The day it
+   * was moved from is still its `date`; this is set so the move can be shown.
+   */
+  movedTo: string | null
+}
+
+/** One day of a recurring task, put on another day by the owner. */
+export interface TaskMoveRow {
+  taskId: string
+  employeeId: string
+  /** The day the schedule put it on: the occurrence's identity. */
+  date: string
+  /** The day it now happens on. */
+  movedTo: string
 }
 
 const keyOf = (d: Date) => format(d, 'yyyy-MM-dd')
@@ -152,6 +167,11 @@ export function statusRowsFrom(
  *
  * The lookback bounds how far back untouched work is gathered from: a year.
  * Anything older than that and still untouched is not brought forward.
+ *
+ * A move (the owner dragging one day of a recurring task to another day)
+ * changes which day the occurrence starts from: it lives on the day it was
+ * moved to and moves on from there by the same rule. Its identity — the day
+ * its completion is logged under — stays the day the schedule gave it.
  */
 export function taskOccurrences(
   tasks: Task[],
@@ -160,8 +180,15 @@ export function taskOccurrences(
   range: { from: string; to: string; today: string },
   statuses: TaskStatusRow[] = [],
   lookbackDays = 365,
+  moves: TaskMoveRow[] = [],
 ): TaskOccurrence[] {
   const { from, to, today } = range
+
+  const moveByTaskDay = new Map<string, string>()
+  for (const m of moves) {
+    if (m.employeeId !== employeeId) continue
+    moveByTaskDay.set(`${m.taskId}|${m.date}`, m.movedTo)
+  }
 
   const logByTaskDay = new Map<string, CompletionLog>()
   const latestLogByTask = new Map<string, CompletionLog>()
@@ -197,17 +224,21 @@ export function taskOccurrences(
   ) => {
     // The days something happened to it. The earliest is where it stopped:
     // once started, it did not keep moving on to the day it was finished.
+    // Where it starts from: its own day, or the day it was moved to.
+    const movedTo = moveByTaskDay.get(`${task.id}|${date}`) ?? null
+    const home = movedTo ?? date
+
     const happened: string[] = []
     if (log) happened.push(keyOf(parseISO(log.completedAt)))
-    if (status) happened.push(status.at ? keyOf(parseISO(status.at)) : date)
+    if (status) happened.push(status.at ? keyOf(parseISO(status.at)) : home)
 
     let showOn: string
     let carried = false
     if (happened.length > 0) {
       const first = happened.sort()[0]
-      showOn = first > date ? first : date
-    } else if (date >= today) {
-      showOn = date
+      showOn = first > home ? first : home
+    } else if (home >= today) {
+      showOn = home
     } else {
       showOn = today
       carried = true
@@ -221,6 +252,7 @@ export function taskOccurrences(
       completed: !!log,
       completedAt: log?.completedAt ?? null,
       status: status?.status ?? null,
+      movedTo,
     })
   }
 

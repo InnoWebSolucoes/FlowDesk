@@ -39,6 +39,9 @@ type DragState =
   | { kind: 'todo'; id: string; label: string }
   | { kind: 'entry'; id: string; label: string }
   | { kind: 'unscheduled'; id: string; label: string }
+  // One day of somebody's assigned task. `date` is the occurrence's own day,
+  // which is what the move is recorded against.
+  | { kind: 'task'; id: string; employeeId: string; date: string; label: string }
 
 interface Block {
   key: string
@@ -112,9 +115,13 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   const {
     tasks, completionLogs, completeTask, uncompleteTask, isTaskCompleted,
     setInProgress, clearInProgress, isInProgress, isMissed, clearMissed, taskStatuses, taskStartedAt,
+    taskMoves, moveTaskOccurrence,
   } = useTaskStore()
   const { employees } = useEmployeeStore()
   const currentUserId = useAuthStore((s) => s.currentUser?.id)
+  // Only the owner moves assigned work between days. An employee's own
+  // board still lets them tick it, not postpone it.
+  const canMoveTasks = !readOnly && !!useAuthStore((s) => s.realUser?.isOwner)
 
   /**
    * Reading somebody else's board rather than your own. It matters for the
@@ -220,14 +227,14 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       today: dayKey(new Date()),
     }
     for (const emp of owners) {
-      for (const occ of taskOccurrences(tasks, emp, completionLogs, range, statusRows)) {
+      for (const occ of taskOccurrences(tasks, emp, completionLogs, range, statusRows, 365, taskMoves)) {
         const list = map.get(occ.showOn) ?? []
         list.push({ occ, employeeId: emp })
         map.set(occ.showOn, list)
       }
     }
     return map
-  }, [days, tasks, completionLogs, taskStatuses, taskStartedAt, canOverlay, overlaid, ownerId])
+  }, [days, tasks, completionLogs, taskStatuses, taskStartedAt, taskMoves, canOverlay, overlaid, ownerId])
 
   // The lists on this board. The store holds whatever was loaded last, so
   // without this the panel can be handed another owner's lists.
@@ -345,15 +352,18 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   useEffect(() => {
     if (!drag) return
 
+    // Only todos can be dropped back on the unscheduled list.
+    const canUnschedule = drag.kind === 'todo' || drag.kind === 'unscheduled'
+
     const onMove = (e: PointerEvent) => {
       setDragPoint({ x: e.clientX, y: e.clientY })
       setHoverSlot(slotAt(e.clientX, e.clientY))
-      setOverUnscheduled(drag.kind !== 'entry' && overDropOut(e.clientX, e.clientY))
+      setOverUnscheduled(canUnschedule && overDropOut(e.clientX, e.clientY))
     }
 
     const onUp = async (e: PointerEvent) => {
       const day = slotAt(e.clientX, e.clientY)
-      const droppedOut = drag.kind !== 'entry' && overDropOut(e.clientX, e.clientY)
+      const droppedOut = canUnschedule && overDropOut(e.clientX, e.clientY)
       setDrag(null)
       setHoverSlot(null)
       setDragPoint(null)
@@ -373,6 +383,18 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
 
       if (drag.kind === 'unscheduled' || drag.kind === 'todo') {
         await updateTodo(drag.id, { doDate: day })
+        return
+      }
+
+      // Somebody's assigned work, put on another day. It shows there on
+      // their calendar and in their My Tasks, since both read the same rule.
+      if (drag.kind === 'task') {
+        setError('')
+        try {
+          await moveTaskOccurrence(drag.id, drag.employeeId, drag.date, day)
+        } catch (err) {
+          setError((err as Error).message || t('cal_couldNotMove'))
+        }
         return
       }
 
@@ -401,7 +423,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [drag, slotAt, overDropOut, updateTodo, updateCalendarEntry, calendarEntries])
+  }, [drag, slotAt, overDropOut, updateTodo, updateCalendarEntry, calendarEntries, moveTaskOccurrence, t])
 
   /** Click on empty space in a day → a new entry on that day. */
   /**
@@ -678,6 +700,11 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
+              onDragTask={
+                canMoveTasks
+                  ? (b) => setDrag({ kind: 'task', id: b.task!.id, employeeId: b.employeeId!, date: b.occDate!, label: b.label })
+                  : undefined
+              }
             />
           ) : (
             <DayGrid
@@ -699,6 +726,11 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
+              onDragTask={
+                canMoveTasks
+                  ? (b) => setDrag({ kind: 'task', id: b.task!.id, employeeId: b.employeeId!, date: b.occDate!, label: b.label })
+                  : undefined
+              }
             />
           )}
         </div>
@@ -869,6 +901,7 @@ function DayGrid({
   onBlockContext,
   onDragTodo,
   onDragEntry,
+  onDragTask,
 }: {
   days: Date[]
   today: string
@@ -888,6 +921,8 @@ function DayGrid({
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
+  /** Absent when this viewer cannot move assigned work. */
+  onDragTask?: (block: Block) => void
 }) {
   const { t } = useT()
   return (
@@ -955,18 +990,18 @@ function DayGrid({
                         : onOpenEntry(b.entry!.id)
                   }
                   onDragStart={
-                    // Only todos and time blocks are dragged. An assigned
-                    // task's day comes from the schedule it was given, and
-                    // dragging it used to clear that do_date, which moved the
-                    // block somewhere nobody asked for. It is ticked, not
-                    // moved; rescheduling it is the task manager's job.
+                    // Todos and time blocks are dragged by whoever owns the
+                    // board. An assigned task is dragged only by the owner:
+                    // one day of it moves, and the schedule stays.
                     readOnly
                       ? undefined
                       : b.todo
                         ? () => onDragTodo(b.todo!)
                         : b.entry
                           ? () => onDragEntry(b.entry!)
-                          : undefined
+                          : b.task && b.employeeId && b.occDate && onDragTask
+                            ? () => onDragTask(b)
+                            : undefined
                   }
                   onToggleDone={
                     readOnly
@@ -1014,6 +1049,7 @@ function MonthGrid({
   onBlockContext,
   onDragTodo,
   onDragEntry,
+  onDragTask,
 }: {
   days: Date[]
   today: string
@@ -1033,6 +1069,8 @@ function MonthGrid({
   onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
+  /** Absent when this viewer cannot move assigned work. */
+  onDragTask?: (block: Block) => void
 }) {
   return (
     <div
@@ -1096,18 +1134,18 @@ function MonthGrid({
                         : onOpenEntry(b.entry!.id)
                   }
                   onDragStart={
-                    // Only todos and time blocks are dragged. An assigned
-                    // task's day comes from the schedule it was given, and
-                    // dragging it used to clear that do_date, which moved the
-                    // block somewhere nobody asked for. It is ticked, not
-                    // moved; rescheduling it is the task manager's job.
+                    // Todos and time blocks are dragged by whoever owns the
+                    // board. An assigned task is dragged only by the owner:
+                    // one day of it moves, and the schedule stays.
                     readOnly
                       ? undefined
                       : b.todo
                         ? () => onDragTodo(b.todo!)
                         : b.entry
                           ? () => onDragEntry(b.entry!)
-                          : undefined
+                          : b.task && b.employeeId && b.occDate && onDragTask
+                            ? () => onDragTask(b)
+                            : undefined
                   }
                   onToggleDone={
                     readOnly

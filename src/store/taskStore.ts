@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import { Task, CompletionLog, Category, TaskComment, TaskAttachment, TaskFile, ActivityLog } from '../types'
-import { getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOfDay } from '../utils/taskScheduler'
+import { getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOfDay, TaskMoveRow } from '../utils/taskScheduler'
+import { useAuthStore } from './authStore'
 import { format } from 'date-fns'
 
 interface TaskState {
@@ -18,6 +19,8 @@ interface TaskState {
   taskStatuses: Record<string, 'in_progress' | 'missed'>
   /** Same keys as taskStatuses, holding the moment work began. */
   taskStartedAt: Record<string, string>
+  /** Days of recurring tasks the owner has dragged to another day. */
+  taskMoves: TaskMoveRow[]
   taskComments: TaskComment[]
   activityLogs: ActivityLog[]
 
@@ -45,6 +48,13 @@ interface TaskState {
    * moves on. Shares the status row with "in progress", so it replaces it.
    */
   markMissed: (taskId: string, empId: string, date: string) => Promise<void>
+  /**
+   * Put one day of somebody's task on another day. A one-off simply gets the
+   * new date; a day of a recurring task is moved on its own, leaving the
+   * rest of the schedule where it was. Dropping it back on its own day
+   * undoes the move.
+   */
+  moveTaskOccurrence: (taskId: string, empId: string, date: string, to: string) => Promise<void>
   /** Take a missed mark back, which lets the task start moving forward again. */
   clearMissed: (taskId: string, empId: string, date: string) => Promise<void>
   isMissed: (taskId: string, empId: string, date: string) => boolean
@@ -177,6 +187,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   loading: false,
   taskStatuses: {},
   taskStartedAt: {},
+  taskMoves: [],
   taskComments: [],
   activityLogs: [],
 
@@ -194,6 +205,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_assignments' }, refetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'completion_logs' }, refetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_statuses' }, refetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_moves' }, refetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, refetch)
       .subscribe()
   },
@@ -211,14 +223,24 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     // own frequency, so the assignment carries no date any more.
     const fetchTasks = () => supabase.from('tasks').select('*, task_assignments(employee_id)')
 
-    const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes] = await Promise.all([
+    const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes, movesRes] = await Promise.all([
       fetchTasks(),
       supabase.from('categories').select('*'),
       supabase.from('completion_logs').select('*'),
       supabase.from('task_statuses').select('*'),
       supabase.from('task_comments').select('*, task_attachments(*)'),
       supabase.from('activity_logs').select('*'),
+      // Absent until the task_moves migration has run: nothing is moved, and
+      // the rest still loads.
+      supabase.from('task_moves').select('*'),
     ])
+
+    const taskMoves: TaskMoveRow[] = (movesRes.data ?? []).map((row: any) => ({
+      taskId: row.task_id,
+      employeeId: row.employee_id,
+      date: row.due_date,
+      movedTo: row.moved_to,
+    }))
 
     const taskStatuses: Record<string, 'in_progress' | 'missed'> = {}
     const taskStartedAt: Record<string, string> = {}
@@ -244,6 +266,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       completionLogs: (logsRes.data ?? []).map(toCompletionLog),
       taskStatuses,
       taskStartedAt,
+      taskMoves,
       taskComments: (commentsRes.data ?? []).map(toComment),
       activityLogs: (activityRes.data ?? []).map(toActivityLog),
       loading: false,
@@ -444,6 +467,54 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
 
   inProgressSince: (taskId, empId, date) =>
     get().taskStartedAt[`${taskId}:${empId}:${date}`] ?? null,
+
+  moveTaskOccurrence: async (taskId, empId, date, to) => {
+    const hasMove = get().taskMoves.some((m) => m.taskId === taskId && m.employeeId === empId && m.date === date)
+    if (to === date && !hasMove) return
+    const task = get().allTasks.find((t) => t.id === taskId)
+    if (!task) return
+
+    // A one-off is its own only day, so moving it is changing its date.
+    if (task.frequency.type === 'one-off') {
+      await get().updateTask(taskId, { frequency: { ...task.frequency, date: to } })
+      return
+    }
+
+    // Back on its own day: the move is simply gone.
+    if (to === date) {
+      const { error } = await supabase
+        .from('task_moves')
+        .delete()
+        .eq('task_id', taskId).eq('employee_id', empId).eq('due_date', date)
+      if (error) {
+        console.error('[moveTaskOccurrence] failed:', error)
+        throw new Error(error.message)
+      }
+      set((s) => ({
+        taskMoves: s.taskMoves.filter((m) => !(m.taskId === taskId && m.employeeId === empId && m.date === date)),
+      }))
+      return
+    }
+
+    const { error } = await supabase.from('task_moves').upsert({
+      task_id: taskId,
+      employee_id: empId,
+      due_date: date,
+      moved_to: to,
+      moved_by: useAuthStore.getState().realUser?.id ?? null,
+      moved_at: new Date().toISOString(),
+    })
+    if (error) {
+      console.error('[moveTaskOccurrence] failed:', error)
+      throw new Error(error.message)
+    }
+    set((s) => ({
+      taskMoves: [
+        ...s.taskMoves.filter((m) => !(m.taskId === taskId && m.employeeId === empId && m.date === date)),
+        { taskId, employeeId: empId, date, movedTo: to },
+      ],
+    }))
+  },
 
   markMissed: async (taskId, empId, date) => {
     const key = `${taskId}:${empId}:${date}`

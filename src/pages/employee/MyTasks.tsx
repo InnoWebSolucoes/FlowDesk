@@ -161,7 +161,7 @@ export function MyTasks({
   manage?: boolean
 } = {}) {
   const { currentUser } = useAuthStore()
-  const { tasks, categories, completionLogs, taskStatuses, taskStartedAt } = useTaskStore()
+  const { tasks, categories, completionLogs, taskStatuses, taskStartedAt, taskMoves } = useTaskStore()
   const { t, dateLocale } = useT()
   // Controlled from outside when a single section was asked for, so the
   // manager's four-section view drives which period is on screen.
@@ -243,9 +243,12 @@ export function MyTasks({
             { from: rangeFrom, to: rangeTo, today: realTodayStr },
             // Started and missed both stop a task moving on.
             statusRowsFrom(taskStatuses, taskStartedAt),
+            365,
+            // Days the owner dragged elsewhere on the calendar.
+            taskMoves,
           )
         : [],
-    [tasks, empId, completionLogs, taskStatuses, taskStartedAt, rangeFrom, rangeTo, realTodayStr],
+    [tasks, empId, completionLogs, taskStatuses, taskStartedAt, taskMoves, rangeFrom, rangeTo, realTodayStr],
   )
 
   const byDay = useMemo(() => {

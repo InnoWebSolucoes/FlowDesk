@@ -111,4 +111,13 @@ select
   case when exists (
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'remove_website_from_list'
-  ) then 'OK' else 'MISSING — run 20261003000000_toolbox_remove_from_list.sql' end;
+  ) then 'OK' else 'MISSING — run 20261003000000_toolbox_remove_from_list.sql' end
+
+union all
+
+select
+  'task_moves table exists',
+  case when exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'task_moves'
+  ) then 'OK' else 'MISSING — run 20261005000000_task_moves.sql' end;
