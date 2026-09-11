@@ -18,13 +18,22 @@ import { useT } from '../../i18n/useT'
  * from its assignees, and that resolution lives in the task manager where the
  * "All tasks" section already offers it.
  */
-export function TaskEditDialog({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskEditDialog({
+  task,
+  onClose,
+  startDeleting = false,
+}: {
+  task: Task
+  onClose: () => void
+  /** Open straight onto the delete confirmation, for a Delete that was chosen elsewhere. */
+  startDeleting?: boolean
+}) {
   const { t } = useT()
   const { categories, updateTask, deleteTask, addCategory } = useTaskStore()
   const { employees } = useEmployeeStore()
   const staff = employees.filter((e) => e.role === 'employee')
 
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(startDeleting)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 

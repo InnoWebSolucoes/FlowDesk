@@ -47,6 +47,36 @@ end
 $demote$;
 
 
+-- ─── 1b. Deleting a person must not leave a todo belonging to nobody ────────
+-- project_todos_has_an_owner says every todo has an assignee, a list owner
+-- or a creator. A todo somebody made for themselves on a list with no owner
+-- has only them in all three — so when their account goes, the SET NULL
+-- cascades empty all three at once and the check refuses the whole delete
+-- ("violates check constraint project_todos_has_an_owner").
+--
+-- Such a todo was that person's alone, and goes with them. This trigger
+-- removes them just before the user row is deleted, so the cascade has
+-- nothing left to refuse. Permanent: the dashboard's delete button hits the
+-- same wall without it.
+
+create or replace function public.drop_todos_of_departing_user()
+returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.project_todos
+  where (assignee_id is null or assignee_id = old.id)
+    and (owner_id    is null or owner_id    = old.id)
+    and (created_by  is null or created_by  = old.id);
+  return old;
+end;
+$$;
+
+drop trigger if exists drop_todos_of_departing_user on public.users;
+create trigger drop_todos_of_departing_user
+  before delete on public.users
+  for each row execute function public.drop_todos_of_departing_user();
+
+
 -- ─── 2. Rafael ──────────────────────────────────────────────────────────────
 
 do $rafael$

@@ -16,6 +16,7 @@ import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/tas
 import { personColor, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
+import { TaskEditDialog } from '../shared/TaskEditDialog'
 import {
   KIND_STYLE, LAYERS, Layer, dayKey, dayDate, entryCoversDay,
 } from './calendarShared'
@@ -163,8 +164,10 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   // Right-click on a block: complete it, take it off the calendar, or delete.
   const [dayMenu, setDayMenu] = useState<{ x: number; y: number; day: string } | null>(null)
   const [blockMenu, setBlockMenu] = useState<
-    { x: number; y: number; todoId?: string; entryId?: string } | null
+    { x: number; y: number; todoId?: string; entryId?: string; taskId?: string } | null
   >(null)
+  // An assigned task being edited or deleted from its right-click menu.
+  const [editTask, setEditTask] = useState<{ id: string; deleting: boolean } | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -698,6 +701,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               onToggleDone={toggleTodo}
               onToggleTask={toggleTaskDone}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
+              canManageTasks={canMoveTasks}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
               onDragTask={
@@ -724,6 +728,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               onToggleDone={toggleTodo}
               onToggleTask={toggleTaskDone}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
+              canManageTasks={canMoveTasks}
               onDragTodo={(t) => setDrag({ kind: 'todo', id: t.id, label: t.title })}
               onDragEntry={(e) => setDrag({ kind: 'entry', id: e.id, label: e.title })}
               onDragTask={
@@ -788,7 +793,58 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         )
       })()}
 
-      {blockMenu && (() => {
+      {/* Right-click on an assigned task: the owner edits or deletes the task
+          itself. Deleting goes through the same confirmation as the task
+          manager, which says what deleting a repeating task costs. */}
+      {blockMenu?.taskId && (() => {
+        const bTask = tasks.find((x) => x.id === blockMenu.taskId)
+        if (!bTask) return null
+        const act = (fn: () => void) => () => { fn(); setBlockMenu(null) }
+        const pos = menuPos(blockMenu.x, blockMenu.y, 3)
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-[60]"
+              onClick={() => setBlockMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setBlockMenu(null) }}
+            />
+            <div
+              className="fixed z-[61] w-48 py-1 bg-surface border border-border rounded-lg shadow-xl"
+              style={{ left: pos.left, top: pos.top }}
+            >
+              <p className="px-3 py-1.5 text-[11px] text-text-subtle border-b border-border mb-1 truncate">
+                {bTask.title}
+              </p>
+              <button
+                onClick={act(() => setOpenTask(bTask.id))}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >{t('cal_details')}</button>
+              <button
+                onClick={act(() => setEditTask({ id: bTask.id, deleting: false }))}
+                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
+              >{t('ui_edit')}</button>
+              <div className="h-px bg-border my-1" />
+              <button
+                onClick={act(() => setEditTask({ id: bTask.id, deleting: true }))}
+                className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
+              >{t('ui_delete')}</button>
+            </div>
+          </>
+        )
+      })()}
+
+      {editTask && (() => {
+        const target = tasks.find((x) => x.id === editTask.id)
+        return target ? (
+          <TaskEditDialog
+            task={target}
+            startDeleting={editTask.deleting}
+            onClose={() => setEditTask(null)}
+          />
+        ) : null
+      })()}
+
+      {blockMenu && !blockMenu.taskId && (() => {
         const bTodo = blockMenu.todoId ? todos.find((t) => t.id === blockMenu.todoId) : undefined
         const bEntry = blockMenu.entryId ? calendarEntries.find((e) => e.id === blockMenu.entryId) : undefined
         if (!bTodo && !bEntry) return null
@@ -902,6 +958,7 @@ function DayGrid({
   onDragTodo,
   onDragEntry,
   onDragTask,
+  canManageTasks,
 }: {
   days: Date[]
   today: string
@@ -918,7 +975,9 @@ function DayGrid({
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
   onToggleTask: (taskId: string, employeeId: string, day: string) => void
-  onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
+  onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string; taskId?: string }) => void
+  /** The owner: assigned tasks get a right-click menu to edit or delete them. */
+  canManageTasks?: boolean
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
   /** Absent when this viewer cannot move assigned work. */
@@ -1013,9 +1072,11 @@ function DayGrid({
                           : undefined
                   }
                   onContext={
-                    readOnly
+                    // A task's menu edits the task itself, which only the
+                    // owner does; for anyone else a task block has no menu.
+                    readOnly || (b.task && !canManageTasks)
                       ? undefined
-                      : (x, y) => onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
+                      : (x, y) => onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id, taskId: b.task?.id })
                   }
                 />
               ))}
@@ -1050,6 +1111,7 @@ function MonthGrid({
   onDragTodo,
   onDragEntry,
   onDragTask,
+  canManageTasks,
 }: {
   days: Date[]
   today: string
@@ -1066,7 +1128,9 @@ function MonthGrid({
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
   onToggleTask: (taskId: string, employeeId: string, day: string) => void
-  onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string }) => void
+  onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string; taskId?: string }) => void
+  /** The owner: assigned tasks get a right-click menu to edit or delete them. */
+  canManageTasks?: boolean
   onDragTodo: (todo: ProjectTodo) => void
   onDragEntry: (entry: CalendarEntry) => void
   /** Absent when this viewer cannot move assigned work. */
@@ -1157,9 +1221,11 @@ function MonthGrid({
                           : undefined
                   }
                   onContext={
-                    readOnly
+                    // A task's menu edits the task itself, which only the
+                    // owner does; for anyone else a task block has no menu.
+                    readOnly || (b.task && !canManageTasks)
                       ? undefined
-                      : (x, y) => onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id })
+                      : (x, y) => onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id, taskId: b.task?.id })
                   }
                 />
               ))}
