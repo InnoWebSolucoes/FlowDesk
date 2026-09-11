@@ -44,6 +44,34 @@ interface AuthState {
   updatePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>
 }
 
+const PROFILE_CACHE = 'flowdesk:profile'
+
+/**
+ * The last profile this browser signed in with, kept so that a phone
+ * reopening the app with no signal yet can still show the person their app
+ * rather than the login page. Refreshed on every successful fetch; the row
+ * in the database is always the truth once it can be reached.
+ */
+function readCachedProfile(userId: string): User | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE)
+    if (!raw) return null
+    const cached = JSON.parse(raw) as User
+    return cached.id === userId ? cached : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedProfile(profile: User | null) {
+  try {
+    if (profile) localStorage.setItem(PROFILE_CACHE, JSON.stringify(profile))
+    else localStorage.removeItem(PROFILE_CACHE)
+  } catch {
+    // Blocked storage only costs the offline fallback.
+  }
+}
+
 async function fetchProfile(userId: string): Promise<User | null> {
   // project_id comes along because an employee's whole workspace — their
   // todos, notes and resources — is scoped to the one project they belong to,
@@ -56,7 +84,7 @@ async function fetchProfile(userId: string): Promise<User | null> {
 
   if (error || !data) return null
 
-  return {
+  const profile: User = {
     id: data.id,
     email: data.email,
     name: data.name,
@@ -66,6 +94,65 @@ async function fetchProfile(userId: string): Promise<User | null> {
     projectId: data.project_id ?? null,
     isOwner: data.is_owner ?? false,
   }
+  writeCachedProfile(profile)
+  return profile
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Whether supabase-js still holds a session in storage. It clears it itself
+ * when a refresh fails for a real reason (revoked, expired for good), and
+ * keeps it when the failure was the network. So "getSession said null but
+ * this is still here" means: not signed out, just not reachable yet.
+ */
+function storedSessionExists(): boolean {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) ?? ''
+      if (/^sb-.*-auth-token$/.test(key)) {
+        const raw = localStorage.getItem(key)
+        if (raw && raw.includes('refresh_token')) return true
+      }
+    }
+  } catch {
+    // No storage, no stored session.
+  }
+  return false
+}
+
+/**
+ * The session, waited for.
+ *
+ * On a phone the app is usually reopened after its access token has expired,
+ * so the first thing it does is ask for a new one — and a phone that has just
+ * woken up often cannot reach anything for the first second or two.
+ * supabase-js reports that as "no session", which used to be taken as "signed
+ * out" and put the person on the login page every time they came back. This
+ * keeps asking, for as long as the stored session is still there to ask
+ * about, up to about twenty seconds.
+ */
+async function sessionWithRetry() {
+  let { data: { session } } = await supabase.auth.getSession()
+  let wait = 500
+  let waited = 0
+  while (!session && storedSessionExists() && waited < 20000) {
+    await sleep(wait)
+    waited += wait
+    wait = Math.min(wait * 2, 4000)
+    ;({ data: { session } } = await supabase.auth.getSession())
+  }
+  return session
+}
+
+/** The profile, tried a few times before giving up on the network. */
+async function profileWithRetry(userId: string): Promise<User | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const profile = await fetchProfile(userId)
+    if (profile) return profile
+    await sleep(800 * (attempt + 1))
+  }
+  return null
 }
 
 export const useAuthStore = create<AuthState>()((set, get) => ({
@@ -96,17 +183,19 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   initialize: async () => {
-    const { data: { session } } = await supabase.auth.getSession()
+    const session = await sessionWithRetry()
     if (session?.user) {
-      const profile = await fetchProfile(session.user.id)
+      // The row if it can be reached, the last known copy if not: a slow
+      // network on launch should delay the app, not sign the person out.
+      const profile = (await profileWithRetry(session.user.id)) ?? readCachedProfile(session.user.id)
       set({ currentUser: profile, realUser: profile, viewAs: null, viewAsReturnTo: null, status: profile ? 'authenticated' : 'unauthenticated' })
     } else {
       set({ currentUser: null, realUser: null, viewAs: null, viewAsReturnTo: null, status: 'unauthenticated' })
     }
 
-    supabase.auth.onAuthStateChange(async (_event, session) => {
+    supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
+        const profile = (await fetchProfile(session.user.id)) ?? readCachedProfile(session.user.id) ?? get().realUser
         // A token refresh must not drop the preview: this fires on its own
         // every hour, and being thrown back to the admin side mid-sentence
         // would look like the app losing its place.
@@ -116,7 +205,13 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           currentUser: stillPreviewing ?? profile,
           status: profile ? 'authenticated' : 'unauthenticated',
         })
-      } else {
+        return
+      }
+      // Only an actual sign-out signs out. supabase-js also reports a null
+      // session for its initial look at storage and for refreshes that could
+      // not reach the server; neither of those means the person left.
+      if (event === 'SIGNED_OUT') {
+        writeCachedProfile(null)
         set({ currentUser: null, realUser: null, viewAs: null, viewAsReturnTo: null, status: 'unauthenticated' })
       }
     })
@@ -136,6 +231,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   logout: async () => {
+    writeCachedProfile(null)
     await supabase.auth.signOut()
     set({ currentUser: null, realUser: null, viewAs: null, viewAsReturnTo: null, status: 'unauthenticated' })
   },
