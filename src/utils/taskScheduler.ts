@@ -22,9 +22,33 @@ export function getWeekOfMonth(date: Date): number {
  * a do date silently cancel a weekly task's recurrence. One date, and it lives
  * in the frequency.
  */
+/** One day of a repeating task, deleted for one person. */
+export interface TaskSkipRow {
+  taskId: string
+  employeeId: string
+  /** The day the schedule put it on. */
+  date: string
+}
+
+/**
+ * Days deleted on their own ("only this one"). Held here rather than passed
+ * in, because whether a task lands on a day is asked in a dozen places —
+ * calendar, My Tasks, the overview counts, analytics, missed-work tables —
+ * and a deleted day has to be gone from all of them, not just the screen it
+ * was deleted from. The task store keeps it current.
+ */
+let skippedDays = new Set<string>()
+
+export function setSkippedOccurrences(rows: TaskSkipRow[]) {
+  skippedDays = new Set(rows.map((r) => `${r.taskId}|${r.employeeId}|${r.date}`))
+}
+
 export function isTaskDueOnDate(task: Task, employeeId: string, date: Date): boolean {
   if (!task.isActive) return false
   if (!task.assignedTo.includes(employeeId)) return false
+  if (skippedDays.size > 0 && skippedDays.has(`${task.id}|${employeeId}|${format(date, 'yyyy-MM-dd')}`)) {
+    return false
+  }
 
   // A recurrence describes what happens from now on, not what should have
   // happened before the task existed. Without this a new monthly task appears

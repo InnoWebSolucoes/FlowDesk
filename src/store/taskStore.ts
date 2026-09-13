@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import { Task, CompletionLog, Category, TaskComment, TaskAttachment, TaskFile, ActivityLog } from '../types'
-import { getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOfDay, TaskMoveRow } from '../utils/taskScheduler'
+import {
+  getTasksDueOnDate, getTasksDueThisWeek, getTasksDueThisMonth, getTimeOfDay, TaskMoveRow,
+  TaskSkipRow, setSkippedOccurrences,
+} from '../utils/taskScheduler'
 import { useAuthStore } from './authStore'
 import { format } from 'date-fns'
 
@@ -21,6 +24,8 @@ interface TaskState {
   taskStartedAt: Record<string, string>
   /** Days of recurring tasks the owner has dragged to another day. */
   taskMoves: TaskMoveRow[]
+  /** Single days of repeating tasks that were deleted on their own. */
+  taskSkips: TaskSkipRow[]
   taskComments: TaskComment[]
   activityLogs: ActivityLog[]
 
@@ -55,6 +60,11 @@ interface TaskState {
    * undoes the move.
    */
   moveTaskOccurrence: (taskId: string, empId: string, date: string, to: string) => Promise<void>
+  /**
+   * Delete one day of somebody's repeating task, leaving every other day of
+   * it where it is.
+   */
+  deleteTaskOccurrence: (taskId: string, empId: string, date: string) => Promise<void>
   /** Take a missed mark back, which lets the task start moving forward again. */
   clearMissed: (taskId: string, empId: string, date: string) => Promise<void>
   isMissed: (taskId: string, empId: string, date: string) => boolean
@@ -188,6 +198,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   taskStatuses: {},
   taskStartedAt: {},
   taskMoves: [],
+  taskSkips: [],
   taskComments: [],
   activityLogs: [],
 
@@ -206,6 +217,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'completion_logs' }, refetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_statuses' }, refetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_moves' }, refetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_skips' }, refetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, refetch)
       .subscribe()
   },
@@ -223,7 +235,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     // own frequency, so the assignment carries no date any more.
     const fetchTasks = () => supabase.from('tasks').select('*, task_assignments(employee_id)')
 
-    const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes, movesRes] = await Promise.all([
+    const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes, movesRes, skipsRes] = await Promise.all([
       fetchTasks(),
       supabase.from('categories').select('*'),
       supabase.from('completion_logs').select('*'),
@@ -233,7 +245,17 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       // Absent until the task_moves migration has run: nothing is moved, and
       // the rest still loads.
       supabase.from('task_moves').select('*'),
+      // Likewise absent until task_skips has run.
+      supabase.from('task_skips').select('*'),
     ])
+
+    const taskSkips: TaskSkipRow[] = (skipsRes.data ?? []).map((row: any) => ({
+      taskId: row.task_id,
+      employeeId: row.employee_id,
+      date: row.due_date,
+    }))
+    // Before the tasks are set, so the first render already leaves them out.
+    setSkippedOccurrences(taskSkips)
 
     const taskMoves: TaskMoveRow[] = (movesRes.data ?? []).map((row: any) => ({
       taskId: row.task_id,
@@ -267,6 +289,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       taskStatuses,
       taskStartedAt,
       taskMoves,
+      taskSkips,
       taskComments: (commentsRes.data ?? []).map(toComment),
       activityLogs: (activityRes.data ?? []).map(toActivityLog),
       loading: false,
@@ -514,6 +537,29 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
         { taskId, employeeId: empId, date, movedTo: to },
       ],
     }))
+  },
+
+  deleteTaskOccurrence: async (taskId, empId, date) => {
+    const { error } = await supabase.from('task_skips').upsert({
+      task_id: taskId,
+      employee_id: empId,
+      due_date: date,
+      skipped_by: useAuthStore.getState().realUser?.id ?? null,
+      skipped_at: new Date().toISOString(),
+    })
+    if (error) {
+      console.error('[deleteTaskOccurrence] failed:', error)
+      throw new Error(error.message)
+    }
+    const taskSkips = [
+      ...get().taskSkips.filter((r) => !(r.taskId === taskId && r.employeeId === empId && r.date === date)),
+      { taskId, employeeId: empId, date },
+    ]
+    setSkippedOccurrences(taskSkips)
+    // Fresh task arrays as well: every screen that works out a task's days
+    // memoises on them, and the registry changing underneath is invisible
+    // to a memo.
+    set((s) => ({ taskSkips, ...applyTasks(s.scopedProjectId, [...s.allTasks]) }))
   },
 
   markMissed: async (taskId, empId, date) => {

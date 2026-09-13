@@ -164,10 +164,12 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   // Right-click on a block: complete it, take it off the calendar, or delete.
   const [dayMenu, setDayMenu] = useState<{ x: number; y: number; day: string } | null>(null)
   const [blockMenu, setBlockMenu] = useState<
-    { x: number; y: number; todoId?: string; entryId?: string; taskId?: string } | null
+    { x: number; y: number; todoId?: string; entryId?: string; taskId?: string; employeeId?: string; occDate?: string } | null
   >(null)
   // An assigned task being edited or deleted from its right-click menu.
-  const [editTask, setEditTask] = useState<{ id: string; deleting: boolean } | null>(null)
+  const [editTask, setEditTask] = useState<
+    { id: string; deleting: boolean; employeeId?: string; date?: string } | null
+  >(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -820,12 +822,16 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >{t('cal_details')}</button>
               <button
-                onClick={act(() => setEditTask({ id: bTask.id, deleting: false }))}
+                onClick={act(() => setEditTask({
+                  id: bTask.id, deleting: false, employeeId: blockMenu.employeeId, date: blockMenu.occDate,
+                }))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >{t('ui_edit')}</button>
               <div className="h-px bg-border my-1" />
               <button
-                onClick={act(() => setEditTask({ id: bTask.id, deleting: true }))}
+                onClick={act(() => setEditTask({
+                  id: bTask.id, deleting: true, employeeId: blockMenu.employeeId, date: blockMenu.occDate,
+                }))}
                 className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
               >{t('ui_delete')}</button>
             </div>
@@ -839,6 +845,11 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
           <TaskEditDialog
             task={target}
             startDeleting={editTask.deleting}
+            occurrence={
+              editTask.employeeId && editTask.date
+                ? { employeeId: editTask.employeeId, date: editTask.date }
+                : undefined
+            }
             onClose={() => setEditTask(null)}
           />
         ) : null
@@ -975,7 +986,11 @@ function DayGrid({
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
   onToggleTask: (taskId: string, employeeId: string, day: string) => void
-  onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string; taskId?: string }) => void
+  onBlockContext: (
+    x: number,
+    y: number,
+    ids: { todoId?: string; entryId?: string; taskId?: string; employeeId?: string; occDate?: string },
+  ) => void
   /** The owner: assigned tasks get a right-click menu to edit or delete them. */
   canManageTasks?: boolean
   onDragTodo: (todo: ProjectTodo) => void
@@ -1076,7 +1091,13 @@ function DayGrid({
                     // owner does; for anyone else a task block has no menu.
                     readOnly || (b.task && !canManageTasks)
                       ? undefined
-                      : (x, y) => onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id, taskId: b.task?.id })
+                      : (x, y) => onBlockContext(x, y, {
+                          todoId: b.todo?.id,
+                          entryId: b.entry?.id,
+                          taskId: b.task?.id,
+                          employeeId: b.employeeId,
+                          occDate: b.occDate,
+                        })
                   }
                 />
               ))}
@@ -1128,7 +1149,11 @@ function MonthGrid({
   justDragged: React.MutableRefObject<boolean>
   onToggleDone: (todoId: string) => void
   onToggleTask: (taskId: string, employeeId: string, day: string) => void
-  onBlockContext: (x: number, y: number, ids: { todoId?: string; entryId?: string; taskId?: string }) => void
+  onBlockContext: (
+    x: number,
+    y: number,
+    ids: { todoId?: string; entryId?: string; taskId?: string; employeeId?: string; occDate?: string },
+  ) => void
   /** The owner: assigned tasks get a right-click menu to edit or delete them. */
   canManageTasks?: boolean
   onDragTodo: (todo: ProjectTodo) => void
@@ -1225,7 +1250,13 @@ function MonthGrid({
                     // owner does; for anyone else a task block has no menu.
                     readOnly || (b.task && !canManageTasks)
                       ? undefined
-                      : (x, y) => onBlockContext(x, y, { todoId: b.todo?.id, entryId: b.entry?.id, taskId: b.task?.id })
+                      : (x, y) => onBlockContext(x, y, {
+                          todoId: b.todo?.id,
+                          entryId: b.entry?.id,
+                          taskId: b.task?.id,
+                          employeeId: b.employeeId,
+                          occDate: b.occDate,
+                        })
                   }
                 />
               ))}

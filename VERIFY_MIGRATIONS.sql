@@ -120,4 +120,13 @@ select
   case when exists (
     select 1 from information_schema.tables
     where table_schema = 'public' and table_name = 'task_moves'
-  ) then 'OK' else 'MISSING — run 20261005000000_task_moves.sql' end;
+  ) then 'OK' else 'MISSING — run 20261005000000_task_moves.sql' end
+
+union all
+
+select
+  'task_skips table exists',
+  case when exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'task_skips'
+  ) then 'OK' else 'MISSING — run 20261006000000_task_skips.sql' end;

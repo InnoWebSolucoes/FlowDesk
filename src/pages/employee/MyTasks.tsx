@@ -31,7 +31,7 @@ function OccurrenceCard({
   categories: any[]
   highlight: ReturnType<typeof useHighlight>
   readOnly?: boolean
-  onEditTask?: (task: Task) => void
+  onEditTask?: (task: Task, date: string) => void
   showTiming?: boolean
 }) {
   const {
@@ -75,7 +75,7 @@ function OccurrenceCard({
       currentUserId={empId}
       dueDate={date}
       completedAtOverride={occ.completedAt}
-      onEdit={onEditTask ? () => onEditTask(task) : undefined}
+      onEdit={onEditTask ? () => onEditTask(task, occ.date) : undefined}
       showTiming={showTiming}
       highlighted={highlight.isHighlighted(task.id)}
       highlightRef={highlight.ref}
@@ -175,14 +175,14 @@ export function MyTasks({
   )
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set([0, 1, 2, 3]))
   // The task open in the editor, if any.
-  const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [editingTask, setEditingTask] = useState<{ task: Task; date: string } | null>(null)
   /**
    * How far back or forward from today the view is looking, in whole periods:
    * days on the Today tab, weeks on the week tab, four-week blocks on the month
    * tab. Zero is now, and "Today" puts it back.
    */
   const [offset, setOffset] = useState(0)
-  const onEditTask = manage ? (task: Task) => setEditingTask(task) : undefined
+  const onEditTask = manage ? (task: Task, date: string) => setEditingTask({ task, date }) : undefined
 
   // Filters (today tab only)
   const [searchQuery, setSearchQuery] = useState('')
@@ -651,7 +651,11 @@ export function MyTasks({
       )}
 
       {editingTask && (
-        <TaskEditDialog task={editingTask} onClose={() => setEditingTask(null)} />
+        <TaskEditDialog
+          task={editingTask.task}
+          occurrence={{ employeeId: empId, date: editingTask.date }}
+          onClose={() => setEditingTask(null)}
+        />
       )}
     </div>
   )
