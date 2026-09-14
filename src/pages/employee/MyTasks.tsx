@@ -241,7 +241,7 @@ export function MyTasks({
             empId,
             completionLogs,
             { from: rangeFrom, to: rangeTo, today: realTodayStr },
-            // Started and missed both stop a task moving on.
+            // Missed stops a task moving on; started shows it as under way.
             statusRowsFrom(taskStatuses, taskStartedAt),
             365,
             // Days the owner dragged elsewhere on the calendar.

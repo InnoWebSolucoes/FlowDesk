@@ -224,7 +224,8 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
     const map = new Map<string, { occ: TaskOccurrence; employeeId: string }[]>()
     if (days.length === 0) return map
     const owners = canOverlay ? [...overlaid] : ownerId ? [ownerId] : []
-    // Started and missed both stop a task moving, so the rule needs them.
+    // The rule needs statuses: missed stops a task moving on, and started
+    // shows as under way wherever it has moved to.
     const statusRows = statusRowsFrom(taskStatuses, taskStartedAt)
     const range = {
       from: dayKey(days[0]),

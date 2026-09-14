@@ -102,9 +102,9 @@ export interface TaskOccurrence {
   showOn: string
   completed: boolean
   completedAt: string | null
-  /** Nothing has happened to it and its day is over, so it has moved forward onto today. */
+  /** Not finished and not marked missed, its day is over, so it has moved forward onto today. */
   carried: boolean
-  /** Started, or marked as missed. Either one stops it moving. */
+  /** Started, or marked as missed. Missed stops it moving; started does not. */
   status: 'in_progress' | 'missed' | null
   /**
    * The owner dragged this one day of the task to another day. The day it
@@ -166,15 +166,19 @@ export function statusRowsFrom(
  *
  * The rule:
  *   - A task lives on its own day until that day is over.
- *   - If nothing has happened to it by midnight — not completed, not started,
- *     not marked as missed — it moves to the next day. It moves; it is not
- *     copied. It keeps moving a day at a time for as long as nothing happens.
- *   - The moment something does, it stops on the day that happened and stays.
+ *   - If it is not completed by midnight it moves to the next day — including
+ *     when it was started and left in progress. It moves; it is not copied.
+ *     It keeps moving a day at a time until it is finished.
+ *   - Completed: it stops on the day it was finished.
+ *   - Marked as missed: it stops on the day it was marked. That is how
+ *     somebody says "this one is not coming with me".
+ *   - Daily tasks never move. Tomorrow brings its own copy, so carrying
+ *     today's forward would only stack up duplicates of the same work; an
+ *     unfinished day stays on its own day.
  *
- * Every occurrence moves on its own. A daily task nobody touched all week puts
- * a copy on today for each day it was due: that is the backlog, and showing
- * only one would hide the work. Marking one missed is how somebody says "this
- * one is not coming with me" — it stops on the day it was marked.
+ * Every other occurrence moves on its own: a weekly task untouched two weeks
+ * running puts both on today, because that is the backlog and showing only
+ * one would hide the work.
  *
  * Saturday and Sunday are ordinary days here, as everywhere.
  *
@@ -252,18 +256,23 @@ export function taskOccurrences(
     const movedTo = moveByTaskDay.get(`${task.id}|${date}`) ?? null
     const home = movedTo ?? date
 
-    const happened: string[] = []
-    if (log) happened.push(keyOf(parseISO(log.completedAt)))
-    if (status) happened.push(status.at ? keyOf(parseISO(status.at)) : home)
-
     let showOn: string
     let carried = false
-    if (happened.length > 0) {
-      const first = happened.sort()[0]
-      showOn = first > home ? first : home
+    if (task.frequency.type === 'daily') {
+      // Never carried: each day of a daily task is its own day's work.
+      showOn = home
+    } else if (log) {
+      // Finished: on the day it was finished. Being in progress beforehand
+      // does not hold it back on the day it was started.
+      const doneOn = keyOf(parseISO(log.completedAt))
+      showOn = doneOn > home ? doneOn : home
+    } else if (status?.status === 'missed') {
+      const markedOn = status.at ? keyOf(parseISO(status.at)) : home
+      showOn = markedOn > home ? markedOn : home
     } else if (home >= today) {
       showOn = home
     } else {
+      // Untouched or still in progress, and its day is over.
       showOn = today
       carried = true
     }
