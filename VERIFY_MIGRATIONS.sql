@@ -129,4 +129,24 @@ select
   case when exists (
     select 1 from information_schema.tables
     where table_schema = 'public' and table_name = 'task_skips'
-  ) then 'OK' else 'MISSING — run 20261006000000_task_skips.sql' end;
+  ) then 'OK' else 'MISSING — run 20261006000000_task_skips.sql' end
+
+union all
+
+select
+  'delete-a-person todo trigger exists',
+  case when exists (
+    select 1 from pg_trigger
+    where tgname = 'drop_todos_of_departing_user' and not tgisinternal
+  ) then 'OK' else 'MISSING — run 20261004000000_delete_rafael_account.sql' end
+
+union all
+
+select
+  'Rafael account deleted',
+  case when not exists (
+    select 1 from public.users
+    where not is_owner and (lower(email) = 'rafamdann@gmail.com' or name ilike 'rafael%')
+  ) and not exists (
+    select 1 from auth.users where lower(email) = 'rafamdann@gmail.com'
+  ) then 'OK' else 'STILL THERE — run 20261004000000_delete_rafael_account.sql' end;

@@ -10,6 +10,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { EmptyState } from '../shared/EmptyState'
 import { useT } from '../../i18n/useT'
+import { Linkify } from '../shared/Linkify'
 
 type Grouping = 'day' | 'week' | 'month'
 
@@ -349,7 +350,7 @@ export function WorkLog({
                     <div className="min-w-0">
                       <p className="text-text-main text-sm font-medium">{e.title}</p>
                       {e.description && (
-                        <p className="text-text-muted text-xs mt-1 whitespace-pre-wrap">{e.description}</p>
+                        <p className="text-text-muted text-xs mt-1 whitespace-pre-wrap break-words"><Linkify text={e.description} /></p>
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">

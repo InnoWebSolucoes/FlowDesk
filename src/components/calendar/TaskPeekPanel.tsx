@@ -7,6 +7,7 @@ import type { TranslationKey } from '../../i18n/translations'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useT } from '../../i18n/useT'
+import { Linkify } from '../shared/Linkify'
 
 const DAY_KEYS = [
   'task_sun', 'task_mon', 'task_tue', 'task_wed', 'task_thu', 'task_fri', 'task_sat',
@@ -116,7 +117,7 @@ export function TaskPeekPanel({
 
         <div className="px-5 pb-5">
           {task.description && (
-            <p className="text-sm text-text-muted whitespace-pre-wrap mb-3">{task.description}</p>
+            <p className="text-sm text-text-muted whitespace-pre-wrap break-words mb-3"><Linkify text={task.description} /></p>
           )}
 
           {row(Users, t('taskpeek_assignedTo'),

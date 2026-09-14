@@ -15,6 +15,7 @@ import { Conversation, ResourceItem } from '../types'
 import { withHighlight } from '../lib/highlight'
 import { useT } from '../i18n/useT'
 import { Avatar } from '../components/shared/Avatar'
+import { Linkify } from '../components/shared/Linkify'
 import type { TranslationKey } from '../i18n/translations'
 
 /** Where a document sent in chat should be filed, beyond the room's own folder. */
@@ -647,7 +648,19 @@ export function Chat() {
                             } ${m.deletedAt ? 'opacity-50' : ''}`}
                           >
                             {m.body && (
-                              <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>
+                              <p className="text-sm whitespace-pre-wrap break-words">
+                                {/* Links pasted into a message open when tapped.
+                                    On your own blue bubble they are white, so
+                                    they stay readable. */}
+                                <Linkify
+                                  text={m.body}
+                                  linkClassName={
+                                    mine
+                                      ? 'text-white underline underline-offset-2 break-all hover:opacity-80'
+                                      : 'text-primary underline underline-offset-2 break-all hover:opacity-80'
+                                  }
+                                />
+                              </p>
                             )}
                             {m.deletedAt && (
                               <p className={`text-[10px] italic mt-1 ${mine ? 'text-white/70' : 'text-text-subtle'}`}>
