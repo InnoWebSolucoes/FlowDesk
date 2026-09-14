@@ -152,6 +152,16 @@ export function TodoBoard({
 
   const openTodos = useMemo(() => {
     const list = listTodos.filter((t) => !t.isCompleted)
+    // Managers' board: waiting todos sink below everything still to do, the
+    // one most recently marked waiting at the top of that group. What needs
+    // doing stays at the top; what is with somebody else collects under it.
+    if (adminBoard) {
+      const doing = list.filter((t) => !t.waitingSince).sort((a, b) => a.sortOrder - b.sortOrder)
+      const waiting = list
+        .filter((t) => t.waitingSince)
+        .sort((a, b) => (b.waitingSince ?? '').localeCompare(a.waitingSince ?? ''))
+      return [...doing, ...waiting]
+    }
     if (!adminBoard && sortMode === 'priority') {
       return [...list].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || a.sortOrder - b.sortOrder)
     }
@@ -267,7 +277,11 @@ export function TodoBoard({
   }
 
   const move = (todo: ProjectTodo, direction: -1 | 1) => {
-    const ids = openTodos.map((t) => t.id)
+    // Within its own group. Waiting todos are ordered by when they started
+    // waiting, so on the managers' board only the to-do group rearranges.
+    const ids = openTodos
+      .filter((t) => !adminBoard || !t.waitingSince === !todo.waitingSince)
+      .map((t) => t.id)
     const idx = ids.indexOf(todo.id)
     const next = idx + direction
     if (idx === -1 || next < 0 || next >= ids.length) return
@@ -446,7 +460,7 @@ export function TodoBoard({
             {/* Row actions, revealed on hover */}
             {canEdit && (
             <div className="flex items-center w-0 overflow-hidden opacity-0 group-hover:w-auto group-hover:opacity-100 focus-within:w-auto focus-within:opacity-100 transition-opacity">
-              {!todo.isCompleted && sortMode === 'manual' && (
+              {!todo.isCompleted && !waiting && sortMode === 'manual' && (
                 <>
                   <button onClick={() => move(todo, -1)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title={t('todo_moveUp')}>
                     <ChevronUp size={14} />
