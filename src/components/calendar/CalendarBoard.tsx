@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
-  Circle, CheckCircle2, Timer, Users, X, Ban,
+  Circle, CheckCircle2, Timer, Users, X, Ban, Clock,
 } from 'lucide-react'
 import {
   addDays, addWeeks, format,
@@ -106,7 +106,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   const {
     todos, todosLoadedFor, loadTodos, updateTodo,
     todoLists,
-    toggleTodo, deleteTodo,
+    toggleTodo, deleteTodo, setTodoState,
     calendarEntries, calendarLoadedFor, loadCalendar,
     createTodo, createTodoList,
     createCalendarEntry, updateCalendarEntry, deleteCalendarEntry,
@@ -861,7 +861,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         const bEntry = blockMenu.entryId ? calendarEntries.find((e) => e.id === blockMenu.entryId) : undefined
         if (!bTodo && !bEntry) return null
         const act = (fn: () => void) => () => { fn(); setBlockMenu(null) }
-        const pos = menuPos(blockMenu.x, blockMenu.y, bTodo ? 4 : 2)
+        const pos = menuPos(blockMenu.x, blockMenu.y, bTodo ? (bTodo.ownerId === null ? 6 : 4) : 2)
         return (
           <>
             <div
@@ -877,7 +877,29 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
                 {bTodo?.title ?? bEntry?.title}
               </p>
 
-              {bTodo && (
+              {/* The managers' board picks one of three states; any other
+                  board just ticks and unticks. */}
+              {bTodo && bTodo.ownerId === null ? (
+                ([
+                  { state: 'open' as const, label: t('todo_statusOpen') },
+                  { state: 'waiting' as const, label: t('todo_statusWaiting') },
+                  { state: 'done' as const, label: t('todo_statusDone') },
+                ]).map(({ state, label }) => {
+                  const current = bTodo.isCompleted ? 'done' : bTodo.waitingSince ? 'waiting' : 'open'
+                  return (
+                    <button
+                      key={state}
+                      onClick={act(() => setTodoState(bTodo.id, state))}
+                      className={`w-full flex items-center justify-between text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors ${
+                        current === state ? 'font-semibold' : ''
+                      }`}
+                    >
+                      {label}
+                      {current === state && <Check size={12} className="text-primary" />}
+                    </button>
+                  )
+                })
+              ) : bTodo && (
                 <button
                   onClick={act(() => toggleTodo(bTodo.id))}
                   className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
@@ -1382,6 +1404,9 @@ function BlockChip({
           >
             {block.todo?.isCompleted || block.done ? (
               <CheckCircle2 size={15} />
+            ) : block.todo && block.todo.ownerId === null && block.todo.waitingSince ? (
+              // Waiting on somebody else: our part of it is done.
+              <Clock size={15} />
             ) : block.missed ? (
               <Ban size={15} />
             ) : block.started ? (

@@ -149,4 +149,14 @@ select
     where not is_owner and (lower(email) = 'rafamdann@gmail.com' or name ilike 'rafael%')
   ) and not exists (
     select 1 from auth.users where lower(email) = 'rafamdann@gmail.com'
-  ) then 'OK' else 'STILL THERE — run 20261004000000_delete_rafael_account.sql' end;
+  ) then 'OK' else 'STILL THERE — run 20261004000000_delete_rafael_account.sql' end
+
+union all
+
+select
+  'project_todos.waiting_since added',
+  case when exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'project_todos'
+      and column_name = 'waiting_since'
+  ) then 'OK' else 'MISSING — run 20261007000000_todo_waiting.sql' end;

@@ -119,6 +119,11 @@ interface ProjectState {
   createTodo: (projectId: string, input: Partial<ProjectTodo>, ownerId?: string | null) => Promise<ProjectTodo | null>
   updateTodo: (id: string, updates: Partial<ProjectTodo>) => Promise<void>
   toggleTodo: (id: string) => Promise<void>
+  /**
+   * Put a todo in one of its three states. Open and done are every board's;
+   * waiting is the managers' shared board only.
+   */
+  setTodoState: (id: string, state: 'open' | 'waiting' | 'done') => Promise<void>
   deleteTodo: (id: string) => Promise<void>
   reorderTodos: (orderedIds: string[]) => Promise<void>
   setTodoLinks: (todoId: string, links: { itemId?: string; clusterId?: string }[]) => Promise<void>
@@ -305,6 +310,7 @@ function toTodo(row: any): ProjectTodo {
     priority: row.priority,
     isCompleted: row.is_completed,
     completedAt: row.completed_at,
+    waitingSince: row.waiting_since ?? null,
     doDate: row.do_date ?? null,
     assigneeId: row.assignee_id ?? null,
     visibility: row.visibility ?? null,
@@ -1539,13 +1545,16 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       patch.is_completed = updates.isCompleted
       patch.completed_at = updates.isCompleted ? new Date().toISOString() : null
     }
+    if (updates.waitingSince !== undefined) patch.waiting_since = updates.waitingSince
     if (Object.keys(patch).length === 0) return
 
     const { error } = await supabase.from('project_todos').update(patch).eq('id', id)
     if (error) {
       // Before the do-dates migration these columns don't exist; keep the rest
       // of the edit rather than losing the whole change.
-      const SCHEDULING = ['do_date', 'assignee_id', 'visibility']
+      // waiting_since likewise, until the todo_waiting migration has run:
+      // completing a todo must not fail because "waiting" cannot be stored.
+      const SCHEDULING = ['do_date', 'assignee_id', 'visibility', 'waiting_since']
       const legacy = Object.fromEntries(
         Object.entries(patch).filter(([k]) => !SCHEDULING.includes(k)),
       )
@@ -1566,7 +1575,25 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   toggleTodo: async (id) => {
     const todo = get().todos.find((t) => t.id === id)
     if (!todo) return
+    // The managers' shared board has a step between open and done: our part
+    // is finished and it is waiting on somebody else. Click once for
+    // waiting, again for done, again to reopen.
+    if (todo.ownerId === null) {
+      const next = todo.isCompleted ? 'open' : todo.waitingSince ? 'done' : 'waiting'
+      await get().setTodoState(id, next)
+      return
+    }
     await get().updateTodo(id, { isCompleted: !todo.isCompleted })
+  },
+
+  setTodoState: async (id, state) => {
+    if (state === 'done') {
+      await get().updateTodo(id, { isCompleted: true, waitingSince: null })
+    } else if (state === 'waiting') {
+      await get().updateTodo(id, { isCompleted: false, waitingSince: new Date().toISOString() })
+    } else {
+      await get().updateTodo(id, { isCompleted: false, waitingSince: null })
+    }
   },
 
   deleteTodo: async (id) => {

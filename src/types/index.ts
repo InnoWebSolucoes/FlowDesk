@@ -206,6 +206,12 @@ export interface ProjectTodo {
   isCompleted: boolean
   completedAt: string | null
   /**
+   * Set while the todo is waiting on somebody else: our part is done and it
+   * is with them now. Only the managers' shared board uses it. Null when
+   * open or completed.
+   */
+  waitingSince: string | null
+  /**
    * The day it is to be done. The only date a todo has: there used to be a
    * deadline alongside it, and carrying two dates meant every todo had to be
    * read twice to find out when it was actually happening.

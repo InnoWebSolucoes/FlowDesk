@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react'
-import { X, FolderOpen, CheckCircle2, ChevronRight, Home, Search, CornerDownLeft } from 'lucide-react'
+import React, { useMemo, useRef, useState } from 'react'
+import { X, FolderOpen, CheckCircle2, ChevronRight, Home, Search, CornerDownLeft, Upload } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { FileKindIcon } from '../resources/ResourceThumbnail'
 import { useT } from '../../i18n/useT'
@@ -15,6 +15,11 @@ export interface LinkKey {
  * Clusters are both selectable and browsable: the row selects, the chevron
  * opens it. Searching flattens everything, since when you're searching you
  * want the result wherever it lives.
+ *
+ * A file that is not in FlowDesk yet can be uploaded from here too. It goes
+ * into the folder open at the time (the main space otherwise) and comes back
+ * already selected, so attaching something from the computer is one step,
+ * not a trip to Resources and back.
  */
 export function ResourceLinkPicker({
   projectId,
@@ -32,11 +37,14 @@ export function ResourceLinkPicker({
   onSave: (links: LinkKey[]) => Promise<void>
 }) {
   const { t } = useT()
-  const { clusters, items } = useProjectStore()
+  const { clusters, items, createItem } = useProjectStore()
   const [selected, setSelected] = useState<LinkKey[]>(initial)
   const [query, setQuery] = useState('')
   const [openCluster, setOpenCluster] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const projectClusters = useMemo(
     () => clusters.filter((c) => c.projectId === projectId),
@@ -49,6 +57,28 @@ export function ResourceLinkPicker({
 
   const q = query.trim().toLowerCase()
   const searching = q.length > 0
+
+  const uploadFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (fileRef.current) fileRef.current.value = ''
+    if (files.length === 0) return
+    setUploading(true)
+    setUploadError('')
+    try {
+      for (const file of files) {
+        // Into the folder being browsed; while searching there is none, so
+        // the main space.
+        const item = await createItem(projectId, searching ? null : openCluster, { title: file.name }, file)
+        if (item) setSelected((prev) => [...prev, { itemId: item.id }])
+      }
+    } catch (err) {
+      // createItem throws with the reason. The files before the failure are
+      // uploaded and already selected.
+      setUploadError((err as Error).message || t('picker_uploadFailed'))
+    } finally {
+      setUploading(false)
+    }
+  }
 
   // Browsing shows one level; searching flattens the whole project.
   const visibleClusters = searching
@@ -124,6 +154,25 @@ export function ResourceLinkPicker({
               placeholder={t('ui_searchEverythingInThisProject')}
               className="w-full pl-9 pr-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary"
             />
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <input ref={fileRef} type="file" multiple className="hidden" onChange={uploadFiles} />
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-text-main hover:border-primary/40 disabled:opacity-50 transition-colors"
+            >
+              <Upload size={12} />
+              {uploading ? t('picker_uploading') : t('picker_uploadFromComputer')}
+            </button>
+            <span className="text-[11px] text-text-subtle truncate">
+              {t('picker_uploadWhere').replace(
+                '{place}',
+                !searching && openCluster ? trail[trail.length - 1]?.title ?? 'Space' : 'Space',
+              )}
+            </span>
+            {uploadError && <span className="text-[11px] text-danger w-full">{uploadError}</span>}
           </div>
 
           {!searching && (

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   X, Link2, FolderOpen, ExternalLink, Lock, Users as UsersIcon, Globe, Check, Pencil,
+  Circle, CheckCircle2, Clock,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -251,7 +252,7 @@ function TodoBody({
 }: { todo: ProjectTodo; readOnly?: boolean; editing?: boolean; onClose: () => void }) {
   const { t } = useT()
   const { employees } = useEmployeeStore()
-  const { updateTodo, toggleTodo, deleteTodo, todoLists } = useProjectStore()
+  const { updateTodo, toggleTodo, setTodoState, deleteTodo, todoLists } = useProjectStore()
   const addTask = useTaskStore((s) => s.addTask)
   const realUser = useAuthStore((s) => s.realUser)
 
@@ -259,6 +260,10 @@ function TodoBody({
   // exception below: reassigning is a thing you do while reading a list, not
   // something worth entering an edit mode for.
   const locked = readOnly || !editing
+  // A todo on the managers' shared board: no priority or date, and a waiting
+  // state between open and done.
+  const adminTodo = todo.ownerId === null
+  const todoState = todo.isCompleted ? 'done' : adminTodo && todo.waitingSince ? 'waiting' : 'open'
 
   // Held while typing and saved when the box loses focus, for the same reason
   // as the title: a store write per keystroke dropped letters and redrew the
@@ -317,18 +322,47 @@ function TodoBody({
     <>
       {/* Read-only still says whether it is done — that is a fact about their
           week — it just is not a button any more. */}
-      <div
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm w-full transition-colors ${
-          todo.isCompleted
-            ? 'bg-success-bg text-success'
-            : `bg-surface-2 text-text-muted ${readOnly ? '' : 'hover:bg-border cursor-pointer'}`
-        }`}
-        onClick={readOnly ? undefined : () => toggleTodo(todo.id)}
-        role={readOnly ? undefined : 'button'}
-      >
-        <Check size={14} />
-        {todo.isCompleted ? 'Completed' : readOnly ? 'Not done yet' : 'Mark as done'}
-      </div>
+      {adminTodo && !readOnly ? (
+        // All three states side by side, since the managers' board has one
+        // between open and done.
+        <div className="grid grid-cols-3 gap-1.5">
+          {([
+            { state: 'open', label: t('todo_statusOpen'), Icon: Circle, on: 'bg-surface-2 text-text-main border-text-subtle/40' },
+            { state: 'waiting', label: t('todo_statusWaiting'), Icon: Clock, on: 'bg-amber/10 text-amber border-amber/40' },
+            { state: 'done', label: t('todo_statusDone'), Icon: CheckCircle2, on: 'bg-success-bg text-success border-success/40' },
+          ] as const).map(({ state, label, Icon, on }) => (
+            <button
+              key={state}
+              onClick={() => setTodoState(todo.id, state)}
+              className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                todoState === state ? on : 'border-border text-text-muted hover:bg-surface-2'
+              }`}
+            >
+              <Icon size={13} />
+              <span className="truncate">{label}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm w-full transition-colors ${
+            todo.isCompleted
+              ? 'bg-success-bg text-success'
+              : todoState === 'waiting'
+                ? 'bg-amber/10 text-amber'
+                : `bg-surface-2 text-text-muted ${readOnly ? '' : 'hover:bg-border cursor-pointer'}`
+          }`}
+          onClick={readOnly ? undefined : () => toggleTodo(todo.id)}
+          role={readOnly ? undefined : 'button'}
+        >
+          {todoState === 'waiting' ? <Clock size={14} /> : <Check size={14} />}
+          {todo.isCompleted
+            ? 'Completed'
+            : todoState === 'waiting'
+              ? t('todo_statusWaiting')
+              : readOnly ? 'Not done yet' : 'Mark as done'}
+        </div>
+      )}
 
       <Field label={t('cal_descriptionLabel')}>
         <textarea
@@ -345,6 +379,7 @@ function TodoBody({
       {/* One date. The deadline that used to sit beside it is gone: a todo
           happens on the day it happens, and two dates meant reading both to
           work out which one the week was actually built from. */}
+      {!adminTodo && (
       <Field label={t('cal_doDateLabel')}>
         <input
           type="date"
@@ -355,6 +390,8 @@ function TodoBody({
           className={inputClass}
         />
       </Field>
+
+      )}
 
       {/* Who is doing it. Adding a todo from the calendar dropped you here
           with no way to say whose it was, so it stayed on the shared board. */}
@@ -379,6 +416,7 @@ function TodoBody({
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
+        {!adminTodo && (
         <Field label={t('cal_priorityLabel')}>
           <select
             value={todo.priority}
@@ -391,6 +429,7 @@ function TodoBody({
             <option value="low">{t('ui_low')}</option>
           </select>
         </Field>
+        )}
         <Field label={t('cal_listLabel')}>
           <select
             value={todo.listId ?? ''}

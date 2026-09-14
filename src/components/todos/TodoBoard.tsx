@@ -4,7 +4,7 @@ import { useHighlight } from '../../hooks/useHighlight'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import {
   ListTodo, Plus, Trash2, Link2, ChevronUp, ChevronDown, Circle, CheckCircle2,
-  FolderOpen, CalendarClock, Pencil, Check, Copy,
+  FolderOpen, CalendarClock, Pencil, Check, Copy, Clock,
 } from 'lucide-react'
 import { isBefore, parseISO, startOfToday } from 'date-fns'
 import { Project, ProjectTodo, Priority } from '../../types'
@@ -63,7 +63,7 @@ export function TodoBoard({
   const navigate = useNavigate()
   const {
     todos, todoLists, todosLoadedFor, loadTodos,
-    createTodo, updateTodo, toggleTodo, deleteTodo, reorderTodos, setTodoLinks,
+    createTodo, updateTodo, toggleTodo, setTodoState, deleteTodo, reorderTodos, setTodoLinks,
     createTodoList, updateTodoList, deleteTodoList, duplicateTodoList,
     clusters, items, resourcesLoadedFor, loadResources,
   } = useProjectStore()
@@ -110,6 +110,13 @@ export function TodoBoard({
   // employee's lists would keep seeing their own. Hence the key, not the id.
   const boardKey = `${project.id}:${ownerId ?? 'shared'}`
 
+  // The managers' shared board works differently from an employee's list:
+  // no priority and no date on it, and a todo can be waiting on somebody
+  // else between open and done.
+  const adminBoard = ownerId === null
+  // Right-click on a checkbox: pick the state outright.
+  const [statusMenu, setStatusMenu] = useState<{ todoId: string; x: number; y: number } | null>(null)
+
   useEffect(() => {
     if (todosLoadedFor !== boardKey) loadTodos(project.id, ownerId)
     // Resources are needed to render and pick todo links.
@@ -145,10 +152,10 @@ export function TodoBoard({
 
   const openTodos = useMemo(() => {
     const list = listTodos.filter((t) => !t.isCompleted)
-    if (sortMode === 'priority') {
+    if (!adminBoard && sortMode === 'priority') {
       return [...list].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || a.sortOrder - b.sortOrder)
     }
-    if (sortMode === 'doDate') {
+    if (!adminBoard && sortMode === 'doDate') {
       return [...list].sort((a, b) => {
         if (!a.doDate && !b.doDate) return a.sortOrder - b.sortOrder
         if (!a.doDate) return 1
@@ -158,7 +165,7 @@ export function TodoBoard({
     }
 
     return [...list].sort((a, b) => a.sortOrder - b.sortOrder)
-  }, [listTodos, sortMode])
+  }, [listTodos, sortMode, adminBoard])
 
   const completedTodos = useMemo(
     () => listTodos.filter((t) => t.isCompleted).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
@@ -280,7 +287,8 @@ export function TodoBoard({
   const TodoRow = ({ todo }: { todo: ProjectTodo }) => {
     // Overdue is now measured against the do date, the only date there is:
     // the day it was meant to happen has passed and it did not happen.
-    const overdue = !todo.isCompleted && todo.doDate && isBefore(parseISO(todo.doDate), startOfToday())
+    const overdue = !adminBoard && !todo.isCompleted && todo.doDate && isBefore(parseISO(todo.doDate), startOfToday())
+    const waiting = adminBoard && !todo.isCompleted && !!todo.waitingSince
     const isEditing = editingId === todo.id
 
     return (
@@ -295,13 +303,31 @@ export function TodoBoard({
         <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
           <button
             onClick={() => canEdit && toggleTodo(todo.id)}
+            onContextMenu={(e) => {
+              if (!adminBoard || !canEdit) return
+              e.preventDefault()
+              e.stopPropagation()
+              setStatusMenu({ todoId: todo.id, x: e.clientX, y: e.clientY })
+            }}
             disabled={!canEdit}
             className={`flex-shrink-0 transition-colors ${
-              todo.isCompleted ? 'text-success' : 'text-text-subtle hover:text-primary'
+              todo.isCompleted
+                ? 'text-success'
+                : waiting
+                  ? 'text-amber hover:text-success'
+                  : 'text-text-subtle hover:text-primary'
             } ${canEdit ? '' : 'cursor-default'}`}
-            title={todo.isCompleted ? 'Done' : 'Not done yet'}
+            title={
+              todo.isCompleted
+                ? t('todo_statusDone')
+                : waiting
+                  ? t('todo_statusWaiting')
+                  : adminBoard && canEdit
+                    ? t('todo_statusHint')
+                    : t('todo_statusOpen')
+            }
           >
-            {todo.isCompleted ? <CheckCircle2 size={19} /> : <Circle size={19} />}
+            {todo.isCompleted ? <CheckCircle2 size={19} /> : waiting ? <Clock size={19} /> : <Circle size={19} />}
           </button>
 
           {/* The title takes the slack, which puts the metadata flush against
@@ -338,6 +364,13 @@ export function TodoBoard({
               all until the row is hovered, so they do not hold a column open
               down the right of the list. */}
           <div className="flex items-center gap-1.5 flex-wrap">
+            {waiting && (
+              <span className="flex items-center gap-1 text-[11px] font-medium text-amber bg-amber/10 px-1.5 py-1 rounded-md">
+                <Clock size={11} />
+                {t('todo_waitingShort')}
+              </span>
+            )}
+
             {/* Linked resources */}
             {todo.links.map((link) => {
               const info = linkLabel(link)
@@ -366,6 +399,8 @@ export function TodoBoard({
               </button>
             )}
 
+            {!adminBoard && (
+              <>
             {/* The do date, and the only date. It is what the calendar shows
                 and what "when it must be done" now means; the separate
                 deadline that used to sit beside it is gone. A day that has
@@ -404,6 +439,9 @@ export function TodoBoard({
               <option value="medium">{t('todo_med')}</option>
               <option value="low">{t('ui_low')}</option>
             </select>
+
+              </>
+            )}
 
             {/* Row actions, revealed on hover */}
             {canEdit && (
@@ -571,6 +609,49 @@ export function TodoBoard({
         )
       })()}
 
+      {/* Right-click on a checkbox, managers' board only: choose the state
+          outright rather than clicking round the cycle to reach it. */}
+      {statusMenu && (() => {
+        const target = todos.find((x) => x.id === statusMenu.todoId)
+        if (!target) return null
+        const current = target.isCompleted ? 'done' : target.waitingSince ? 'waiting' : 'open'
+        const options = [
+          { state: 'open' as const, label: t('todo_statusOpen'), Icon: Circle, tone: 'text-text-muted' },
+          { state: 'waiting' as const, label: t('todo_statusWaiting'), Icon: Clock, tone: 'text-amber' },
+          { state: 'done' as const, label: t('todo_statusDone'), Icon: CheckCircle2, tone: 'text-success' },
+        ]
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setStatusMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setStatusMenu(null) }}
+            />
+            <div
+              className="fixed z-50 w-56 py-1 bg-surface border border-border rounded-lg shadow-xl"
+              style={{
+                left: Math.max(8, Math.min(statusMenu.x, window.innerWidth - 232)),
+                top: Math.max(8, Math.min(statusMenu.y, window.innerHeight - 130)),
+              }}
+            >
+              {options.map(({ state, label, Icon, tone }) => (
+                <button
+                  key={state}
+                  onClick={() => { setTodoState(target.id, state); setStatusMenu(null) }}
+                  className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors ${
+                    current === state ? 'font-semibold text-text-main' : 'text-text-main'
+                  }`}
+                >
+                  <Icon size={13} className={tone} />
+                  <span className="flex-1">{label}</span>
+                  {current === state && <Check size={12} className="text-primary" />}
+                </button>
+              ))}
+            </div>
+          </>
+        )
+      })()}
+
       {error && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-danger-bg border border-danger/30 text-danger text-xs">
           {error}
@@ -635,6 +716,7 @@ export function TodoBoard({
               className="w-full px-2.5 py-2 rounded-md bg-surface border border-border text-xs text-text-main resize-none focus:outline-none focus:border-primary"
             />
 
+            {!adminBoard && (
             <div className="flex flex-wrap gap-3">
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] text-text-subtle">{t('todo_priority')}</span>
@@ -659,6 +741,8 @@ export function TodoBoard({
                 />
               </label>
             </div>
+
+            )}
 
             <div className="flex items-center gap-2 flex-wrap">
               <button
@@ -697,6 +781,7 @@ export function TodoBoard({
       {/* Controls */}
       {listTodos.length > 0 && (
         <div className="flex items-center justify-between gap-3 mb-3 text-xs">
+          {adminBoard ? <span /> : (
           <div className="flex items-center gap-1.5">
             <span className="text-text-subtle">{t('todo_sort')}</span>
             {(['manual', 'priority', 'doDate'] as SortMode[]).map((mode) => (
@@ -711,6 +796,7 @@ export function TodoBoard({
               </button>
             ))}
           </div>
+          )}
           <span className="text-text-subtle">
             {openTodos.length} open · {completedTodos.length} done
           </span>
