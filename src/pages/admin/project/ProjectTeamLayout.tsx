@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink, Outlet, useOutletContext, useMatch } from 'react-router-dom'
-import { Users, LayoutDashboard, ListTodo, Sparkles, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, ListTodo, Sparkles, BarChart3 } from 'lucide-react'
 import { Project } from '../../../types'
 import { useT } from '../../../i18n/useT'
 
@@ -21,8 +21,8 @@ export function ProjectTeamLayout() {
   // The profile opens with "back to employees", which is the way back to it.
   const onProfile = !!useMatch('/admin/projects/:projectId/employees/team/:id')
 
+  // The team itself is the top of the overview, not a tab of its own.
   const tabs = [
-    { to: 'team', label: t('nav_employees'), icon: Users },
     { to: 'overview', label: t('nav_overview'), icon: LayoutDashboard },
     { to: 'tasks', label: t('nav_taskManager'), icon: ListTodo },
     { to: 'ai-organiser', label: t('nav_aiOrganiser'), icon: Sparkles },

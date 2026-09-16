@@ -1,5 +1,4 @@
 import React, { useState } from 'react'
-import { format, parseISO } from 'date-fns'
 import { Task } from '../../types'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
@@ -21,25 +20,15 @@ import { useT } from '../../i18n/useT'
 export function TaskEditDialog({
   task,
   onClose,
-  startDeleting = false,
-  occurrence,
 }: {
   task: Task
   onClose: () => void
-  /** Open straight onto the delete confirmation, for a Delete that was chosen elsewhere. */
-  startDeleting?: boolean
-  /**
-   * The one day, and whose, this was opened from. Given, a repeating task
-   * can have just that day deleted instead of the whole task.
-   */
-  occurrence?: { employeeId: string; date: string }
 }) {
-  const { t, dateLocale } = useT()
-  const { categories, updateTask, deleteTask, deleteTaskOccurrence, addCategory } = useTaskStore()
+  const { t } = useT()
+  const { categories, updateTask, deleteTask, addCategory } = useTaskStore()
   const { employees } = useEmployeeStore()
   const staff = employees.filter((e) => e.role === 'employee')
 
-  const [confirmDelete, setConfirmDelete] = useState(startDeleting)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -58,6 +47,8 @@ export function TaskEditDialog({
     }
   }
 
+  // Deleting is one click, no confirmation: the bin is beside Cancel and a
+  // step in between was one more thing to click through every time.
   const remove = async () => {
     setBusy(true)
     setError('')
@@ -70,28 +61,6 @@ export function TaskEditDialog({
       setBusy(false)
     }
   }
-
-  const removeOne = async () => {
-    if (!occurrence) return
-    setBusy(true)
-    setError('')
-    try {
-      await deleteTaskOccurrence(task.id, occurrence.employeeId, occurrence.date)
-      onClose()
-    } catch (e) {
-      setError((e as Error).message || t('task_couldNotDelete'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const recurring = task.frequency?.type && task.frequency.type !== 'one-off'
-  // Opened from one day of a repeating task: that day can go on its own.
-  const canDeleteOne = !!recurring && !!occurrence
-  const oneLabel = occurrence
-    ? t('task_deleteOnlyThis').replace('{date}', format(parseISO(occurrence.date), 'EEE d MMM', dateLocale))
-    : ''
-  const personName = occurrence ? employees.find((e) => e.id === occurrence.employeeId)?.name ?? '' : ''
 
   return (
     <div
@@ -110,66 +79,10 @@ export function TaskEditDialog({
           categories={categories}
           employees={staff}
           onAddCategory={addCategory}
-          onDelete={() => setConfirmDelete(true)}
+          onDelete={busy ? undefined : remove}
         />
 
-        {/* What deleting actually costs, which differs. A one-off is one
-            piece of work. A recurring task is every occurrence it has ever
-            produced and every one it would have produced — so that is said
-            plainly rather than left for the manager to discover. */}
-        {confirmDelete && (
-          <div className="bg-surface rounded-xl border border-danger/40 mt-3 p-4">
-            <p className="text-sm text-text-main font-medium mb-1">
-              {canDeleteOne
-                ? t('task_deleteWhichTitle')
-                : recurring ? t('task_deleteRecurringTitle') : t('task_deleteOneOffTitle')}
-            </p>
-            <p className="text-xs text-text-muted mb-3">
-              {canDeleteOne
-                ? t('task_deleteWhichBody').replace('{name}', personName || t('task_deleteWhichThisPerson'))
-                : recurring ? t('task_deleteRecurringBody') : t('task_deleteOneOffBody')}
-            </p>
-
-            {error && (
-              <p className="text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2 mb-3">
-                {error}
-              </p>
-            )}
-
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* First, because it is the smaller, undoable-by-recreating one
-                  and usually what was meant from a single day. */}
-              {canDeleteOne && (
-                <button
-                  disabled={busy}
-                  onClick={removeOne}
-                  className="border border-danger/50 text-danger text-sm font-medium px-4 py-2 rounded-lg hover:bg-danger-bg disabled:opacity-50 transition-colors"
-                >
-                  {busy ? t('ui_deleting') : oneLabel}
-                </button>
-              )}
-              <button
-                disabled={busy}
-                onClick={remove}
-                className="bg-danger text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                {busy
-                  ? t('ui_deleting')
-                  : canDeleteOne
-                    ? t('task_deleteEveryRepeat')
-                    : recurring ? t('task_deleteRecurringConfirm') : t('ui_delete')}
-              </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                className="border border-border text-text-muted text-sm px-4 py-2 rounded-lg hover:bg-surface-2 transition-colors"
-              >
-                {t('ui_cancel')}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {error && !confirmDelete && (
+        {error && (
           <p className="text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2 mt-3">
             {error}
           </p>
@@ -186,9 +99,12 @@ export function TaskEditDialog({
  */
 export function NewTaskDialog({
   employeeId,
+  date,
   onClose,
 }: {
   employeeId: string
+  /** The day it was started from, when it came from a calendar. */
+  date?: string
   onClose: () => void
 }) {
   const { t } = useT()
@@ -219,6 +135,7 @@ export function NewTaskDialog({
           categories={categories}
           employees={staff}
           defaultAssignee={employeeId}
+          defaultDate={date}
           onAddCategory={addCategory}
         />
         {error && (

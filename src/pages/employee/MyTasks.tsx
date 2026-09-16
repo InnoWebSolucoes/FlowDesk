@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore'
 import { TaskCard } from '../../components/shared/TaskCard'
 import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/taskScheduler'
 import { Task } from '../../types'
+import { Select } from '../../components/shared/Select'
 import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
 import { TaskEditDialog } from '../../components/shared/TaskEditDialog'
@@ -76,6 +77,7 @@ function OccurrenceCard({
       dueDate={date}
       completedAtOverride={occ.completedAt}
       onEdit={onEditTask ? () => onEditTask(task, occ.date) : undefined}
+      carried={occ.carried}
       showTiming={showTiming}
       highlighted={highlight.isHighlighted(task.id)}
       highlightRef={highlight.ref}
@@ -452,16 +454,16 @@ export function MyTasks({
                 className="w-full pl-7 pr-3 py-1.5 text-xs bg-surface border border-border rounded-lg text-text-main placeholder-text-subtle focus:outline-none focus:border-primary"
               />
             </div>
-            <select
+            <Select
+              size="sm"
+              className="w-44"
               value={filterCategoryId}
-              onChange={(e) => setFilterCategoryId(e.target.value)}
-              className="text-xs bg-surface border border-border rounded-lg px-2 py-1.5 text-text-main focus:outline-none focus:border-primary"
-            >
-              <option value="">{t('mytasks_allCategories')}</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
+              onChange={setFilterCategoryId}
+              options={[
+                { value: '', label: t('mytasks_allCategories') },
+                ...categories.map((cat) => ({ value: cat.id, label: cat.name, color: cat.color })),
+              ]}
+            />
           </div>
 
           {totalToday > 0 && (
@@ -647,7 +649,6 @@ export function MyTasks({
       {editingTask && (
         <TaskEditDialog
           task={editingTask.task}
-          occurrence={{ employeeId: empId, date: editingTask.date }}
           onClose={() => setEditingTask(null)}
         />
       )}

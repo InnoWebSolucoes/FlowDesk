@@ -14,6 +14,7 @@ import { ComparisonBarChart } from '../../components/charts/ComparisonBarChart'
 import { StreakCard } from '../../components/charts/StreakCard'
 import { MissedTasksTable } from '../../components/charts/MissedTasksTable'
 import { getTasksDueOnDate } from '../../utils/taskScheduler'
+import { Select } from '../../components/shared/Select'
 import { useT } from '../../i18n/useT'
 
 interface Props {
@@ -160,13 +161,12 @@ export function Analytics({ forEmployeeId }: Props) {
           {!forEmployeeId && (
             <div className="flex items-center gap-3">
               <label className="text-text-muted text-sm">{t('analytics_employeeLabel')}</label>
-              <select
+              <Select
+                className="w-48"
                 value={selectedEmpId}
-                onChange={e => setSelectedEmpId(e.target.value)}
-                className="border border-border rounded-lg px-3 py-2 text-sm text-text-main bg-surface focus:outline-none focus:border-primary"
-              >
-                {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
+                onChange={setSelectedEmpId}
+                options={employees.map(e => ({ value: e.id, label: e.name }))}
+              />
             </div>
           )}
 

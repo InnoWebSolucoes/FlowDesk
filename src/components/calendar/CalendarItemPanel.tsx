@@ -13,6 +13,7 @@ import { ResourceLinkPicker, LinkKey } from '../shared/ResourceLinkPicker'
 import { KIND_STYLE } from './calendarShared'
 import { useT } from '../../i18n/useT'
 import { UrgentToggle } from '../shared/Urgent'
+import { Select } from '../shared/Select'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
@@ -37,11 +38,17 @@ export function CalendarItemPanel({
   onClose,
   basePath,
   readOnly = false,
+  startEditing = false,
 }: {
   todo?: ProjectTodo
   entry?: CalendarEntry
   projectId: string
   onClose: () => void
+  /**
+   * Open already in edit mode with the title selected. For an item the same
+   * click just created: it has nothing to read yet, only a name to be given.
+   */
+  startEditing?: boolean
   /**
    * Where this side of the app lives. The panel links out to Resources and
    * Todos, which sit at different paths for an admin and an employee.
@@ -63,7 +70,7 @@ export function CalendarItemPanel({
   const [picking, setPicking] = useState(false)
   // Reading unless asked otherwise. Opening an item to check what it says
   // should not put a cursor in every field.
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(startEditing && !readOnly)
 
   const title = todo?.title ?? entry?.title ?? ''
 
@@ -132,6 +139,9 @@ export function CalendarItemPanel({
                 <textarea
                   value={titleDraft}
                   autoFocus
+                  // A just-made item carries a placeholder name; typing
+                  // should replace it, not be appended to it.
+                  onFocus={(e) => { if (startEditing) e.target.select() }}
                   onChange={(e) => setTitleDraft(e.target.value)}
                   onBlur={commitTitle}
                   onKeyDown={(e) => {
@@ -179,7 +189,7 @@ export function CalendarItemPanel({
 
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
             {todo
-              ? <TodoBody todo={todo} readOnly={readOnly} editing={editing} onClose={onClose} />
+              ? <TodoBody todo={todo} readOnly={readOnly} editing={editing} onClose={onClose} titleDraft={titleDraft} />
               : <EntryBody entry={entry!} readOnly={readOnly} editing={editing} />}
 
             <section>
@@ -249,12 +259,12 @@ const inputClass =
   'w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-text-main focus:outline-none focus:border-primary'
 
 function TodoBody({
-  todo, readOnly, editing, onClose,
-}: { todo: ProjectTodo; readOnly?: boolean; editing?: boolean; onClose: () => void }) {
+  todo, readOnly, editing, onClose, titleDraft,
+}: { todo: ProjectTodo; readOnly?: boolean; editing?: boolean; onClose: () => void; titleDraft: string }) {
   const { t } = useT()
   const { employees } = useEmployeeStore()
-  const { updateTodo, toggleTodo, setTodoState, deleteTodo, todoLists } = useProjectStore()
-  const addTask = useTaskStore((s) => s.addTask)
+  const { updateTodo, toggleTodo, setTodoState, deleteTodo } = useProjectStore()
+  const { addTask, categories } = useTaskStore()
   const realUser = useAuthStore((s) => s.realUser)
 
   // Locked unless the panel is in edit mode. Who is doing it is the one
@@ -281,29 +291,55 @@ function TodoBody({
   // their calendar in their colour and in their My Tasks, rather than a todo
   // with a name beside it on somebody else's board. Only the owner creates
   // tasks, so for anyone else this stays a note on the todo.
+  //
+  // Picking the person does not save anything yet. It turns the rest of the
+  // panel into what a task needs — category, estimate, urgent — and the task
+  // is made when that is filled in and confirmed. Saving on the pick meant
+  // the task existed before it could be described and had to be reopened to
+  // finish it.
   const canConvert = !readOnly && !!realUser?.isOwner
+  const [assigneeDraft, setAssigneeDraft] = useState('')
+  const [taskDraft, setTaskDraft] = useState({ categoryId: '', estimatedMinutes: '', isUrgent: todo.isUrgent })
+  const [taskErrors, setTaskErrors] = useState<{ categoryId?: string; estimatedMinutes?: string }>({})
   const [converting, setConverting] = useState(false)
   const [assignError, setAssignError] = useState('')
 
-  const assign = async (personId: string) => {
+  const draftPerson = employees.find((e) => e.id === assigneeDraft)
+  const becomingTask = canConvert && !!draftPerson && draftPerson.role === 'employee'
+
+  const assign = (personId: string) => {
     setAssignError('')
     const person = employees.find((e) => e.id === personId)
-    if (!person || person.role !== 'employee' || !canConvert || !realUser) {
+    if (!person || person.role !== 'employee' || !canConvert) {
+      setAssigneeDraft('')
       updateTodo(todo.id, { assigneeId: personId || null })
       return
     }
+    setAssigneeDraft(personId)
+  }
+
+  const convert = async () => {
+    if (!draftPerson || !realUser) return
+    const mins = parseInt(taskDraft.estimatedMinutes, 10)
+    const errs: typeof taskErrors = {}
+    if (!taskDraft.categoryId) errs.categoryId = t('task_errorCategory')
+    if (!Number.isFinite(mins) || mins < 1) errs.estimatedMinutes = t('task_errorMinutes')
+    setTaskErrors(errs)
+    if (Object.keys(errs).length > 0) return
+
     setConverting(true)
+    setAssignError('')
     try {
       // A task needs a day; a todo with none becomes today's.
       await addTask({
         projectId: todo.projectId,
-        title: todo.title,
-        description: todo.notes,
-        assignedTo: [person.id],
+        title: titleDraft.trim() || todo.title,
+        description: notesDraft,
+        assignedTo: [draftPerson.id],
         frequency: { type: 'one-off', date: todo.doDate ?? format(new Date(), 'yyyy-MM-dd') },
-        categoryId: '',
-        isUrgent: todo.isUrgent,
-        estimatedMinutes: 0,
+        categoryId: taskDraft.categoryId,
+        isUrgent: taskDraft.isUrgent,
+        estimatedMinutes: mins,
         createdBy: realUser.id,
         isActive: true,
       })
@@ -397,48 +433,80 @@ function TodoBody({
       {/* Who is doing it. Adding a todo from the calendar dropped you here
           with no way to say whose it was, so it stayed on the shared board. */}
       <Field label={t('cal_assignedTo')}>
-        <select
-          value={todo.assigneeId ?? ''}
+        <Select
+          value={assigneeDraft || todo.assigneeId || ''}
           disabled={readOnly || converting}
-          onChange={(e) => assign(e.target.value)}
-          className={inputClass}
-        >
-          <option value="">{t('cal_nobodyInParticular')}</option>
-          {employees.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
-            </option>
-          ))}
-        </select>
-        {canConvert && (
+          onChange={assign}
+          options={[
+            { value: '', label: t('cal_nobodyInParticular') },
+            ...employees.map((e) => ({ value: e.id, label: e.name })),
+          ]}
+        />
+        {canConvert && !becomingTask && (
           <p className="text-[11px] text-text-subtle mt-1">{t('cal_assignBecomesTask')}</p>
         )}
-        {assignError && <p className="text-[11px] text-danger mt-1">{assignError}</p>}
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label={'\u00a0'}>
+      {becomingTask ? (
+        // What a task has that a todo does not. All of it is required: a
+        // task without a category or an estimate cannot be planned around.
+        <div className="rounded-lg border border-primary/30 bg-primary-light/40 p-3 space-y-3">
+          <p className="text-xs font-medium text-primary">
+            {t('cal_assignBecomesTask')}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('task_category')}>
+              <Select
+                value={taskDraft.categoryId}
+                onChange={(v) => setTaskDraft((d) => ({ ...d, categoryId: v }))}
+                placeholder={t('task_selectCategory')}
+                options={categories.map((c) => ({ value: c.id, label: c.name, color: c.color }))}
+              />
+              {taskErrors.categoryId && <p className="text-[11px] text-danger mt-1">{taskErrors.categoryId}</p>}
+            </Field>
+            <Field label={t('task_estMinutes')}>
+              <input
+                type="number"
+                min={1}
+                value={taskDraft.estimatedMinutes}
+                onChange={(e) => setTaskDraft((d) => ({ ...d, estimatedMinutes: e.target.value }))}
+                className={inputClass}
+              />
+              {taskErrors.estimatedMinutes && <p className="text-[11px] text-danger mt-1">{taskErrors.estimatedMinutes}</p>}
+            </Field>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <UrgentToggle
+              urgent={taskDraft.isUrgent}
+              onChange={(v) => setTaskDraft((d) => ({ ...d, isUrgent: v }))}
+            />
+            <button
+              disabled={converting}
+              onClick={convert}
+              className="ml-auto bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors"
+            >
+              {converting ? t('ui_saving') : t('task_createTask')}
+            </button>
+            <button
+              disabled={converting}
+              onClick={() => setAssigneeDraft('')}
+              className="border border-border text-text-muted text-sm px-3 py-2 rounded-lg hover:bg-surface-2 transition-colors"
+            >
+              {t('ui_cancel')}
+            </button>
+          </div>
+          {assignError && <p className="text-[11px] text-danger">{assignError}</p>}
+        </div>
+      ) : (
+        <div>
           <UrgentToggle
             urgent={todo.isUrgent}
             disabled={locked}
             onChange={(v) => updateTodo(todo.id, { isUrgent: v })}
           />
-        </Field>
-        <Field label={t('cal_listLabel')}>
-          <select
-            value={todo.listId ?? ''}
-            disabled={locked}
-            onChange={(e) => useProjectStore.getState().moveTodoToList(todo.id, e.target.value)}
-            className={inputClass}
-          >
-            {todoLists.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
+          {assignError && <p className="text-[11px] text-danger mt-1">{assignError}</p>}
+        </div>
+      )}
     </>
   )
 }
@@ -535,18 +603,12 @@ function EntryBody({
       </div>
 
       <Field label={t('cal_whoCanSeeIt')}>
-        <select
+        <Select
           value={entry.visibility ?? ''}
           disabled={locked}
-          onChange={(e) => updateCalendarEntry(entry.id, { visibility: (e.target.value || null) as Visibility | null })}
-          className={inputClass}
-        >
-          {VISIBILITY.map((v) => (
-            <option key={v.value} value={v.value}>
-              {v.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => updateCalendarEntry(entry.id, { visibility: (v || null) as Visibility | null })}
+          options={VISIBILITY.map((v) => ({ value: v.value, label: v.label }))}
+        />
       </Field>
     </>
   )

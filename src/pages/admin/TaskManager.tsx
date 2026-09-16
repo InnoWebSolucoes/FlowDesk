@@ -11,16 +11,18 @@ import { useHighlight } from '../../hooks/useHighlight'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import { useCreateTask } from '../../hooks/useCreateTask'
 import { UrgentBadge, UrgentToggle } from '../../components/shared/Urgent'
+import { Select } from '../../components/shared/Select'
 
 const FREQ_OPTIONS: FrequencyType[] = ['daily', 'weekly', 'monthly', 'one-off']
 
-const defaultFreq = (): TaskFrequency => ({ type: 'daily' })
+// One-off, on the day given or today: most work set up by hand happens once.
+const defaultFreq = (date?: string): TaskFrequency => ({ type: 'one-off', date: date || format(new Date(), 'yyyy-MM-dd') })
 // projectId is derived from the assignees at save time, so it isn't part of the form.
-const defaultTask = (): Omit<Task, 'id' | 'createdAt' | 'createdBy' | 'projectId'> => ({
+const defaultTask = (date?: string): Omit<Task, 'id' | 'createdAt' | 'createdBy' | 'projectId'> => ({
   title: '',
   description: '',
   assignedTo: [],
-  frequency: defaultFreq(),
+  frequency: defaultFreq(date),
   categoryId: '',
   isUrgent: false,
   estimatedMinutes: 30,
@@ -41,6 +43,7 @@ export function TaskForm({
   employees,
   onAddCategory,
   defaultAssignee,
+  defaultDate,
   onDelete,
 }: {
   initial?: Task
@@ -51,6 +54,8 @@ export function TaskForm({
   onAddCategory: (cat: Omit<Category, 'id'>) => Promise<Category>
   /** Whose profile this was opened from, so the task starts assigned to them. */
   defaultAssignee?: string
+  /** The day it was started from, on the calendar, so a one-off lands there. */
+  defaultDate?: string
   /**
    * Offered as a bin beside Cancel. Only where deleting is on the table —
    * the create form has nothing to delete yet.
@@ -67,7 +72,7 @@ export function TaskForm({
       // The assignees decide the task's project, so leaving this empty is what
       // made "New Task" there fail with no project.
       : {
-          ...defaultTask(),
+          ...defaultTask(defaultDate),
           categoryId: categories[0]?.id ?? '',
           assignedTo: defaultAssignee ? [defaultAssignee] : [],
         }
@@ -86,10 +91,9 @@ export function TaskForm({
     if (!form.title.trim()) e.title = t('task_errorTitle')
     if (!form.categoryId) e.categoryId = t('task_errorCategory')
     if (form.assignedTo.length === 0) e.assignedTo = t('task_errorAssign')
-    // An empty estimate is fine — not every task has a meaningful one. Only a
-    // value that was typed and makes no sense is an error.
+    // An estimate is required: the day is planned from it.
     const mins = form.estimatedMinutes === '' ? 0 : Number(form.estimatedMinutes)
-    if (!Number.isFinite(mins) || mins < 0) e.estimatedMinutes = t('task_errorMinutes')
+    if (!Number.isFinite(mins) || mins < 1) e.estimatedMinutes = t('task_errorMinutes')
     if (form.frequency.type === 'weekly' && (!form.frequency.days || form.frequency.days.length === 0))
       e.days = t('task_errorDays')
     if (form.frequency.type === 'one-off' && !form.frequency.date) e.date = t('task_errorDate')
@@ -186,10 +190,13 @@ export function TaskForm({
       <div>
         <label className={lbl}>{t('task_category')}</label>
         <div className="flex gap-2">
-          <select className={`${inp} flex-1`} value={form.categoryId} onChange={e => set('categoryId', e.target.value)}>
-            <option value="">{t('task_selectCategory')}</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <Select
+            className="flex-1"
+            value={form.categoryId}
+            onChange={(v) => set('categoryId', v)}
+            placeholder={t('task_selectCategory')}
+            options={categories.map(c => ({ value: c.id, label: c.name, color: c.color }))}
+          />
           <button type="button" onClick={() => setShowCatForm(!showCatForm)}
             className="px-3 py-2 border border-border rounded-lg text-xs text-text-muted hover:bg-surface-2 transition-colors flex-shrink-0">
             {t('task_newCategory')}
@@ -239,9 +246,9 @@ export function TaskForm({
 
       <div>
         <label className={lbl}>{t('task_frequency')}</label>
-        <select className={inp} value={form.frequency.type}
-          onChange={e => {
-            const type = e.target.value as FrequencyType
+        <Select<FrequencyType>
+          value={form.frequency.type}
+          onChange={(type) => {
             // A one-off needs a due date, so it opens on today rather than
             // blank — an empty box that only complains on save is a trap.
             // Any date already picked is kept when switching back to one-off.
@@ -249,9 +256,9 @@ export function TaskForm({
               type === 'one-off'
                 ? { type, date: form.frequency.date || format(new Date(), 'yyyy-MM-dd') }
                 : { type })
-          }}>
-          {FREQ_OPTIONS.map(f => <option key={f} value={f}>{freqLabel(f)}</option>)}
-        </select>
+          }}
+          options={FREQ_OPTIONS.map(f => ({ value: f, label: freqLabel(f) }))}
+        />
 
         {form.frequency.type === 'weekly' && (
           <div className="mt-2">
@@ -276,17 +283,19 @@ export function TaskForm({
           <div className="mt-2 grid grid-cols-2 gap-2">
             <div>
               <p className="text-xs text-text-muted mb-1">{t('task_weekOfMonth')}</p>
-              <select className={inp} value={form.frequency.weekOfMonth ?? 1}
-                onChange={e => setFreq('weekOfMonth', parseInt(e.target.value))}>
-                {[1,2,3,4].map(w => <option key={w} value={w}>{t('task_week')} {w}</option>)}
-              </select>
+              <Select
+                value={String(form.frequency.weekOfMonth ?? 1)}
+                onChange={(v) => setFreq('weekOfMonth', parseInt(v))}
+                options={[1,2,3,4].map(w => ({ value: String(w), label: `${t('task_week')} ${w}` }))}
+              />
             </div>
             <div>
               <p className="text-xs text-text-muted mb-1">{t('task_dayOfWeek')}</p>
-              <select className={inp} value={form.frequency.dayOfWeek ?? 1}
-                onChange={e => setFreq('dayOfWeek', parseInt(e.target.value))}>
-                {[1,2,3,4,5,6,0].map(d => <option key={d} value={d}>{DAY_NAMES[d]}</option>)}
-              </select>
+              <Select
+                value={String(form.frequency.dayOfWeek ?? 1)}
+                onChange={(v) => setFreq('dayOfWeek', parseInt(v))}
+                options={[1,2,3,4,5,6,0].map(d => ({ value: String(d), label: DAY_NAMES[d] }))}
+              />
             </div>
           </div>
         )}
@@ -534,21 +543,24 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
                 onChange={e => { setSearch(e.target.value); setPage(0) }}
               />
             </div>
-            <select className="border border-border rounded-lg px-3 py-2 text-sm text-text-muted bg-surface focus:outline-none focus:border-primary"
-              value={filterEmp} onChange={e => { setFilterEmp(e.target.value); setPage(0) }}>
-              <option value="">{t('task_allEmployees')}</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-            <select className="border border-border rounded-lg px-3 py-2 text-sm text-text-muted bg-surface focus:outline-none focus:border-primary"
-              value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(0) }}>
-              <option value="">{t('task_allCategories')}</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <select className="border border-border rounded-lg px-3 py-2 text-sm text-text-muted bg-surface focus:outline-none focus:border-primary"
-              value={filterFreq} onChange={e => { setFilterFreq(e.target.value); setPage(0) }}>
-              <option value="">{t('task_allFrequencies')}</option>
-              {FREQ_OPTIONS.map(f => <option key={f} value={f}>{freqOptionLabel(f)}</option>)}
-            </select>
+            <Select
+              className="w-44"
+              value={filterEmp}
+              onChange={(v) => { setFilterEmp(v); setPage(0) }}
+              options={[{ value: '', label: t('task_allEmployees') }, ...employees.map(e => ({ value: e.id, label: e.name }))]}
+            />
+            <Select
+              className="w-44"
+              value={filterCat}
+              onChange={(v) => { setFilterCat(v); setPage(0) }}
+              options={[{ value: '', label: t('task_allCategories') }, ...categories.map(c => ({ value: c.id, label: c.name, color: c.color }))]}
+            />
+            <Select
+              className="w-40"
+              value={filterFreq}
+              onChange={(v) => { setFilterFreq(v); setPage(0) }}
+              options={[{ value: '', label: t('task_allFrequencies') }, ...FREQ_OPTIONS.map(f => ({ value: f, label: freqOptionLabel(f) }))]}
+            />
             <button
               onClick={() => setEditing('new')}
               className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors flex-shrink-0"

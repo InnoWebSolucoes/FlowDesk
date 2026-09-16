@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
+  ChevronLeft, ChevronRight, GripVertical, CalendarClock, Check,
   Circle, CheckCircle2, Timer, Users, X, Ban, Clock, Flame,
 } from 'lucide-react'
 import {
@@ -16,9 +16,10 @@ import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/tas
 import { personColor, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel } from './TaskPeekPanel'
-import { TaskEditDialog } from '../shared/TaskEditDialog'
+import { TaskEditDialog, NewTaskDialog } from '../shared/TaskEditDialog'
+import { useTodoTick } from '../../hooks/useTodoTick'
 import {
-  KIND_STYLE, LAYERS, Layer, dayKey, dayDate, entryCoversDay,
+  KIND_STYLE, dayKey, dayDate, entryCoversDay,
 } from './calendarShared'
 import { useT } from '../../i18n/useT'
 
@@ -118,8 +119,10 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   const {
     tasks, completionLogs, completeTask, uncompleteTask, isTaskCompleted,
     setInProgress, clearInProgress, isInProgress, isMissed, clearMissed, taskStatuses, taskStartedAt,
-    taskMoves, moveTaskOccurrence,
+    taskMoves, moveTaskOccurrence, deleteTask,
   } = useTaskStore()
+  // One click: waiting. Two: done. The same rule as the todo board.
+  const tickTodo = useTodoTick()
   const { employees } = useEmployeeStore()
   const currentUserId = useAuthStore((s) => s.currentUser?.id)
   // Only the owner moves assigned work between days. An employee's own
@@ -143,10 +146,14 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
 
   const [view, setView] = useState<View>('week')
   const [cursor, setCursor] = useState(() => new Date())
-  const [hidden, setHidden] = useState<Set<Layer>>(new Set())
-  const [filtersOpen, setFiltersOpen] = useState(false)
   const [teamOpen, setTeamOpen] = useState(false)
   const [openTodo, setOpenTodo] = useState<string | null>(null)
+  // Set when the open todo was made by the click that opened it, so the
+  // panel starts in edit mode with the title ready to type over.
+  const [openTodoFresh, setOpenTodoFresh] = useState(false)
+  // A task being created for the person whose board this is, on the day
+  // that was clicked.
+  const [newTask, setNewTask] = useState<{ employeeId: string; date: string } | null>(null)
   const [openEntry, setOpenEntry] = useState<string | null>(null)
   // A task block used to open nothing: the handler only knew todos and
   // entries, so clicking assigned work silently did nothing at all.
@@ -168,10 +175,8 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   const [blockMenu, setBlockMenu] = useState<
     { x: number; y: number; todoId?: string; entryId?: string; taskId?: string; employeeId?: string; occDate?: string } | null
   >(null)
-  // An assigned task being edited or deleted from its right-click menu.
-  const [editTask, setEditTask] = useState<
-    { id: string; deleting: boolean; employeeId?: string; date?: string } | null
-  >(null)
+  // An assigned task being edited from its right-click menu.
+  const [editTask, setEditTask] = useState<string | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -180,15 +185,6 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
     if (todosLoadedFor !== boardKey) loadTodos(project.id, ownerId)
     if (calendarLoadedFor !== project.id) loadCalendar(project.id)
   }, [project.id, ownerId, todosLoadedFor, calendarLoadedFor, loadTodos, loadCalendar])
-
-  const visible = (layer: Layer) => !hidden.has(layer)
-  const toggleLayer = (layer: Layer) =>
-    setHidden((prev) => {
-      const next = new Set(prev)
-      if (next.has(layer)) next.delete(layer)
-      else next.add(layer)
-      return next
-    })
 
   // ── The days on screen ───────────────────────────────────────────────────
   // Both ranges roll around the cursor rather than snapping to a calendar
@@ -258,7 +254,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
     (day: string): Block[] => {
       const blocks: Block[] = []
 
-      if (visible('do')) {
+      {
         for (const t of todos) {
           if (t.doDate !== day) continue
           // Whose board this is. The fetch is scoped, but the store holds
@@ -278,7 +274,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
 
       // The overlaid people's own todos, so their week reads as a week rather
       // than a list of assignments. Their name rides along, as tasks do.
-      if (canOverlay && overlaid.size > 0 && visible('do')) {
+      if (canOverlay && overlaid.size > 0) {
         for (const t of overlayTodos) {
           if (t.doDate !== day || !t.ownerId || !overlaid.has(t.ownerId)) continue
           blocks.push({
@@ -297,7 +293,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       // to hold two lists in their head. Placed by taskOccurrences: on its own
       // day until that day is over, then carried forward a day at a time until
       // it is done, then left on the day it was done.
-      if (visible('do')) {
+      {
         for (const { occ, employeeId: empIdForCal } of occurrencesByDay.get(day) ?? []) {
           const who = employees.find((e) => e.id === empIdForCal)
           blocks.push({
@@ -317,7 +313,6 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       }
 
       for (const e of calendarEntries) {
-        if (!visible(e.kind)) continue
         if (!entryCoversDay(e, day)) continue
         // On someone else's board, only their own blocks belong on it.
         if (otherPersonsBoard && e.ownerId !== ownerId) continue
@@ -339,7 +334,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       return blocks.sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay],
+    [todos, overlayTodos, calendarEntries, tasks, employees, overlaid, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -445,6 +440,13 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
    */
   const createAt = async (day: string) => {
     if (readOnly) return
+    // On an employee's board the manager is giving them work, not adding to
+    // their private list: straight to the task form, already theirs, on
+    // this day.
+    if (otherPersonsBoard && ownerId) {
+      setNewTask({ employeeId: ownerId, date: day })
+      return
+    }
     setError('')
     try {
       // A todo has to live in a list. Falling back to making one beats
@@ -464,7 +466,10 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         { title: 'New todo', listId, doDate: day },
         ownerId,
       )
-      if (created) setOpenTodo(created.id)
+      if (created) {
+        setOpenTodoFresh(true)
+        setOpenTodo(created.id)
+      }
     } catch (e) {
       setError((e as Error).message || 'That could not be added.')
     }
@@ -579,19 +584,6 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
           </div>
 
           <div className="relative">
-            <button
-              onClick={() => setFiltersOpen((o) => !o)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-                hidden.size > 0
-                  ? 'border-primary text-primary bg-primary-light'
-                  : 'border-border text-text-muted hover:bg-surface-2'
-              }`}
-              title={t('cal_showOrHideTypes')}
-            >
-              <SlidersHorizontal size={13} />
-              {hidden.size > 0 ? `${LAYERS.length - hidden.size}/${LAYERS.length}` : 'Filter'}
-            </button>
-
             {/* Whose weeks to show alongside your own. This used to live inside
                 the type filter, where nothing suggested the team was in it. */}
             {canOverlay && (
@@ -655,37 +647,6 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               </>
             )}
 
-            {filtersOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setFiltersOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 z-50 w-52 py-1.5 bg-surface border border-border rounded-lg shadow-xl">
-                  {LAYERS.map((l) => (
-                    <button
-                      key={l.key}
-                      onClick={() => toggleLayer(l.key)}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-main hover:bg-surface-2"
-                    >
-                      <span
-                        className="w-3 h-3 rounded-sm flex-shrink-0"
-                        style={
-                          l.outlined
-                            ? { border: `2px solid ${l.color}` }
-                            : { backgroundColor: l.color }
-                        }
-                      />
-                      <span className="flex-1 text-left">{l.label}</span>
-                      {visible(l.key) && <Check size={13} className="text-primary" />}
-                    </button>
-                  ))}
-                  {hidden.size > 0 && (
-                    <button
-                      onClick={() => setHidden(new Set())}
-                      className="w-full text-left px-3 py-1.5 text-xs text-primary hover:bg-surface-2 border-t border-border mt-1 pt-1.5"
-                    >{t('cal_showEverything')}</button>
-                  )}
-                </div>
-              </>
-            )}
           </div>
         </div>
       </div>
@@ -707,7 +668,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               onOpenDay={openDay}
               onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
               justDragged={justDragged}
-              onToggleDone={toggleTodo}
+              onToggleDone={tickTodo}
               onToggleTask={toggleTaskDone}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               canManageTasks={canMoveTasks}
@@ -734,7 +695,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               onOpenDay={openDay}
               onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
               justDragged={justDragged}
-              onToggleDone={toggleTodo}
+              onToggleDone={tickTodo}
               onToggleTask={toggleTaskDone}
               onBlockContext={(x, y, ids) => setBlockMenu({ x, y, ...ids })}
               canManageTasks={canMoveTasks}
@@ -757,7 +718,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
           dropActive={overUnscheduled}
           onDragStart={(id, label) => setDrag({ kind: 'unscheduled', id, label })}
           onOpen={setOpenTodo}
-          onToggleDone={toggleTodo}
+          onToggleDone={tickTodo}
         />
       </div>
 
@@ -803,13 +764,12 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       })()}
 
       {/* Right-click on an assigned task: the owner edits or deletes the task
-          itself. Deleting goes through the same confirmation as the task
-          manager, which says what deleting a repeating task costs. */}
+          itself. Deleting is immediate — no confirmation. */}
       {blockMenu?.taskId && (() => {
         const bTask = tasks.find((x) => x.id === blockMenu.taskId)
         if (!bTask) return null
         const act = (fn: () => void) => () => { fn(); setBlockMenu(null) }
-        const pos = menuPos(blockMenu.x, blockMenu.y, 3)
+        const pos = menuPos(blockMenu.x, blockMenu.y, 2)
         return (
           <>
             <div
@@ -825,20 +785,15 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
                 {bTask.title}
               </p>
               <button
-                onClick={act(() => setOpenTask(bTask.id))}
-                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-              >{t('cal_details')}</button>
-              <button
-                onClick={act(() => setEditTask({
-                  id: bTask.id, deleting: false, employeeId: blockMenu.employeeId, date: blockMenu.occDate,
-                }))}
+                onClick={act(() => setEditTask(bTask.id))}
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >{t('ui_edit')}</button>
               <div className="h-px bg-border my-1" />
               <button
-                onClick={act(() => setEditTask({
-                  id: bTask.id, deleting: true, employeeId: blockMenu.employeeId, date: blockMenu.occDate,
-                }))}
+                onClick={act(() => {
+                  setError('')
+                  deleteTask(bTask.id).catch((err) => setError((err as Error).message || t('task_couldNotDelete')))
+                })}
                 className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
               >{t('ui_delete')}</button>
             </div>
@@ -847,27 +802,24 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       })()}
 
       {editTask && (() => {
-        const target = tasks.find((x) => x.id === editTask.id)
-        return target ? (
-          <TaskEditDialog
-            task={target}
-            startDeleting={editTask.deleting}
-            occurrence={
-              editTask.employeeId && editTask.date
-                ? { employeeId: editTask.employeeId, date: editTask.date }
-                : undefined
-            }
-            onClose={() => setEditTask(null)}
-          />
-        ) : null
+        const target = tasks.find((x) => x.id === editTask)
+        return target ? <TaskEditDialog task={target} onClose={() => setEditTask(null)} /> : null
       })()}
+
+      {newTask && (
+        <NewTaskDialog
+          employeeId={newTask.employeeId}
+          date={newTask.date}
+          onClose={() => setNewTask(null)}
+        />
+      )}
 
       {blockMenu && !blockMenu.taskId && (() => {
         const bTodo = blockMenu.todoId ? todos.find((t) => t.id === blockMenu.todoId) : undefined
         const bEntry = blockMenu.entryId ? calendarEntries.find((e) => e.id === blockMenu.entryId) : undefined
         if (!bTodo && !bEntry) return null
         const act = (fn: () => void) => () => { fn(); setBlockMenu(null) }
-        const pos = menuPos(blockMenu.x, blockMenu.y, bTodo ? (bTodo.ownerId === null ? 6 : 4) : 2)
+        const pos = menuPos(blockMenu.x, blockMenu.y, bTodo ? (bTodo.ownerId === null ? 5 : 3) : 1)
         return (
           <>
             <div
@@ -914,11 +866,6 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
                 </button>
               )}
 
-              <button
-                onClick={act(() => (bTodo ? setOpenTodo(bTodo.id) : setOpenEntry(bEntry!.id)))}
-                className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
-              >{t('cal_details')}</button>
-
               {bTodo && (
                 <button
                   onClick={act(() => unscheduleTodo(bTodo.id))}
@@ -963,8 +910,10 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
           projectId={project.id}
           basePath={basePath}
           readOnly={readOnly}
+          startEditing={openTodoFresh}
           onClose={() => {
             setOpenTodo(null)
+            setOpenTodoFresh(false)
             setOpenEntry(null)
           }}
         />

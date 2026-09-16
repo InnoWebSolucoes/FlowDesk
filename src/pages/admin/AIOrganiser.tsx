@@ -9,6 +9,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { Task, Project } from '../../types'
 import { Badge } from '../../components/shared/Badge'
 import { EmptyState } from '../../components/shared/EmptyState'
+import { Select } from '../../components/shared/Select'
 import { useT } from '../../i18n/useT'
 import { UrgentBadge, UrgentToggle } from '../../components/shared/Urgent'
 
@@ -461,15 +462,11 @@ export function AIOrganiser() {
             {myLists.length > 0 && (
               <div className="mt-4">
                 <p className="text-text-main text-xs font-medium mb-1.5">{t('ai_myListLabel')}</p>
-                <select
+                <Select
                   value={targetListId || myLists[0]?.id || ''}
-                  onChange={(e) => setTargetListId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm text-text-main focus:outline-none focus:border-primary"
-                >
-                  {myLists.map((l) => (
-                    <option key={l.id} value={l.id}>{l.name}</option>
-                  ))}
-                </select>
+                  onChange={setTargetListId}
+                  options={myLists.map((l) => ({ value: l.id, label: l.name }))}
+                />
                 <p className="text-text-subtle text-[11px] mt-1">{t('ai_myListHint')}</p>
               </div>
             )}

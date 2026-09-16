@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock, CheckCircle2, Circle, Timer, MessageSquare, Paperclip, Pencil, Trash2, Ban } from 'lucide-react'
+import { Clock, CheckCircle2, Circle, Timer, MessageSquare, Paperclip, Trash2, Ban } from 'lucide-react'
 import { Task, Category } from '../../types'
 import { Badge } from './Badge'
 import { useChatStore } from '../../store/chatStore'
@@ -9,7 +9,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useT } from '../../i18n/useT'
 import { UrgentBadge } from './Urgent'
 import { URGENT_CLASS } from '../../lib/urgent'
-import { differenceInDays, format, parseISO } from 'date-fns'
+import { format } from 'date-fns'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import { TaskFiles } from './TaskFiles'
 
@@ -29,10 +29,12 @@ interface TaskCardProps {
   /**
    * Manager actions. Present only where somebody may actually change the
    * task — the employee's own list gets neither, and RLS would refuse them
-   * anyway, so offering a pencil there would be a button that fails.
+   * anyway. Editing is a click on the card itself, not a button.
    */
   onEdit?: () => void
   onDelete?: () => void
+  /** Carried forward from an earlier day it was not done on. */
+  carried?: boolean
   /**
    * Show when this was finished and how long it has been under way.
    *
@@ -76,41 +78,19 @@ function elapsed(fromIso: string, nowMs: number): string {
   return restH === 0 ? `${days}d` : `${days}d ${restH}h`
 }
 
-function DeadlineBadge({ task }: { task: Task }) {
+/**
+ * Says the work is late: it was for an earlier day and has been carried
+ * forward. Nothing is said about work that is simply due today — that is
+ * what being on today's list means.
+ */
+function LateBadge({ carried }: { carried?: boolean }) {
   const { t } = useT()
-  if (task.frequency.type !== 'one-off' || !task.frequency.date) return null
-
-  const days = differenceInDays(parseISO(task.frequency.date), new Date())
-
-  if (days < 0) {
-    return (
-      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-danger/10 text-danger flex-shrink-0">
-        {t('deadline_overdue')}
-      </span>
-    )
-  }
-  if (days === 0) {
-    return (
-      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber/10 text-amber flex-shrink-0">
-        {t('deadline_today')}
-      </span>
-    )
-  }
-  if (days === 1) {
-    return (
-      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber/10 text-amber flex-shrink-0">
-        {t('deadline_tomorrow')}
-      </span>
-    )
-  }
-  if (days <= 3) {
-    return (
-      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber/10 text-text-muted flex-shrink-0">
-        {t('deadline_inDays').replace('{n}', days.toString())}
-      </span>
-    )
-  }
-  return null
+  if (!carried) return null
+  return (
+    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-danger/10 text-danger flex-shrink-0">
+      {t('deadline_overdue')}
+    </span>
+  )
 }
 
 export function TaskCard({
@@ -128,6 +108,7 @@ export function TaskCard({
   dueDate,
   onEdit,
   onDelete,
+  carried,
   showTiming,
   completedAtOverride,
   isMissed,
@@ -219,7 +200,7 @@ export function TaskCard({
     if (isCompleted) {
       return (
         <button
-          onClick={handleToggle}
+          onClick={(e) => { e.stopPropagation(); handleToggle() }}
           className={`flex-shrink-0 mt-0.5 transition-transform ${animating ? 'animate-check' : ''}`}
           aria-label={t('taskcard_markIncomplete')}
         >
@@ -230,7 +211,7 @@ export function TaskCard({
     if (isMissed) {
       return (
         <button
-          onClick={onClearMissed}
+          onClick={(e) => { e.stopPropagation(); onClearMissed?.() }}
           disabled={!onClearMissed}
           className="flex-shrink-0 mt-0.5 disabled:cursor-default"
           aria-label={t('taskcard_undoMissed')}
@@ -243,7 +224,7 @@ export function TaskCard({
     if (isInProgress) {
       return (
         <button
-          onClick={handleToggle}
+          onClick={(e) => { e.stopPropagation(); handleToggle() }}
           className={`flex-shrink-0 mt-0.5 transition-transform ${animating ? 'animate-check' : ''}`}
           aria-label={t('taskcard_markComplete')}
         >
@@ -253,7 +234,7 @@ export function TaskCard({
     }
     return (
       <button
-        onClick={handleToggle}
+        onClick={(e) => { e.stopPropagation(); handleToggle() }}
         className={`flex-shrink-0 mt-0.5 transition-transform ${animating ? 'animate-check' : ''}`}
         aria-label={onSetInProgress ? t('status_startTask') : t('taskcard_markComplete')}
       >
@@ -265,7 +246,10 @@ export function TaskCard({
   return (
     <div
       ref={highlighted ? highlightRef : undefined}
-      className={`p-3 rounded-lg border transition-all duration-200 ${
+      onClick={onEdit}
+      role={onEdit ? 'button' : undefined}
+      title={onEdit ? t('taskcard_edit') : undefined}
+      className={`p-3 rounded-lg border transition-all duration-200 ${onEdit ? 'cursor-pointer' : ''} ${
         isCompleted
           ? 'bg-surface-2/50 border-border opacity-70'
           : task.isUrgent
@@ -294,7 +278,7 @@ export function TaskCard({
                 {t('taskcard_missed')}
               </span>
             ) : (
-              <DeadlineBadge task={task} />
+              <LateBadge carried={carried} />
             )}
           </div>
 
@@ -342,7 +326,7 @@ export function TaskCard({
             <div className="flex items-center gap-2.5 flex-shrink-0">
             {/* What the work produced, kept against the task. */}
             <button
-              onClick={() => setShowFiles(true)}
+              onClick={(e) => { e.stopPropagation(); setShowFiles(true) }}
               title={t('taskfiles_title')}
               className="flex items-center gap-1 text-xs text-text-subtle hover:text-text-main transition-colors"
             >
@@ -351,7 +335,7 @@ export function TaskCard({
 
             {/* The way into this task's discussion, over in chat. */}
             <button
-              onClick={openDiscussion}
+              onClick={(e) => { e.stopPropagation(); openDiscussion() }}
               disabled={opening}
               title={t('taskcard_discuss')}
               className="flex items-center gap-1 text-xs text-text-subtle hover:text-text-main transition-colors disabled:opacity-50"
@@ -369,7 +353,7 @@ export function TaskCard({
                 its own undo on the status icon. */}
             {onMarkMissed && !isCompleted && !isMissed && (
               <button
-                onClick={onMarkMissed}
+                onClick={(e) => { e.stopPropagation(); onMarkMissed?.() }}
                 title={t('taskcard_markMissedHint')}
                 className="flex items-center gap-1 text-[11px] font-medium text-text-subtle hover:text-danger transition-colors"
               >
@@ -378,18 +362,9 @@ export function TaskCard({
               </button>
             )}
 
-            {onEdit && (
-              <button
-                onClick={onEdit}
-                title={t('taskcard_edit')}
-                className="flex items-center gap-1 text-xs text-text-subtle hover:text-primary transition-colors"
-              >
-                <Pencil size={13} />
-              </button>
-            )}
             {onDelete && (
               <button
-                onClick={onDelete}
+                onClick={(e) => { e.stopPropagation(); onDelete?.() }}
                 title={t('taskcard_delete')}
                 className="flex items-center gap-1 text-xs text-text-subtle hover:text-danger transition-colors"
               >
@@ -401,8 +376,12 @@ export function TaskCard({
         </div>
       </div>
 
+      {/* Rendered inside the card, so its clicks would bubble up and open
+          the editor behind it. */}
       {showFiles && (
-        <TaskFiles taskId={task.id} dueDate={dueDate ?? null} onClose={() => setShowFiles(false)} />
+        <div onClick={(e) => e.stopPropagation()}>
+          <TaskFiles taskId={task.id} dueDate={dueDate ?? null} onClose={() => setShowFiles(false)} />
+        </div>
       )}
     </div>
   )

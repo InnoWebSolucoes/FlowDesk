@@ -20,7 +20,7 @@ import { Avatar } from '../../components/shared/Avatar'
 import { WorkLog } from '../../components/worklog/WorkLog'
 
 // Analytics last: the rest are their work, analytics is the reading of it.
-const TABS = ['tasks', 'worklog', 'calendar', 'guidelines', 'analytics'] as const
+const TABS = ['tasks', 'calendar', 'worklog', 'guidelines', 'analytics'] as const
 type Tab = typeof TABS[number]
 
 /** The four cuts of somebody's work, in the order they read in. */
@@ -49,7 +49,7 @@ export function EmployeeProfile() {
   const emp = allEmployees.find(e => e.id === id)
   // Back goes to the team list of whichever project they belong to.
   const backTo = emp?.projectId
-    ? `/admin/projects/${emp.projectId}/employees/team`
+    ? `/admin/projects/${emp.projectId}/employees/overview`
     : '/admin/projects'
   const guidelines = id ? getGuidelines(id) : undefined
 

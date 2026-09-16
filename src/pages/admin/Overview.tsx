@@ -9,11 +9,17 @@ import { Badge } from '../../components/shared/Badge'
 import { getTasksDueOnDate } from '../../utils/taskScheduler'
 import { useT } from '../../i18n/useT'
 import { Avatar } from '../../components/shared/Avatar'
+import { useOutletContext } from 'react-router-dom'
+import { ProjectEmployees } from './project/ProjectEmployees'
 
 export function Overview() {
   const { tasks, completionLogs, categories } = useTaskStore()
   const { employees } = useEmployeeStore()
   const { t } = useT()
+  // Inside a project the team block sits at the top; the project-less
+  // overview has no team to show.
+  const ctx = useOutletContext<{ project?: unknown } | null>()
+  const inProject = !!ctx?.project
 
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
@@ -97,6 +103,10 @@ export function Overview() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* The people first: who is on the project is the top of its overview,
+          not a separate tab to switch to. */}
+      {inProject && <ProjectEmployees />}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label={t('overview_totalEmployees')}

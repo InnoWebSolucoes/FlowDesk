@@ -10,6 +10,7 @@ import { isBefore, parseISO, startOfToday } from 'date-fns'
 import { Project, ProjectTodo } from '../../types'
 import { UrgentToggle } from '../shared/Urgent'
 import { urgentFirst, URGENT_CLASS } from '../../lib/urgent'
+import { useTodoTick } from '../../hooks/useTodoTick'
 import { useProjectStore } from '../../store/projectStore'
 import { EmptyState } from '../shared/EmptyState'
 import { FileKindIcon } from '../resources/ResourceThumbnail'
@@ -57,10 +58,16 @@ export function TodoBoard({
   const navigate = useNavigate()
   const {
     todos, todoLists, todosLoadedFor, loadTodos,
-    createTodo, updateTodo, toggleTodo, setTodoState, deleteTodo, reorderTodos, setTodoLinks,
+    createTodo, updateTodo, setTodoState, deleteTodo, reorderTodos, setTodoLinks, moveTodoToList,
     createTodoList, updateTodoList, deleteTodoList, duplicateTodoList,
     clusters, items, resourcesLoadedFor, loadResources,
   } = useProjectStore()
+
+  // One click: waiting. Two: done. Shared with the calendar.
+  const tickTodo = useTodoTick()
+  // A todo being dragged over the list tabs, to drop it on another list.
+  const [dragTodoId, setDragTodoId] = useState<string | null>(null)
+  const [dropListId, setDropListId] = useState<string | null>(null)
 
   const [newTitle, setNewTitle] = useState('')
   // Details filled in before the todo exists. Kept together so one reset
@@ -144,6 +151,24 @@ export function TodoBoard({
     [todos, project.id, currentListId]
   )
 
+  // A todo just marked waiting stays put for a moment before it sinks, so
+  // there is time to click it again and make it done instead of chasing it
+  // down the list. `settleAt` is bumped when the grace period ends, which
+  // re-runs the sort with the todo now counted as waiting.
+  const SINK_GRACE_MS = 1500
+  const [settleAt, setSettleAt] = useState(0)
+  useEffect(() => {
+    if (!adminBoard) return
+    const now = Date.now()
+    const fresh = listTodos
+      .filter((t) => !t.isCompleted && t.waitingSince)
+      .map((t) => new Date(t.waitingSince!).getTime() + SINK_GRACE_MS - now)
+      .filter((ms) => ms > 0)
+    if (fresh.length === 0) return
+    const id = setTimeout(() => setSettleAt(Date.now()), Math.max(...fresh) + 20)
+    return () => clearTimeout(id)
+  }, [listTodos, adminBoard])
+
   // Urgent todos always lead, whatever the order below them.
   const openTodos = useMemo(() => urgentFirst((() => {
     const list = listTodos.filter((t) => !t.isCompleted)
@@ -151,9 +176,11 @@ export function TodoBoard({
     // one most recently marked waiting at the top of that group. What needs
     // doing stays at the top; what is with somebody else collects under it.
     if (adminBoard) {
-      const doing = list.filter((t) => !t.waitingSince).sort((a, b) => a.sortOrder - b.sortOrder)
+      const cutoff = Date.now() - SINK_GRACE_MS
+      const sunk = (t: ProjectTodo) => !!t.waitingSince && new Date(t.waitingSince).getTime() < cutoff
+      const doing = list.filter((t) => !sunk(t)).sort((a, b) => a.sortOrder - b.sortOrder)
       const waiting = list
-        .filter((t) => t.waitingSince)
+        .filter(sunk)
         .sort((a, b) => (b.waitingSince ?? '').localeCompare(a.waitingSince ?? ''))
       return [...doing, ...waiting]
     }
@@ -167,7 +194,8 @@ export function TodoBoard({
     }
 
     return [...list].sort((a, b) => a.sortOrder - b.sortOrder)
-  })()), [listTodos, sortMode, adminBoard])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  })()), [listTodos, sortMode, adminBoard, settleAt])
 
   const completedTodos = useMemo(
     () => listTodos.filter((t) => t.isCompleted).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
@@ -300,7 +328,15 @@ export function TodoBoard({
     return (
       <div
         ref={highlight.isHighlighted(todo.id) ? highlight.ref : undefined}
-        className={`group border rounded-xl px-3 py-2.5 ${
+        // Picked up and dropped on another list's tab to move it there.
+        draggable={canEdit && !isEditing}
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', todo.id)
+          setDragTodoId(todo.id)
+        }}
+        onDragEnd={() => { setDragTodoId(null); setDropListId(null) }}
+        className={`group border rounded-xl px-3 py-2.5 ${dragTodoId === todo.id ? 'opacity-40' : ''} ${
           todo.isUrgent && !todo.isCompleted
             ? `${URGENT_CLASS} border-l-4 border-l-danger`
             : 'bg-surface border-border'
@@ -312,7 +348,7 @@ export function TodoBoard({
             title when the row runs out of width, rather than crushing it. */}
         <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
           <button
-            onClick={() => canEdit && toggleTodo(todo.id)}
+            onClick={() => canEdit && tickTodo(todo.id)}
             onContextMenu={(e) => {
               if (!adminBoard || !canEdit) return
               e.preventDefault()
@@ -534,6 +570,7 @@ export function TodoBoard({
             )
           }
 
+          const canDrop = !!dragTodoId && list.id !== currentListId
           return (
             <div
               key={list.id}
@@ -542,9 +579,25 @@ export function TodoBoard({
                 e.preventDefault()
                 setListMenu({ listId: list.id, x: e.clientX, y: e.clientY })
               }}
-              className={`flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px flex-shrink-0 transition-colors ${
+              // A todo dragged from the rows below lands in this list.
+              onDragOver={(e) => {
+                if (!canDrop) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                if (dropListId !== list.id) setDropListId(list.id)
+              }}
+              onDragLeave={() => { if (dropListId === list.id) setDropListId(null) }}
+              onDrop={(e) => {
+                if (!canDrop) return
+                e.preventDefault()
+                const id = e.dataTransfer.getData('text/plain') || dragTodoId
+                setDragTodoId(null)
+                setDropListId(null)
+                if (id) moveTodoToList(id, list.id)
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px flex-shrink-0 rounded-t-lg transition-colors ${
                 isActive ? 'border-primary' : 'border-transparent'
-              }`}
+              } ${dropListId === list.id ? 'bg-primary-light ring-2 ring-primary/40' : canDrop ? 'bg-surface-2/60' : ''}`}
             >
               <button
                 onClick={() => selectList(list.id)}

@@ -221,7 +221,7 @@ export function NotificationBell({
         navigate(
           who
             ? `/admin/projects/${project}/employees/team/${who.id}`
-            : `/admin/projects/${project}/employees/team`,
+            : `/admin/projects/${project}/employees/overview`,
         )
       }
       return

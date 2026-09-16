@@ -22,7 +22,6 @@ import { Projects } from './pages/admin/Projects'
 import { ProjectLayout } from './pages/admin/project/ProjectLayout'
 import { ProjectAbout } from './pages/admin/project/ProjectAbout'
 import { ProjectResources } from './pages/admin/project/ProjectResources'
-import { ProjectEmployees } from './pages/admin/project/ProjectEmployees'
 import { MyWorkLog } from './pages/employee/MyWorkLog'
 import { ProjectTodos } from './pages/admin/project/ProjectTodos'
 import { ProjectCalendar } from './pages/admin/project/ProjectCalendar'
@@ -212,8 +211,9 @@ export default function App() {
               {/* Employees: the team plus everything that used to be global,
                   scoped to this project by ProjectLayout. */}
               <Route path="employees" element={<ProjectTeamLayout />}>
-                <Route index element={<Navigate to="team" replace />} />
-                <Route path="team" element={<ProjectEmployees />} />
+                <Route index element={<Navigate to="overview" replace />} />
+                {/* The team list lives at the top of the overview now. */}
+                <Route path="team" element={<Navigate to="../overview" replace />} />
                 <Route path="overview" element={<Overview />} />
                 <Route path="tasks" element={<TaskManager />} />
                 <Route path="ai-organiser" element={<AIOrganiser />} />
