@@ -29,7 +29,7 @@ export function CompletionLineChart({ series, height = 280 }: Props) {
   const data = dates.map(date => {
     const point: Record<string, any> = {
       date,
-      label: format(parseISO(date), 'MMM d'),
+      label: format(parseISO(date), 'd MMM'),
     }
     series.forEach(s => {
       const stat = s.dailyStats.find(d => d.date === date)

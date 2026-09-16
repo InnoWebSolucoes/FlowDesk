@@ -1,3 +1,4 @@
+import { format } from 'date-fns'
 import React, { useEffect, useState } from 'react'
 import { MonitorSmartphone } from 'lucide-react'
 import { supabase } from '../../lib/supabaseClient'
@@ -85,7 +86,7 @@ function ago(iso: string | null): string {
   const days = Math.floor(hours / 24)
   if (days === 1) return `yesterday ${clock}`
   if (days < 7) return `${days} days ago · ${clock}`
-  return `${then.toLocaleDateString()} ${clock}`
+  return `${format(then, 'd MMM yyyy')} ${clock}`
 }
 
 export function AppUsagePanel({ employeeId }: { employeeId: string }) {
@@ -205,7 +206,7 @@ export function AppUsagePanel({ employeeId }: { employeeId: string }) {
                   label === 'Last seen' ? 'text-sm mt-0.5' : 'text-lg'
                 }`}
                 title={label === 'Last seen' && stats.lastSeen
-                  ? new Date(stats.lastSeen).toLocaleString()
+                  ? format(new Date(stats.lastSeen), 'd MMM yyyy, HH:mm')
                   : undefined}
               >
                 {value}
@@ -235,11 +236,7 @@ export function AppUsagePanel({ employeeId }: { employeeId: string }) {
                   }`}
                 >
                   <span className={`w-28 flex-shrink-0 ${isToday ? 'text-primary font-medium' : 'text-text-muted'}`}>
-                    {new Date(`${d.day}T12:00:00`).toLocaleDateString([], {
-                      weekday: 'short',
-                      day: 'numeric',
-                      month: 'short',
-                    })}
+                    {format(new Date(`${d.day}T12:00:00`), 'EEE d MMM')}
                   </span>
                   <span className={`font-semibold tabular-nums ${isToday ? 'text-primary' : 'text-text-main'}`}>
                     {clockOf(d.firstSeen)}

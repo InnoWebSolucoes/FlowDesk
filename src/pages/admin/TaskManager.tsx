@@ -2,7 +2,6 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { Plus, Search, Pencil, Trash2, X, Check, ListTodo } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
-import { useAuthStore } from '../../store/authStore'
 import { Task, TaskFrequency, Priority, Category, FrequencyType } from '../../types'
 import { Badge } from '../../components/shared/Badge'
 import { EmptyState } from '../../components/shared/EmptyState'
@@ -10,6 +9,7 @@ import { format } from 'date-fns'
 import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
+import { useCreateTask } from '../../hooks/useCreateTask'
 
 const PRIORITY_OPTIONS: Priority[] = ['low', 'medium', 'high']
 const FREQ_OPTIONS: FrequencyType[] = ['daily', 'weekly', 'monthly', 'one-off']
@@ -401,11 +401,10 @@ function TaskStatusCells({ task }: { task: Task }) {
 }
 
 export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: string }) {
-  const { tasks, categories, addTask, updateTask, deleteTask, addCategory, scopedProjectId } = useTaskStore()
+  const { tasks, categories, updateTask, deleteTask, addCategory } = useTaskStore()
   const { employees } = useEmployeeStore()
   // Work is assigned to staff, not to managers.
   const staff = employees.filter((e) => e.role === 'employee')
-  const { currentUser } = useAuthStore()
   const { t } = useT()
 
   const DAY_NAMES = [t('task_sun'), t('task_mon'), t('task_tue'), t('task_wed'), t('task_thu'), t('task_fri'), t('task_sat')]
@@ -478,47 +477,14 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
     else { setSortCol(col); setSortDir('asc') }
   }
 
+  const createTask = useCreateTask()
+
   const handleSave = async (data: any) => {
     // A save that fails must not close the form: losing what was typed and
     // showing nothing is how a broken save reads as a silent one.
     try {
       if (editing === 'new') {
-        if (!currentUser) return
-        // An employee belongs to exactly one project, so the assignees fix the task's project.
-        const assignee = employees.find(e => e.id === data.assignedTo[0])
-        const projectId = assignee?.projectId
-        if (!projectId) {
-          // Naming the person makes this actionable: the fix is to put them on
-          // a project, and without the name there is no way to know who.
-          alert(
-            assignee
-              ? `${assignee.name} is not assigned to a project yet, so this task has nowhere to live. Add them to a project first.`
-              : t('task_errorNoProject')
-          )
-          return
-        }
-        // Only the first assignee's project is used, so anyone from another
-        // project would be attached to a task their project never shows.
-        const strays = data.assignedTo
-          .map((id: string) => employees.find(e => e.id === id))
-          .filter((e: any) => e && e.projectId !== projectId)
-        if (strays.length > 0) {
-          alert(
-            `${strays.map((e: any) => e.name).join(', ')} ${strays.length === 1 ? 'is' : 'are'} on a different project, and a task can only belong to one. Create a separate task for them.`
-          )
-          return
-        }
-
-        await addTask({ ...data, projectId, createdBy: currentUser.id })
-
-        // The list on screen is filtered to the project being viewed. A task
-        // for someone on a different project saves fine and then vanishes,
-        // which reads exactly like a failed save — so say where it went.
-        if (scopedProjectId && projectId !== scopedProjectId) {
-          alert(
-            `Task saved. It belongs to ${assignee.name}'s project, not the one you are viewing, so it will not appear in this list.`
-          )
-        }
+        if (!(await createTask(data))) return
       } else if (editing) {
         await updateTask(editing.id, data)
       }

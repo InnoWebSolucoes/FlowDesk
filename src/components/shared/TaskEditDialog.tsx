@@ -4,6 +4,7 @@ import { Task } from '../../types'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { TaskForm } from '../../pages/admin/TaskManager'
+import { useCreateTask } from '../../hooks/useCreateTask'
 import { useT } from '../../i18n/useT'
 
 /**
@@ -15,9 +16,7 @@ import { useT } from '../../i18n/useT'
  * day — rather than a cut-down editor that quietly drifts from the real one.
  * This only supplies the shell, the save and the delete.
  *
- * Creating is deliberately not here. A new task needs a project, which comes
- * from its assignees, and that resolution lives in the task manager where the
- * "All tasks" section already offers it.
+ * Creating is NewTaskDialog, below.
  */
 export function TaskEditDialog({
   task,
@@ -171,6 +170,58 @@ export function TaskEditDialog({
         )}
 
         {error && !confirmDelete && (
+          <p className="text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2 mt-3">
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A new task, started from somebody's day, week or month rather than from the
+ * task manager. Same form, starting assigned to that person; the project is
+ * worked out from the assignees by useCreateTask, as it is in the manager.
+ */
+export function NewTaskDialog({
+  employeeId,
+  onClose,
+}: {
+  employeeId: string
+  onClose: () => void
+}) {
+  const { t } = useT()
+  const { categories, addCategory } = useTaskStore()
+  const { employees } = useEmployeeStore()
+  const staff = employees.filter((e) => e.role === 'employee')
+  const createTask = useCreateTask()
+  const [error, setError] = useState('')
+
+  const save = async (data: Partial<Task>) => {
+    setError('')
+    try {
+      if (await createTask(data)) onClose()
+    } catch (e) {
+      setError((e as Error).message || t('task_couldNotSave'))
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div className="w-full max-w-lg my-8" onClick={(e) => e.stopPropagation()}>
+        <TaskForm
+          onSave={save}
+          onCancel={onClose}
+          categories={categories}
+          employees={staff}
+          defaultAssignee={employeeId}
+          onAddCategory={addCategory}
+        />
+        {error && (
           <p className="text-sm text-danger bg-danger-bg border border-danger/30 rounded-lg px-3 py-2 mt-3">
             {error}
           </p>

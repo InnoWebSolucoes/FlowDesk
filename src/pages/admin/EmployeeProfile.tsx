@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Globe, Eye } from 'lucide-react'
+import { ArrowLeft, Eye, Plus } from 'lucide-react'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useToolStore } from '../../store/toolStore'
 import { useAuthStore } from '../../store/authStore'
@@ -8,10 +8,7 @@ import { TaskManager } from './TaskManager'
 import { MyTasks } from '../employee/MyTasks'
 import { Analytics } from './Analytics'
 import { AppUsagePanel } from '../../components/charts/AppUsagePanel'
-import { EmptyState } from '../../components/shared/EmptyState'
-import { WebsiteGrid } from '../../components/shared/WebsiteGrid'
-import { TodoBoard } from '../../components/todos/TodoBoard'
-import { NoteBoard } from '../../components/notes/NoteBoard'
+import { NewTaskDialog } from '../../components/shared/TaskEditDialog'
 import { CalendarBoard } from '../../components/calendar/CalendarBoard'
 import { useProjectStore } from '../../store/projectStore'
 import { format, parseISO } from 'date-fns'
@@ -22,7 +19,8 @@ import { useT } from '../../i18n/useT'
 import { Avatar } from '../../components/shared/Avatar'
 import { WorkLog } from '../../components/worklog/WorkLog'
 
-const TABS = ['tasks', 'analytics', 'worklog', 'todos', 'calendar', 'notes', 'toolbox', 'guidelines'] as const
+// Analytics last: the rest are their work, analytics is the reading of it.
+const TABS = ['tasks', 'worklog', 'calendar', 'guidelines', 'analytics'] as const
 type Tab = typeof TABS[number]
 
 /** The four cuts of somebody's work, in the order they read in. */
@@ -36,7 +34,7 @@ export function EmployeeProfile() {
   // Unscoped: the profile renders outside the project shell, where the scoped
   // list has been cleared.
   const { allEmployees } = useEmployeeStore()
-  const { websites, getGuidelines, saveGuidelines } = useToolStore()
+  const { getGuidelines, saveGuidelines } = useToolStore()
   const { currentUser } = useAuthStore()
   const setViewAs = useAuthStore((s) => s.setViewAs)
   const isOwner = !!useAuthStore((s) => s.realUser?.isOwner)
@@ -46,6 +44,7 @@ export function EmployeeProfile() {
   const [tab, setTab] = useState<Tab>('tasks')
   const [taskSection, setTaskSection] = useState<TaskSection>('today')
   const [guideSaved, setGuideSaved] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   const emp = allEmployees.find(e => e.id === id)
   // Back goes to the team list of whichever project they belong to.
@@ -68,8 +67,6 @@ export function EmployeeProfile() {
     )
   }
 
-  const empWebsites = websites.filter(w => w.assignedTo.includes(emp.id))
-
   const handleSaveGuide = async () => {
     if (!editor || !id || !currentUser) return
     await saveGuidelines(id, editor.getHTML(), currentUser.id)
@@ -90,15 +87,10 @@ export function EmployeeProfile() {
     tasks: t('profile_tabTasks'),
     analytics: t('profile_tabAnalytics'),
     worklog: t('nav_workLog'),
-    todos: t('nav_todos'),
     calendar: t('nav_calendar'),
-    notes: t('nav_notes'),
-    toolbox: t('profile_tabToolbox'),
     guidelines: t('profile_tabGuidelines'),
   }
 
-  // Their own lists and board, read-only: an owner can see how their team is
-  // organising itself without being able to reorganise it for them.
   const empProject = emp.projectId ? getProject(emp.projectId) : undefined
 
   const tabCls = (tab_: Tab) =>
@@ -151,7 +143,7 @@ export function EmployeeProfile() {
         </div>
       </div>
 
-      {/* Eight tabs wrap on a phone rather than running off the edge; a
+      {/* The tabs wrap on a phone rather than running off the edge; a
           row that scrolled sideways was what let the whole page scroll
           sideways. */}
       <div className="border-b border-border flex flex-wrap gap-0 mb-6">
@@ -193,7 +185,18 @@ export function EmployeeProfile() {
                 {taskSectionLabels[s]}
               </button>
             ))}
+            {/* "All tasks" has its own New task button in the task manager. */}
+            {taskSection !== 'all' && (
+              <button
+                onClick={() => setCreating(true)}
+                className="ml-auto flex items-center gap-1.5 bg-primary text-white text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-primary-dark transition-colors"
+              >
+                <Plus size={14} /> {t('task_newTask')}
+              </button>
+            )}
           </div>
+
+          {creating && <NewTaskDialog employeeId={emp.id} onClose={() => setCreating(false)} />}
 
           {taskSection === 'all' ? (
             <TaskManager preselectedEmployee={emp.id} />
@@ -241,41 +244,6 @@ export function EmployeeProfile() {
             basePath={`/admin/projects/${empProject.id}`}
           />
         )
-      )}
-
-      {(tab === 'todos' || tab === 'notes') && (
-        !empProject ? (
-          <p className="text-text-muted text-sm py-8">
-            {emp.name} is not on a project yet, so there is nothing here.
-          </p>
-        ) : tab === 'todos' ? (
-          <TodoBoard
-            project={empProject}
-            ownerId={emp.id}
-            basePath={`/admin/projects/${empProject.id}`}
-            readOnly
-            emptyDescription={`${emp.name} has not added anything to this list.`}
-          />
-        ) : (
-          <NoteBoard project={empProject} ownerId={emp.id} readOnly />
-        )
-      )}
-
-      {tab === 'toolbox' && (
-        <div className="space-y-5">
-          <div>
-            <h3 className="text-text-main font-semibold text-sm mb-3">{t('profile_assignedWebsites')}</h3>
-            {empWebsites.length === 0 ? (
-              <EmptyState icon={Globe} title={t('profile_noWebsites')} description={t('profile_noWebsitesDesc')} />
-            ) : (
-              // The same icon grid the employee sees in their own Toolbox:
-              // this is a view of their tools, so it should look like their
-              // tools rather than a different list of the same sites. The
-              // owner can edit and remove them here, as they can in theirs.
-              <WebsiteGrid sites={empWebsites} employeeId={emp.id} canManage={isOwner} />
-            )}
-          </div>
-        </div>
       )}
 
       {tab === 'guidelines' && (

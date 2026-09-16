@@ -7,7 +7,7 @@ import { useChatStore } from '../../store/chatStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
 import { useT } from '../../i18n/useT'
-import { differenceInDays, parseISO } from 'date-fns'
+import { differenceInDays, format, parseISO } from 'date-fns'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import { TaskFiles } from './TaskFiles'
 
@@ -166,7 +166,7 @@ export function TaskCard({
   const [animating, setAnimating] = useState(false)
   const [opening, setOpening] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
-  const { t } = useT()
+  const { t, dateLocale } = useT()
   const navigate = useNavigate()
   const { currentUser } = useAuthStore()
   // Discussion of a task lives in chat now, not on the card. The count is of
@@ -314,18 +314,14 @@ export function TaskCard({
           {showTiming && isCompleted && completedAt && (
             <p className="text-xs text-success mt-1 flex items-center gap-1">
               <CheckCircle2 size={11} />
-              {t('taskcard_completedAt')} {new Date(completedAt).toLocaleString([], {
-                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-              })}
+              {t('taskcard_completedAt')} {format(new Date(completedAt), 'd MMM, HH:mm', dateLocale)}
             </p>
           )}
           {showTiming && !isCompleted && isInProgress && startedAt && (
             <p className="text-xs text-amber mt-1 flex items-center gap-1">
               <Timer size={11} />
               {t('taskcard_workingFor')} {elapsed(startedAt, now)} · {t('taskcard_since')}{' '}
-              {new Date(startedAt).toLocaleString([], {
-                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-              })}
+              {format(new Date(startedAt), 'd MMM, HH:mm', dateLocale)}
             </p>
           )}
 
