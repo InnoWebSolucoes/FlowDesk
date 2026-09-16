@@ -102,7 +102,7 @@ function toTask(row: any): Task {
     assignedTo: (row.task_assignments ?? []).map((a: any) => a.employee_id),
     frequency: row.frequency,
     categoryId: row.category_id,
-    priority: row.priority,
+    isUrgent: !!row.is_urgent,
     associatedTool: row.associated_tool ?? undefined,
     estimatedMinutes: row.estimated_minutes,
     createdAt: row.created_at,
@@ -304,7 +304,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       frequency: task.frequency,
       // A task made from a todo has no category yet, and an empty string is not a uuid.
       category_id: task.categoryId || null,
-      priority: task.priority,
+      is_urgent: !!task.isUrgent,
       associated_tool: task.associatedTool ?? null,
       estimated_minutes: task.estimatedMinutes,
       created_by: task.createdBy,
@@ -349,7 +349,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     if (updates.description !== undefined) patch.description = updates.description
     if (updates.frequency !== undefined) patch.frequency = updates.frequency
     if (updates.categoryId !== undefined) patch.category_id = updates.categoryId
-    if (updates.priority !== undefined) patch.priority = updates.priority
+    if (updates.isUrgent !== undefined) patch.is_urgent = updates.isUrgent
     if (updates.associatedTool !== undefined) patch.associated_tool = updates.associatedTool
     if (updates.estimatedMinutes !== undefined) patch.estimated_minutes = updates.estimatedMinutes
     if (updates.isActive !== undefined) patch.is_active = updates.isActive

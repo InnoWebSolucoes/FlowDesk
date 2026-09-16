@@ -10,13 +10,14 @@ import { Task, Project } from '../../types'
 import { Badge } from '../../components/shared/Badge'
 import { EmptyState } from '../../components/shared/EmptyState'
 import { useT } from '../../i18n/useT'
+import { UrgentBadge, UrgentToggle } from '../../components/shared/Urgent'
 
 interface GeneratedTask {
   title: string
   description: string
   frequency: any
   categoryName: string
-  priority: 'low' | 'medium' | 'high'
+  isUrgent: boolean
   /** '' only while being typed; 0 means no estimate. */
   estimatedMinutes: number | ''
   _categoryId?: string
@@ -251,7 +252,7 @@ export function AIOrganiser() {
         title: gt.title,
         notes: gt.description,
         listId,
-        priority: gt.priority,
+        isUrgent: !!gt.isUrgent,
         doDate: gt.doDate || null,
       },
       null,
@@ -344,7 +345,7 @@ export function AIOrganiser() {
             ? { ...gt.frequency, date: gt.frequency.date ?? gt.doDate }
             : gt.frequency,
         categoryId: catId,
-        priority: gt.priority,
+        isUrgent: !!gt.isUrgent,
         estimatedMinutes: Number(gt.estimatedMinutes) || 0,
         createdBy: currentUser.id,
         isActive: true,
@@ -406,13 +407,6 @@ export function AIOrganiser() {
     setRefinement('')
     setError('')
     setImported(false)
-  }
-
-  const priorityLabel = (p: string) => {
-    if (p === 'low') return t('ai_priorityLow')
-    if (p === 'medium') return t('ai_priorityMedium')
-    if (p === 'high') return t('ai_priorityHigh')
-    return p
   }
 
   return (
@@ -585,10 +579,7 @@ export function AIOrganiser() {
                           color={cat?.color ?? '#6B6960'}
                           size="sm"
                         />
-                        <span className={`text-xs font-medium ${
-                          gt.priority === 'high' ? 'text-danger' :
-                          gt.priority === 'medium' ? 'text-amber' : 'text-success'
-                        }`}>{priorityLabel(gt.priority)}</span>
+                        <UrgentBadge urgent={!!gt.isUrgent} />
                       </div>
                       <div className="flex items-center gap-3 mt-1">
                         <span className="text-xs text-text-subtle">{freqLabel(gt.frequency)}</span>
@@ -623,16 +614,7 @@ export function AIOrganiser() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="text-xs font-medium text-text-muted mb-1 block">{t('ai_priorityLabel')}</label>
-                          <select
-                            className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface focus:outline-none focus:border-primary"
-                            value={gt.priority}
-                            onChange={e => updateGenerated(i, 'priority', e.target.value)}
-                          >
-                            <option value="low">{t('ai_priorityLow')}</option>
-                            <option value="medium">{t('ai_priorityMedium')}</option>
-                            <option value="high">{t('ai_priorityHigh')}</option>
-                          </select>
+                          <UrgentToggle urgent={!!gt.isUrgent} onChange={v => updateGenerated(i, 'isUrgent', v)} />
                         </div>
                         <div className="sm:col-span-2">
                           <label className="text-xs font-medium text-text-muted mb-1 block">{t('ai_assignThisTask')}</label>

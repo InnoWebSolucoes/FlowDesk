@@ -5,13 +5,14 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import {
-  CalendarEntry, ProjectTodo, Visibility, CalendarEntryKind, Priority,
+  CalendarEntry, ProjectTodo, Visibility, CalendarEntryKind,
 } from '../../types'
 import { useProjectStore } from '../../store/projectStore'
 import { FileKindIcon } from '../resources/ResourceThumbnail'
 import { ResourceLinkPicker, LinkKey } from '../shared/ResourceLinkPicker'
 import { KIND_STYLE } from './calendarShared'
 import { useT } from '../../i18n/useT'
+import { UrgentToggle } from '../shared/Urgent'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
@@ -260,7 +261,7 @@ function TodoBody({
   // exception below: reassigning is a thing you do while reading a list, not
   // something worth entering an edit mode for.
   const locked = readOnly || !editing
-  // A todo on the managers' shared board: no priority or date, and a waiting
+  // A todo on the managers' shared board: no date, and a waiting
   // state between open and done.
   const adminTodo = todo.ownerId === null
   const todoState = todo.isCompleted ? 'done' : adminTodo && todo.waitingSince ? 'waiting' : 'open'
@@ -301,7 +302,7 @@ function TodoBody({
         assignedTo: [person.id],
         frequency: { type: 'one-off', date: todo.doDate ?? format(new Date(), 'yyyy-MM-dd') },
         categoryId: '',
-        priority: todo.priority,
+        isUrgent: todo.isUrgent,
         estimatedMinutes: 0,
         createdBy: realUser.id,
         isActive: true,
@@ -416,20 +417,13 @@ function TodoBody({
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        {!adminTodo && (
-        <Field label={t('cal_priorityLabel')}>
-          <select
-            value={todo.priority}
+        <Field label={'\u00a0'}>
+          <UrgentToggle
+            urgent={todo.isUrgent}
             disabled={locked}
-            onChange={(e) => updateTodo(todo.id, { priority: e.target.value as Priority })}
-            className={inputClass}
-          >
-            <option value="high">{t('ui_high')}</option>
-            <option value="medium">{t('ui_medium')}</option>
-            <option value="low">{t('ui_low')}</option>
-          </select>
+            onChange={(v) => updateTodo(todo.id, { isUrgent: v })}
+          />
         </Field>
-        )}
         <Field label={t('cal_listLabel')}>
           <select
             value={todo.listId ?? ''}

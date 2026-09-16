@@ -307,7 +307,7 @@ function toTodo(row: any): ProjectTodo {
     listId: row.list_id ?? null,
     title: row.title,
     notes: row.notes ?? '',
-    priority: row.priority,
+    isUrgent: !!row.is_urgent,
     isCompleted: row.is_completed,
     completedAt: row.completed_at,
     waitingSince: row.waiting_since ?? null,
@@ -1456,7 +1456,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         listId: list.id,
         title: todo.title,
         notes: todo.notes,
-        priority: todo.priority,
+        isUrgent: todo.isUrgent,
         doDate: todo.doDate,
       }, source.ownerId)
       if (copy && todo.links.length > 0) {
@@ -1497,7 +1497,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       list_id: input.listId ?? null,
       title: input.title ?? 'New todo',
       notes: input.notes ?? '',
-      priority: input.priority ?? 'medium',
+      is_urgent: !!input.isUrgent,
       sort_order: minOrder - 1,
     }
     // Columns the do-dates migration adds. Dropped on retry if it hasn't run.
@@ -1537,7 +1537,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const patch: Record<string, unknown> = {}
     if (updates.title !== undefined) patch.title = updates.title
     if (updates.notes !== undefined) patch.notes = updates.notes
-    if (updates.priority !== undefined) patch.priority = updates.priority
+    if (updates.isUrgent !== undefined) patch.is_urgent = updates.isUrgent
     if (updates.doDate !== undefined) patch.do_date = updates.doDate || null
     if (updates.assigneeId !== undefined) patch.assignee_id = updates.assigneeId || null
     if (updates.visibility !== undefined) patch.visibility = updates.visibility || null

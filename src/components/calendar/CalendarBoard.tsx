@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, SlidersHorizontal, GripVertical, CalendarClock, Check,
-  Circle, CheckCircle2, Timer, Users, X, Ban, Clock,
+  Circle, CheckCircle2, Timer, Users, X, Ban, Clock, Flame,
 } from 'lucide-react'
 import {
   addDays, addWeeks, format,
@@ -75,6 +75,8 @@ interface Block {
    * week separates what they were given from what they took on.
    */
   ownWork?: boolean
+  /** Marked urgent: ringed in red, flagged, and first in its day. */
+  urgent?: boolean
 }
 
 interface CalendarBoardProps {
@@ -269,6 +271,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
             color: personColor(todoOwner(t) ?? ownerId),
             ownWork: true,
             todo: t,
+            urgent: t.isUrgent,
           })
         }
       }
@@ -284,6 +287,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
             color: personColor(todoOwner(t)),
             ownWork: true,
             todo: t,
+            urgent: t.isUrgent,
             ownerName: employees.find((e) => e.id === t.ownerId)?.name,
           })
         }
@@ -306,6 +310,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
             done: occ.completed,
             started: occ.status === 'in_progress',
             missed: occ.status === 'missed',
+            urgent: occ.task.isUrgent,
             ownerName: canOverlay ? who?.name : undefined,
           })
         }
@@ -330,7 +335,8 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         })
       }
 
-      return blocks
+      // Urgent work leads the day.
+      return blocks.sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [todos, overlayTodos, calendarEntries, hidden, tasks, employees, overlaid, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay],
@@ -1366,6 +1372,10 @@ function BlockChip({
       } ${
         // Done work fades and strikes through, whichever kind it is.
         block.todo?.isCompleted || block.done ? 'line-through opacity-45' : block.missed ? 'opacity-45' : ''
+      } ${
+        // Urgent and still to do: a red ring outside the person's colour, so
+        // it stands out without losing whose it is.
+        block.urgent && !(block.todo?.isCompleted || block.done) ? 'ring-2 ring-danger ring-offset-1' : ''
       }`}
       style={
         block.ownWork
@@ -1422,6 +1432,9 @@ function BlockChip({
           {/* Two lines before it clips: one line cut most titles mid-word,
               and a calendar box has the room now. */}
           <span className="line-clamp-2 break-words">
+            {block.urgent && !(block.todo?.isCompleted || block.done) && (
+              <Flame size={11} className="inline -mt-0.5 mr-0.5" aria-label={t('urgent_label')} />
+            )}
             {block.missed && <span className="font-semibold">{t('taskcard_missed')} · </span>}
             {block.label}
           </span>

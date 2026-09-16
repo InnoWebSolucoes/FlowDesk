@@ -7,6 +7,7 @@ import type { TranslationKey } from '../../i18n/translations'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useT } from '../../i18n/useT'
+import { UrgentBadge } from '../shared/Urgent'
 import { Linkify } from '../shared/Linkify'
 
 const DAY_KEYS = [
@@ -33,12 +34,6 @@ function frequencyLabel(f: Task['frequency'], t: (k: TranslationKey) => string):
     return f.date ? `${t('taskpeek_onceOn')} ${f.date}` : t('taskpeek_oneOff')
   }
   return String(f.type)
-}
-
-const PRIORITY_STYLE: Record<string, string> = {
-  low: 'bg-surface-2 text-text-muted border-border',
-  medium: 'bg-warning-bg text-warning border-warning/30',
-  high: 'bg-danger-bg text-danger border-danger/30',
 }
 
 /**
@@ -95,13 +90,7 @@ export function TaskPeekPanel({
           <div className="min-w-0">
             <h2 className="text-text-main font-semibold text-base leading-snug">{task.title}</h2>
             <div className="flex items-center gap-1.5 mt-1.5">
-              <span
-                className={`px-2 py-0.5 rounded-full text-[11px] font-medium border ${
-                  PRIORITY_STYLE[task.priority] ?? PRIORITY_STYLE.medium
-                }`}
-              >
-                {task.priority}
-              </span>
+              <UrgentBadge urgent={task.isUrgent} />
               {!task.isActive && (
                 <span className="px-2 py-0.5 rounded-full text-[11px] bg-surface-2 text-text-muted border border-border">{t('cal_retired')}</span>
               )}

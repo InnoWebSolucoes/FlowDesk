@@ -186,7 +186,6 @@ export function MyTasks({
 
   // Filters (today tab only)
   const [searchQuery, setSearchQuery] = useState('')
-  const [filterPriority, setFilterPriority] = useState('')
   const [filterCategoryId, setFilterCategoryId] = useState('')
   const [completedCollapsed, setCompletedCollapsed] = useState(false)
 
@@ -258,6 +257,8 @@ export function MyTasks({
       list.push(occ)
       map.set(occ.showOn, list)
     }
+    // Urgent first on every day, so the week and month rows lead with it too.
+    for (const list of map.values()) list.sort((a, b) => Number(b.task.isUrgent) - Number(a.task.isUrgent))
     return map
   }, [occurrences])
 
@@ -271,7 +272,6 @@ export function MyTasks({
     const task = occ.task
     const q = searchQuery.toLowerCase()
     if (q && !task.title.toLowerCase().includes(q) && !task.description.toLowerCase().includes(q)) return false
-    if (filterPriority && task.priority !== filterPriority) return false
     if (filterCategoryId && task.categoryId !== filterCategoryId) return false
     return true
   }
@@ -285,7 +285,7 @@ export function MyTasks({
   const progressPct = totalToday > 0 ? Math.min(100, Math.round((doneToday / totalToday) * 100)) : 0
   const allDone = totalToday > 0 && doneToday === totalToday
 
-  const hasFilters = searchQuery || filterPriority || filterCategoryId
+  const hasFilters = searchQuery || filterCategoryId
   const noResults = hasFilters && todayShown.length === 0 && totalToday > 0
 
   // When the last of today's work was finished, for the "all done" line.
@@ -295,10 +295,14 @@ export function MyTasks({
     .sort()
     .pop()
 
+  // Urgent work is its own block above the time of day, rather than wherever
+  // its category would have put it.
+  const urgent: TaskOccurrence[] = []
   const morning: TaskOccurrence[] = []
   const afternoon: TaskOccurrence[] = []
   const endOfDay: TaskOccurrence[] = []
   pendingOcc.forEach((occ) => {
+    if (occ.task.isUrgent) { urgent.push(occ); return }
     const cat = categories.find((c) => c.id === occ.task.categoryId)
     const catName = cat?.name?.toLowerCase() ?? ''
     if (catName.includes('engagement') || catName.includes('social')) morning.push(occ)
@@ -354,7 +358,6 @@ export function MyTasks({
     if (section) return
 
     setSearchQuery('')
-    setFilterPriority('')
     setFilterCategoryId('')
     setCompletedCollapsed(false)
 
@@ -450,16 +453,6 @@ export function MyTasks({
               />
             </div>
             <select
-              value={filterPriority}
-              onChange={(e) => setFilterPriority(e.target.value)}
-              className="text-xs bg-surface border border-border rounded-lg px-2 py-1.5 text-text-main focus:outline-none focus:border-primary"
-            >
-              <option value="">{t('mytasks_allPriorities')}</option>
-              <option value="high">{t('task_priorityHigh')}</option>
-              <option value="medium">{t('task_priorityMedium')}</option>
-              <option value="low">{t('task_priorityLow')}</option>
-            </select>
-            <select
               value={filterCategoryId}
               onChange={(e) => setFilterCategoryId(e.target.value)}
               className="text-xs bg-surface border border-border rounded-lg px-2 py-1.5 text-text-main focus:outline-none focus:border-primary"
@@ -512,6 +505,7 @@ export function MyTasks({
 
           {!allDone && !noResults && (
             <>
+              <TimeBlock label={t('urgent_label')} occurrences={urgent} cardProps={cardProps} />
               <TimeBlock label={t('mytasks_morning')} occurrences={morning} cardProps={cardProps} />
               <TimeBlock label={t('mytasks_afternoon')} occurrences={afternoon} cardProps={cardProps} />
               <TimeBlock label={t('mytasks_endOfDay')} occurrences={endOfDay} cardProps={cardProps} />

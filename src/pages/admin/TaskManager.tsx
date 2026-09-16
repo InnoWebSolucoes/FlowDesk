@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { Plus, Search, Pencil, Trash2, X, Check, ListTodo } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
-import { Task, TaskFrequency, Priority, Category, FrequencyType } from '../../types'
+import { Task, TaskFrequency, Category, FrequencyType } from '../../types'
 import { Badge } from '../../components/shared/Badge'
 import { EmptyState } from '../../components/shared/EmptyState'
 import { format } from 'date-fns'
@@ -10,8 +10,8 @@ import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import { useCreateTask } from '../../hooks/useCreateTask'
+import { UrgentBadge, UrgentToggle } from '../../components/shared/Urgent'
 
-const PRIORITY_OPTIONS: Priority[] = ['low', 'medium', 'high']
 const FREQ_OPTIONS: FrequencyType[] = ['daily', 'weekly', 'monthly', 'one-off']
 
 const defaultFreq = (): TaskFrequency => ({ type: 'daily' })
@@ -22,7 +22,7 @@ const defaultTask = (): Omit<Task, 'id' | 'createdAt' | 'createdBy' | 'projectId
   assignedTo: [],
   frequency: defaultFreq(),
   categoryId: '',
-  priority: 'medium',
+  isUrgent: false,
   estimatedMinutes: 30,
   isActive: true,
 })
@@ -136,13 +136,6 @@ export function TaskForm({
     return type
   }
 
-  const priorityLabel = (p: string) => {
-    if (p === 'low') return t('task_priorityLow')
-    if (p === 'medium') return t('task_priorityMedium')
-    if (p === 'high') return t('task_priorityHigh')
-    return p
-  }
-
   return (
     <div className="bg-surface rounded-xl border border-border p-5 space-y-4">
       <div className="flex justify-between items-center">
@@ -163,10 +156,8 @@ export function TaskForm({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={lbl}>{t('task_priority')}</label>
-          <select className={inp} value={form.priority} onChange={e => set('priority', e.target.value)}>
-            {PRIORITY_OPTIONS.map(p => <option key={p} value={p}>{priorityLabel(p)}</option>)}
-          </select>
+          <label className={lbl}>&nbsp;</label>
+          <UrgentToggle urgent={!!form.isUrgent} onChange={(v) => set('isUrgent', v)} />
         </div>
         <div>
           <label className={lbl}>{t('task_estMinutes')}</label>
@@ -413,7 +404,6 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
   const [filterEmp, setFilterEmp] = useState(preselectedEmployee ?? '')
   const [filterCat, setFilterCat] = useState('')
   const [filterFreq, setFilterFreq] = useState('')
-  const [filterPri, setFilterPri] = useState('')
   const [sortCol, setSortCol] = useState<string>('title')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(0)
@@ -428,10 +418,11 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
         if (filterEmp && !task.assignedTo.includes(filterEmp)) return false
         if (filterCat && task.categoryId !== filterCat) return false
         if (filterFreq && task.frequency.type !== filterFreq) return false
-        if (filterPri && task.priority !== filterPri) return false
         return true
       })
       .sort((a, b) => {
+        // Urgent always on top, whatever column the rest is sorted by.
+        if (a.isUrgent !== b.isUrgent) return a.isUrgent ? -1 : 1
         let va: any = a[sortCol as keyof Task]
         let vb: any = b[sortCol as keyof Task]
         if (typeof va === 'string') va = va.toLowerCase()
@@ -440,7 +431,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
         if (va > vb) return sortDir === 'asc' ? 1 : -1
         return 0
       })
-  }, [tasks, search, filterEmp, filterCat, filterFreq, filterPri, sortCol, sortDir])
+  }, [tasks, search, filterEmp, filterCat, filterFreq, sortCol, sortDir])
 
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
@@ -460,7 +451,6 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
     setFilterEmp('')
     setFilterCat('')
     setFilterFreq('')
-    setFilterPri('')
   }, [highlight.activeId])
 
   // Paging is a second step: the index is only meaningful once the filters
@@ -513,13 +503,6 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
     return f.type
   }
 
-  const priorityLabel = (p: string) => {
-    if (p === 'low') return t('task_priorityLow')
-    if (p === 'medium') return t('task_priorityMedium')
-    if (p === 'high') return t('task_priorityHigh')
-    return p
-  }
-
   const freqOptionLabel = (f: string) => {
     if (f === 'daily') return t('task_freqDaily')
     if (f === 'weekly') return t('task_freqWeekly')
@@ -566,11 +549,6 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
               <option value="">{t('task_allFrequencies')}</option>
               {FREQ_OPTIONS.map(f => <option key={f} value={f}>{freqOptionLabel(f)}</option>)}
             </select>
-            <select className="border border-border rounded-lg px-3 py-2 text-sm text-text-muted bg-surface focus:outline-none focus:border-primary"
-              value={filterPri} onChange={e => { setFilterPri(e.target.value); setPage(0) }}>
-              <option value="">{t('task_allPriorities')}</option>
-              {PRIORITY_OPTIONS.map(p => <option key={p} value={p}>{priorityLabel(p)}</option>)}
-            </select>
             <button
               onClick={() => setEditing('new')}
               className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors flex-shrink-0"
@@ -603,7 +581,6 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
                       <Th label={t('task_colAssigned')} />
                       <Th label={t('task_colFrequency')} col="frequency" />
                       <Th label={t('task_colCategory')} col="categoryId" />
-                      <Th label={t('task_colPriority')} col="priority" />
                       <Th label={t('task_colTime')} col="estimatedMinutes" />
                       <Th label={t('task_colStatus')} />
                       <Th label="" />
@@ -619,25 +596,20 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
                         <tr
                           key={task.id}
                           ref={highlight.isHighlighted(task.id) ? highlight.ref : undefined}
-                          className={`border-b border-border/50 hover:bg-surface-2/40 transition-colors ${
-                            highlight.isHighlighted(task.id) ? HIGHLIGHT_CLASS : ''
-                          }`}
+                          className={`border-b border-border/50 transition-colors ${
+                            task.isUrgent ? 'bg-danger-bg/60 hover:bg-danger-bg' : 'hover:bg-surface-2/40'
+                          } ${highlight.isHighlighted(task.id) ? HIGHLIGHT_CLASS : ''}`}
                         >
-                          <td className="py-2.5 px-3 font-medium text-text-main max-w-xs">
-                            <span className="line-clamp-1">{task.title}</span>
+                          <td className={`py-2.5 px-3 font-medium text-text-main max-w-xs ${task.isUrgent ? 'border-l-4 border-l-danger' : ''}`}>
+                            <div className="flex items-center gap-2">
+                              <span className="line-clamp-1">{task.title}</span>
+                              <UrgentBadge urgent={task.isUrgent} />
+                            </div>
                           </td>
                           <td className="py-2.5 px-3 text-text-muted text-xs">{assignedNames}</td>
                           <td className="py-2.5 px-3 text-text-muted text-xs whitespace-nowrap">{freqLabel(task)}</td>
                           <td className="py-2.5 px-3">
                             {cat && <Badge label={cat.name} color={cat.color} size="sm" />}
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <span className={`text-xs font-medium ${
-                              task.priority === 'high' ? 'text-danger' :
-                              task.priority === 'medium' ? 'text-amber' : 'text-success'
-                            }`}>
-                              {priorityLabel(task.priority)}
-                            </span>
                           </td>
                           <td className="py-2.5 px-3 text-text-muted text-xs">
                             {task.estimatedMinutes > 0 ? `${task.estimatedMinutes}m` : t('task_estMinutesNone')}

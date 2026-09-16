@@ -23,20 +23,12 @@ const json = (body: unknown, status = 200) =>
   })
 
 /**
- * A priority the check constraint on tasks/project_todos will accept.
- *
- * The tool schemas declare an enum, but the same request tells the model to
- * write in European Portuguese and it generalises that over the enum too,
- * answering 'alta' or 'média'. The generate-tasks path was refused five rows
- * that way. Cheaper to translate here than to rely on the model honouring the
- * enum every time.
+ * Whether the model asked for urgent. There are no priority levels, only
+ * urgent or not, and anything short of a clear yes is not: a stray value must
+ * never turn somebody's work red.
  */
-const toPriority = (value: unknown): 'low' | 'medium' | 'high' => {
-  const key = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  if (key === 'low' || key === 'baixa' || key === 'baixo') return 'low'
-  if (key === 'high' || key === 'alta' || key === 'alto' || key === 'urgente' || key === 'urgent') return 'high'
-  return 'medium'
-}
+const toUrgent = (value: unknown): boolean =>
+  value === true || (typeof value === 'string' && ['true', 'sim', 'yes'].includes(value.trim().toLowerCase()))
 
 const tools: OpenAI.Chat.ChatCompletionTool[] = [
   {
@@ -51,7 +43,7 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           title: { type: 'string', description: 'Short imperative title.' },
           notes: { type: 'string', description: 'Optional detail.' },
           list_id: { type: 'string', description: 'Which todo list. Omit for the first list.' },
-          priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+          urgent: { type: 'boolean', description: 'Only when the user says it is urgent. There are no other priority levels.' },
           do_date: {
             type: 'string',
             description: 'The day the work is to be done, YYYY-MM-DD. The only date a todo has, and what appears on the calendar.',
@@ -73,7 +65,7 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           todo_id: { type: 'string' },
           title: { type: 'string' },
           notes: { type: 'string' },
-          priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+          urgent: { type: 'boolean', description: 'Only when the user says it is urgent. There are no other priority levels.' },
           do_date: { type: 'string' },
           assignee_id: { type: 'string' },
           is_completed: { type: 'boolean' },
@@ -197,7 +189,7 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
             items: { type: 'string' },
             description: 'User ids of the people it goes to.',
           },
-          priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+          urgent: { type: 'boolean', description: 'Only when the user says it is urgent. There are no other priority levels.' },
           category_name: { type: 'string', description: 'Existing category name, or a new one.' },
           estimated_minutes: { type: 'number' },
           do_date: { type: 'string', description: 'The day it is to be done, YYYY-MM-DD. Only meaningful for a one-off, where it becomes the task's date; a repeating task gets its days from its frequency.' },
@@ -227,7 +219,7 @@ const tools: OpenAI.Chat.ChatCompletionTool[] = [
           task_id: { type: 'string' },
           title: { type: 'string' },
           description: { type: 'string' },
-          priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+          urgent: { type: 'boolean', description: 'Only when the user says it is urgent. There are no other priority levels.' },
           estimated_minutes: { type: 'number' },
           is_active: { type: 'boolean', description: 'False retires it without deleting it.' },
         },
@@ -373,7 +365,7 @@ Deno.serve(async (req) => {
     db.from('project_todo_lists').select('id,name').eq('project_id', projectId).order('sort_order'),
     db
       .from('project_todos')
-      .select('id,title,list_id,priority,is_completed,do_date,assignee_id')
+      .select('id,title,list_id,is_urgent,is_completed,do_date,assignee_id')
       .eq('project_id', projectId)
       .order('sort_order')
       .limit(150),
@@ -402,7 +394,7 @@ Deno.serve(async (req) => {
     // board, not what anyone was actually given to do.
     db
       .from('tasks')
-      .select('id,title,description,frequency,priority,is_active,created_at,task_assignments(employee_id)')
+      .select('id,title,description,frequency,is_urgent,is_active,created_at,task_assignments(employee_id)')
       .eq('project_id', projectId)
       .limit(200),
     db
@@ -478,7 +470,7 @@ Deno.serve(async (req) => {
         // There is no per-assignee day any more.
         const onceOn = t.frequency?.type === 'one-off' ? t.frequency?.date : null
         const overdue = onceOn && onceOn < today
-        return `  - ${t.title} [${t.id}] — ${freqText(t.frequency)}, ${t.priority} priority`
+        return `  - ${t.title} [${t.id}] — ${freqText(t.frequency)}${t.is_urgent ? ', URGENT' : ''}`
           + `${onceOn ? `${overdue ? ' (OVERDUE)' : ''}` : ''}`
           + ` — ${statusOf(t.id, p.id)}`
       })
@@ -668,7 +660,7 @@ How to behave:
                 list_id: listId,
                 title: args.title,
                 notes: args.notes ?? '',
-                priority: toPriority(args.priority),
+                is_urgent: toUrgent(args.urgent),
                 do_date: args.do_date ?? null,
                 assignee_id: args.assignee_id ?? null,
               })
@@ -683,13 +675,13 @@ How to behave:
           case 'update_todo': {
             const patch: Record<string, unknown> = {}
             for (const [k, col] of [
-              ['title', 'title'], ['notes', 'notes'], ['priority', 'priority'],
+              ['title', 'title'], ['notes', 'notes'], ['urgent', 'is_urgent'],
               ['do_date', 'do_date'],
               ['assignee_id', 'assignee_id'],
             ] as const) {
-              // Same normalising as on insert: an edit can set priority too.
+              // Same normalising as on insert: an edit can set urgent too.
               if (args[k] !== undefined) {
-                patch[col] = col === 'priority' ? toPriority(args[k]) : args[k]
+                patch[col] = col === 'is_urgent' ? toUrgent(args[k]) : args[k]
               }
             }
             if (args.is_completed !== undefined) {
@@ -816,7 +808,7 @@ How to behave:
                 description: args.description ?? '',
                 frequency,
                 category_id: categoryId,
-                priority: toPriority(args.priority),
+                is_urgent: toUrgent(args.urgent),
                 estimated_minutes: args.estimated_minutes ?? 0,
                 created_by: user.id,
                 is_active: true,
@@ -844,13 +836,13 @@ How to behave:
           case 'update_task': {
             const patch: Record<string, unknown> = {}
             for (const [k, col] of [
-              ['title', 'title'], ['description', 'description'], ['priority', 'priority'],
+              ['title', 'title'], ['description', 'description'], ['urgent', 'is_urgent'],
               ['estimated_minutes', 'estimated_minutes'],
               ['is_active', 'is_active'],
             ] as const) {
-              // Same normalising as on insert: an edit can set priority too.
+              // Same normalising as on insert: an edit can set urgent too.
               if (args[k] !== undefined) {
-                patch[col] = col === 'priority' ? toPriority(args[k]) : args[k]
+                patch[col] = col === 'is_urgent' ? toUrgent(args[k]) : args[k]
               }
             }
             const { data, error } = await db

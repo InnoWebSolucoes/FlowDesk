@@ -9,37 +9,14 @@ import { supabase } from './supabaseClient'
  * caller's session before spending anything.
  */
 /**
- * The priorities the database accepts. `tasks.priority` and
- * `project_todos.priority` both carry a check constraint listing exactly
- * these, so anything else is refused on insert.
+ * Whether the model marked a task urgent. There are no priority levels, only
+ * urgent or not, and "not" is the default: a missing or unrecognised value
+ * must never turn a task red. Accepts the string forms a model sometimes
+ * writes a boolean as.
  */
-type Priority = 'low' | 'medium' | 'high'
-
-/**
- * What the model actually returns, mapped to what the column allows.
- *
- * The prompt asks for 'low' | 'medium' | 'high' and also asks for every title
- * and description in European Portuguese. The model generalises the second
- * instruction over the first and answers 'alta' or 'média', which the check
- * constraint rejects — an import failed with five tasks refused, every one of
- * them Portuguese. Translating here is more reliable than asking the prompt
- * again not to: the type says the field is one of three strings, but it
- * arrives from a language model and nothing has checked it until now.
- */
-const PRIORITY_WORDS: Record<string, Priority> = {
-  low: 'low', medium: 'medium', high: 'high',
-  // Portuguese, with and without the accents the model may drop.
-  baixa: 'low', baixo: 'low',
-  media: 'medium', 'média': 'medium', medio: 'medium', 'médio': 'medium',
-  alta: 'high', alto: 'high',
-  // Occasionally seen in place of the middle value.
-  normal: 'medium', urgente: 'high', urgent: 'high',
-}
-
-/** A priority the database will accept, whatever the model called it. */
-function toPriority(value: unknown): Priority {
-  if (typeof value !== 'string') return 'medium'
-  return PRIORITY_WORDS[value.trim().toLowerCase()] ?? 'medium'
+function toUrgent(t: Record<string, unknown>): boolean {
+  const v = t.urgent ?? t.isUrgent
+  return v === true || (typeof v === 'string' && ['true', 'sim', 'yes'].includes(v.trim().toLowerCase()))
 }
 
 export async function generateTasks(
@@ -89,10 +66,12 @@ export async function generateTasks(
   if (data?.error) throw new Error(data.error)
   if (!Array.isArray(data?.tasks)) throw new Error('The assistant returned an unexpected response.')
 
-  // Normalise before returning, so nothing downstream has to know the model
-  // answers in whatever language the rest of the brief was written in.
-  return data.tasks.map((t: Record<string, unknown>) => ({
-    ...t,
-    priority: toPriority(t.priority),
-  }))
+  // Normalise before returning, so nothing downstream has to know what shape
+  // the model chose for a yes/no. An old `priority` is dropped: it means nothing now.
+  return data.tasks.map((raw: Record<string, unknown>) => {
+    const t: Record<string, unknown> = { ...raw, isUrgent: toUrgent(raw) }
+    delete t.priority
+    delete t.urgent
+    return t
+  })
 }

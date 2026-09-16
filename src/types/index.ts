@@ -202,7 +202,8 @@ export interface ProjectTodo {
   listId: string | null
   title: string
   notes: string
-  priority: Priority
+  /** Highlighted and kept at the top. There are no other levels. */
+  isUrgent: boolean
   isCompleted: boolean
   completedAt: string | null
   /**
@@ -270,8 +271,6 @@ export interface TaskFrequency {
   date?: string // ISO date string — for one-off
 }
 
-export type Priority = 'low' | 'medium' | 'high'
-
 export interface Category {
   id: string
   name: string
@@ -294,7 +293,8 @@ export interface Task {
    */
   frequency: TaskFrequency
   categoryId: string
-  priority: Priority
+  /** Highlighted and kept at the top. There are no other levels. */
+  isUrgent: boolean
   associatedTool?: string
   estimatedMinutes: number
   createdAt: string

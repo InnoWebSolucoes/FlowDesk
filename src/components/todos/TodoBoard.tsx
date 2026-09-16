@@ -7,7 +7,9 @@ import {
   FolderOpen, CalendarClock, Pencil, Check, Copy, Clock,
 } from 'lucide-react'
 import { isBefore, parseISO, startOfToday } from 'date-fns'
-import { Project, ProjectTodo, Priority } from '../../types'
+import { Project, ProjectTodo } from '../../types'
+import { UrgentToggle } from '../shared/Urgent'
+import { urgentFirst, URGENT_CLASS } from '../../lib/urgent'
 import { useProjectStore } from '../../store/projectStore'
 import { EmptyState } from '../shared/EmptyState'
 import { FileKindIcon } from '../resources/ResourceThumbnail'
@@ -37,15 +39,7 @@ interface TodoBoardProps {
   emptyDescription?: string
 }
 
-const PRIORITY_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 }
-
-const PRIORITY_STYLES: Record<Priority, string> = {
-  high: 'bg-danger-bg text-danger',
-  medium: 'bg-warning-bg text-warning',
-  low: 'bg-surface-2 text-text-muted',
-}
-
-type SortMode = 'manual' | 'priority' | 'doDate'
+type SortMode = 'manual' | 'doDate'
 
 /**
  * The tabbed to-do list. One component serves the managers' shared board and
@@ -73,7 +67,7 @@ export function TodoBoard({
   // clears the whole draft after adding.
   const emptyDraft = {
     notes: '',
-    priority: 'medium' as Priority,
+    isUrgent: false,
     doDate: '',
     links: [] as { itemId?: string; clusterId?: string }[],
   }
@@ -111,7 +105,7 @@ export function TodoBoard({
   const boardKey = `${project.id}:${ownerId ?? 'shared'}`
 
   // The managers' shared board works differently from an employee's list:
-  // no priority and no date on it, and a todo can be waiting on somebody
+  // no date on it, and a todo can be waiting on somebody
   // else between open and done.
   const adminBoard = ownerId === null
   // Right-click on a checkbox: pick the state outright.
@@ -150,7 +144,8 @@ export function TodoBoard({
     [todos, project.id, currentListId]
   )
 
-  const openTodos = useMemo(() => {
+  // Urgent todos always lead, whatever the order below them.
+  const openTodos = useMemo(() => urgentFirst((() => {
     const list = listTodos.filter((t) => !t.isCompleted)
     // Managers' board: waiting todos sink below everything still to do, the
     // one most recently marked waiting at the top of that group. What needs
@@ -162,9 +157,6 @@ export function TodoBoard({
         .sort((a, b) => (b.waitingSince ?? '').localeCompare(a.waitingSince ?? ''))
       return [...doing, ...waiting]
     }
-    if (!adminBoard && sortMode === 'priority') {
-      return [...list].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || a.sortOrder - b.sortOrder)
-    }
     if (!adminBoard && sortMode === 'doDate') {
       return [...list].sort((a, b) => {
         if (!a.doDate && !b.doDate) return a.sortOrder - b.sortOrder
@@ -175,7 +167,7 @@ export function TodoBoard({
     }
 
     return [...list].sort((a, b) => a.sortOrder - b.sortOrder)
-  }, [listTodos, sortMode, adminBoard])
+  })()), [listTodos, sortMode, adminBoard])
 
   const completedTodos = useMemo(
     () => listTodos.filter((t) => t.isCompleted).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
@@ -209,7 +201,7 @@ export function TodoBoard({
   // details even while collapsed.
   const hasDraft =
     draft.notes.trim() !== '' ||
-    draft.priority !== 'medium' ||
+    draft.isUrgent ||
     draft.doDate !== '' ||
     draft.links.length > 0
 
@@ -225,7 +217,7 @@ export function TodoBoard({
           title,
           listId: currentListId,
           notes: details.notes,
-          priority: details.priority,
+          isUrgent: details.isUrgent,
           doDate: details.doDate || null,
         },
         ownerId,
@@ -308,7 +300,11 @@ export function TodoBoard({
     return (
       <div
         ref={highlight.isHighlighted(todo.id) ? highlight.ref : undefined}
-        className={`group bg-surface border border-border rounded-xl px-3 py-2.5 ${
+        className={`group border rounded-xl px-3 py-2.5 ${
+          todo.isUrgent && !todo.isCompleted
+            ? `${URGENT_CLASS} border-l-4 border-l-danger`
+            : 'bg-surface border-border'
+        } ${
           todo.isCompleted ? 'opacity-60' : ''
         } ${highlight.isHighlighted(todo.id) ? HIGHLIGHT_CLASS : ''}`}
       >
@@ -413,6 +409,15 @@ export function TodoBoard({
               </button>
             )}
 
+            {!todo.isCompleted && (canEdit || todo.isUrgent) && (
+              <UrgentToggle
+                compact
+                urgent={todo.isUrgent}
+                disabled={!canEdit}
+                onChange={(v) => updateTodo(todo.id, { isUrgent: v })}
+              />
+            )}
+
             {!adminBoard && (
               <>
             {/* The do date, and the only date. It is what the calendar shows
@@ -441,18 +446,6 @@ export function TodoBoard({
                 }`}
               />
             </label>
-
-            <select
-              value={todo.priority}
-              onChange={(e) => updateTodo(todo.id, { priority: e.target.value as Priority })}
-              disabled={!canEdit}
-              className={`text-[11px] font-medium px-1.5 py-1 rounded-md border-0 cursor-pointer ${PRIORITY_STYLES[todo.priority]}`}
-              title={t('todo_priority')}
-            >
-              <option value="high">{t('ui_high')}</option>
-              <option value="medium">{t('todo_med')}</option>
-              <option value="low">{t('ui_low')}</option>
-            </select>
 
               </>
             )}
@@ -733,19 +726,6 @@ export function TodoBoard({
             {!adminBoard && (
             <div className="flex flex-wrap gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] text-text-subtle">{t('todo_priority')}</span>
-                <select
-                  value={draft.priority}
-                  onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value as Priority }))}
-                  className="px-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-main focus:outline-none focus:border-primary"
-                >
-                  <option value="low">{t('ui_low')}</option>
-                  <option value="medium">{t('ui_medium')}</option>
-                  <option value="high">{t('ui_high')}</option>
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1">
                 <span className="text-[11px] text-text-subtle">{t('todo_doDate')}</span>
                 <input
                   type="date"
@@ -759,6 +739,7 @@ export function TodoBoard({
             )}
 
             <div className="flex items-center gap-2 flex-wrap">
+              <UrgentToggle urgent={draft.isUrgent} onChange={(v) => setDraft((d) => ({ ...d, isUrgent: v }))} />
               <button
                 onClick={() => setDraftLinking(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface border border-border text-xs text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
@@ -798,7 +779,7 @@ export function TodoBoard({
           {adminBoard ? <span /> : (
           <div className="flex items-center gap-1.5">
             <span className="text-text-subtle">{t('todo_sort')}</span>
-            {(['manual', 'priority', 'doDate'] as SortMode[]).map((mode) => (
+            {(['manual', 'doDate'] as SortMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setSortMode(mode)}
@@ -806,7 +787,7 @@ export function TodoBoard({
                   sortMode === mode ? 'bg-primary text-white' : 'text-text-muted hover:bg-surface-2'
                 }`}
               >
-                {mode === 'manual' ? 'Manual' : mode === 'priority' ? 'Priority' : mode === 'doDate' ? 'Do date' : 'Deadline'}
+                {mode === 'manual' ? 'Manual' : 'Do date'}
               </button>
             ))}
           </div>

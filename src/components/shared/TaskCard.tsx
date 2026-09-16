@@ -7,6 +7,8 @@ import { useChatStore } from '../../store/chatStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
 import { useT } from '../../i18n/useT'
+import { UrgentBadge } from './Urgent'
+import { URGENT_CLASS } from '../../lib/urgent'
 import { differenceInDays, format, parseISO } from 'date-fns'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import { TaskFiles } from './TaskFiles'
@@ -72,12 +74,6 @@ function elapsed(fromIso: string, nowMs: number): string {
   const days = Math.floor(hours / 24)
   const restH = hours % 24
   return restH === 0 ? `${days}d` : `${days}d ${restH}h`
-}
-
-const priorityColors: Record<string, string> = {
-  high: '#7A2020',
-  medium: '#7A4A0A',
-  low: '#1A5C3A',
 }
 
 function DeadlineBadge({ task }: { task: Task }) {
@@ -272,7 +268,9 @@ export function TaskCard({
       className={`p-3 rounded-lg border transition-all duration-200 ${
         isCompleted
           ? 'bg-surface-2/50 border-border opacity-70'
-          : 'bg-surface border-border hover:border-border-md hover:shadow-sm'
+          : task.isUrgent
+            ? `${URGENT_CLASS} border-l-4 border-l-danger hover:shadow-sm`
+            : 'bg-surface border-border hover:border-border-md hover:shadow-sm'
       } ${highlighted ? HIGHLIGHT_CLASS : ''}`}
     >
       <div className="flex items-start gap-3">
@@ -285,11 +283,7 @@ export function TaskCard({
             >
               {task.title}
             </span>
-            <span
-              className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ backgroundColor: priorityColors[task.priority] }}
-              title={task.priority}
-            />
+            <UrgentBadge urgent={task.isUrgent && !isCompleted} />
             {isInProgress && !isCompleted && (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber/10 text-amber flex-shrink-0">
                 {t('status_inProgress')}

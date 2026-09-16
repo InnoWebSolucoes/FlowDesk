@@ -12,7 +12,7 @@ import { useT } from '../../i18n/useT'
  *
  * The form itself is the task manager's, not a copy of it: a manager editing
  * from somebody's day should get the fields they already know — title,
- * description, category, priority, estimate, who it is for, how often, which
+ * description, category, urgent, estimate, who it is for, how often, which
  * day — rather than a cut-down editor that quietly drifts from the real one.
  * This only supplies the shell, the save and the delete.
  *
