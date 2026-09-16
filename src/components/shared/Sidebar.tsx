@@ -453,9 +453,13 @@ export function Sidebar() {
         />
       )}
 
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar. Lifted above the page: sticky makes it a layer of
+          its own, and without a z-index anything positioned in the page (the
+          calendar's blocks) painted over the notification panel that opens
+          out of it. Page dialogs sit at z-40 and above and come later in the
+          document, so they still cover it. */}
       <aside
-        className={`hidden md:flex flex-col bg-surface border-r border-border flex-shrink-0 h-screen sticky top-0 transition-[width] duration-200 ${
+        className={`hidden md:flex flex-col bg-surface border-r border-border flex-shrink-0 h-screen sticky top-0 z-40 transition-[width] duration-200 ${
           collapsed ? 'w-16' : 'w-60'
         }`}
       >
