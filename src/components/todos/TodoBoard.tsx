@@ -216,18 +216,28 @@ export function TodoBoard({
     [todos, project.id, currentListId]
   )
 
-  // A todo just marked waiting stays put for a moment before it sinks, so
-  // there is time to click it again and make it done instead of chasing it
-  // down the list. `settleAt` is bumped when the grace period ends, which
-  // re-runs the sort with the todo now counted as waiting.
+  // A todo just marked waiting stays put for a moment before it sinks, and
+  // one just marked done stays in the open list for a moment before it
+  // drops into the completed section — so there is time to click it again
+  // and change your mind instead of chasing it down the page. `settleAt`
+  // is bumped when a grace period ends, which re-runs the split.
   const SINK_GRACE_MS = 1500
   const [settleAt, setSettleAt] = useState(0)
+  const justDone = (t: ProjectTodo, now = Date.now()) =>
+    t.isCompleted && !!t.completedAt && new Date(t.completedAt).getTime() > now - SINK_GRACE_MS
+  // Marking done clears "waiting", so a todo finished from the waiting group
+  // would leap back to the top while it lingers. This remembers which ones
+  // were waiting, so they linger where they were clicked.
+  const wasWaiting = useRef(new Set<string>())
   useEffect(() => {
-    if (!adminBoard) return
     const now = Date.now()
     const fresh = listTodos
-      .filter((t) => !t.isCompleted && t.waitingSince)
-      .map((t) => new Date(t.waitingSince!).getTime() + SINK_GRACE_MS - now)
+      .flatMap((t) => [
+        adminBoard && !t.isCompleted && t.waitingSince ? new Date(t.waitingSince).getTime() : null,
+        t.isCompleted && t.completedAt ? new Date(t.completedAt).getTime() : null,
+      ])
+      .filter((at): at is number => at !== null)
+      .map((at) => at + SINK_GRACE_MS - now)
       .filter((ms) => ms > 0)
     if (fresh.length === 0) return
     const id = setTimeout(() => setSettleAt(Date.now()), Math.max(...fresh) + 20)
@@ -236,13 +246,19 @@ export function TodoBoard({
 
   // Urgent todos always lead, whatever the order below them.
   const openTodos = useMemo(() => urgentFirst((() => {
-    const list = listTodos.filter((t) => !t.isCompleted)
+    const now = Date.now()
+    const list = listTodos.filter((t) => !t.isCompleted || justDone(t, now))
     // Managers' board: waiting todos sink below everything still to do, the
     // one most recently marked waiting at the top of that group. What needs
     // doing stays at the top; what is with somebody else collects under it.
     if (adminBoard) {
-      const cutoff = Date.now() - SINK_GRACE_MS
-      const sunk = (t: ProjectTodo) => !!t.waitingSince && new Date(t.waitingSince).getTime() < cutoff
+      const cutoff = now - SINK_GRACE_MS
+      for (const t of list) {
+        if (t.waitingSince) wasWaiting.current.add(t.id)
+        else if (!t.isCompleted) wasWaiting.current.delete(t.id)
+      }
+      const sunk = (t: ProjectTodo) =>
+        t.isCompleted ? wasWaiting.current.has(t.id) : !!t.waitingSince && new Date(t.waitingSince).getTime() < cutoff
       const doing = list.filter((t) => !sunk(t)).sort((a, b) => a.sortOrder - b.sortOrder)
       const waiting = list
         .filter(sunk)
@@ -278,8 +294,9 @@ export function TodoBoard({
   }, [openTodos, dragOrder])
 
   const completedTodos = useMemo(
-    () => listTodos.filter((t) => t.isCompleted).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
-    [listTodos]
+    () => listTodos.filter((t) => t.isCompleted && !justDone(t)).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [listTodos, settleAt]
   )
 
   const openCountFor = (listId: string) =>
