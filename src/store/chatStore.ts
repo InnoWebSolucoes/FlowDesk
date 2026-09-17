@@ -40,6 +40,8 @@ interface ChatState {
   loadMessages: (conversationId: string) => Promise<void>
   sendMessage: (conversationId: string, body: string, itemIds: string[]) => Promise<void>
   deleteMessage: (messageId: string, conversationId: string) => Promise<void>
+  /** Change the words of your own message. Allowed for 15 minutes after sending. */
+  editMessage: (messageId: string, conversationId: string, body: string) => Promise<void>
   /** Hides every message in the room. The record survives for managers. */
   /** Soft-delete every message, for everybody. Managers only. */
   clearConversation: (conversationId: string) => Promise<void>
@@ -347,7 +349,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             for (const room of Object.keys(s.messages)) {
               next[room] = s.messages[room].map((m) =>
                 m.id === row.id
-                  ? { ...m, body: row.body ?? m.body, deletedAt: row.deleted_at ?? null }
+                  ? { ...m, body: row.body ?? m.body, deletedAt: row.deleted_at ?? null, editedAt: row.edited_at ?? m.editedAt }
                   : m,
               )
             }
@@ -420,6 +422,30 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     // Sending is reading: your own message must not leave the room unread.
     await get().markRead(conversationId)
+  },
+
+  editMessage: async (messageId, conversationId, body) => {
+    const trimmed = body.trim()
+    if (!trimmed) return
+    const editedAt = new Date().toISOString()
+    const { error } = await supabase
+      .from('chat_messages')
+      .update({ body: trimmed, edited_at: editedAt })
+      .eq('id', messageId)
+
+    if (error) {
+      console.error('[chat] edit failed:', error.message)
+      set({ error: error.message })
+      return
+    }
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [conversationId]: (s.messages[conversationId] ?? []).map((m) =>
+          m.id === messageId ? { ...m, body: trimmed, editedAt } : m,
+        ),
+      },
+    }))
   },
 
   deleteMessage: async (messageId, conversationId) => {

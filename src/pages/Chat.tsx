@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Send, Paperclip, Search, MessageSquare, CheckSquare, Trash2, Download, CheckCircle2,
+  Send, Paperclip, Search, MessageSquare, CheckSquare, Trash2, Download, CheckCircle2, Pencil, Check,
   FolderOpen, X, Link2, ArrowRight, ArrowLeft,
 } from 'lucide-react'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
@@ -11,7 +11,7 @@ import { useTaskStore } from '../store/taskStore'
 import { useProjectStore } from '../store/projectStore'
 import { ResourceLinkPicker, LinkKey } from '../components/shared/ResourceLinkPicker'
 import { FileKindIcon, formatFileSize } from '../components/resources/ResourceThumbnail'
-import { Conversation, ResourceItem } from '../types'
+import { ChatMessage, Conversation, ResourceItem } from '../types'
 import { withHighlight } from '../lib/highlight'
 import { useT } from '../i18n/useT'
 import { Avatar } from '../components/shared/Avatar'
@@ -44,7 +44,7 @@ export function Chat() {
   const { currentUser } = useAuthStore()
   const { allTasks } = useTaskStore()
   const {
-    conversations, messages, loadMessages, sendMessage, deleteMessage, clearConversation, setResolved,
+    conversations, messages, loadMessages, sendMessage, deleteMessage, editMessage, clearConversation, setResolved,
     clearForMe, clearedAt,
     openDirect, openTaskRoom, ensureCluster, markRead, unreadCount, loadedRooms,
     people, error, clearError,
@@ -65,6 +65,35 @@ export function Chat() {
   // the next message.
   const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null)
   const [pendingItems, setPendingItems] = useState<ResourceItem[]>([])
+  // A message of yours being rewritten, and the words so far.
+  const [editing, setEditing] = useState<{ id: string; body: string } | null>(null)
+  // Re-read the clock every 30s, so the pencil goes away when the window closes.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+  const EDIT_WINDOW_MS = 15 * 60_000
+  const canEdit = (m: ChatMessage) =>
+    m.authorId === me && !m.deletedAt && now - new Date(m.createdAt).getTime() < EDIT_WINDOW_MS
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  // The box grows with what is typed, up to a good share of the window,
+  // then scrolls inside itself — like every other chat. It was one line.
+  useEffect(() => {
+    const el = composerRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
+  }, [draft])
+
+  const saveEdit = async () => {
+    if (!editing || !active) return
+    const body = editing.body.trim()
+    const original = roomMessages.find((m) => m.id === editing.id)
+    setEditing(null)
+    if (!body || !original || body === original.body) return
+    await editMessage(editing.id, active.id, body)
+  }
   const [uploading, setUploading] = useState(false)
   const [picking, setPicking] = useState(false)
   const [sending, setSending] = useState(false)
@@ -648,12 +677,35 @@ export function Chat() {
                               {mine ? t('chat_you') : nameOf(m.authorId)} · {format(parseISO(m.createdAt), 'HH:mm')}
                             </span>
                           )}
+                          {editing?.id === m.id && (
+                            <div className="w-full min-w-[16rem]">
+                              <textarea
+                                autoFocus
+                                value={editing.body}
+                                onChange={(e) => setEditing({ id: m.id, body: e.target.value })}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit() }
+                                  if (e.key === 'Escape') setEditing(null)
+                                }}
+                                rows={Math.min(8, Math.max(2, editing.body.split('\n').length))}
+                                className="w-full bg-surface border border-primary rounded-xl px-3 py-2 text-sm text-text-main resize-none outline-none"
+                              />
+                              <div className="flex items-center gap-1.5 mt-1 justify-end">
+                                <button onClick={() => setEditing(null)} className="text-xs text-text-muted px-2 py-1 rounded-md hover:bg-surface-2">
+                                  {t('ui_cancel')}
+                                </button>
+                                <button onClick={saveEdit} className="flex items-center gap-1 text-xs text-white bg-primary px-2.5 py-1 rounded-md hover:bg-primary-dark">
+                                  <Check size={12} /> {t('chat_saveEdit')}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           <div
                             className={`rounded-2xl px-3.5 py-2 ${
                               mine
                                 ? 'bg-primary text-white rounded-br-md'
                                 : 'bg-surface border border-border text-text-main rounded-bl-md'
-                            } ${m.deletedAt ? 'opacity-50' : ''}`}
+                            } ${m.deletedAt ? 'opacity-50' : ''} ${editing?.id === m.id ? 'hidden' : ''}`}
                           >
                             {m.body && (
                               <p className="text-sm whitespace-pre-wrap break-words">
@@ -673,6 +725,11 @@ export function Chat() {
                             {m.deletedAt && (
                               <p className={`text-[10px] italic mt-1 ${mine ? 'text-white/70' : 'text-text-subtle'}`}>
                                 {t('chat_deletedNote')}
+                              </p>
+                            )}
+                            {m.editedAt && !m.deletedAt && (
+                              <p className={`text-[10px] italic mt-1 ${mine ? 'text-white/70' : 'text-text-subtle'}`}>
+                                {t('chat_editedNote')} {format(parseISO(m.editedAt), 'HH:mm')}
                               </p>
                             )}
 
@@ -710,14 +767,26 @@ export function Chat() {
                             )}
                           </div>
 
-                          {(mine || isAdmin) && (
-                            <button
-                              onClick={() => deleteMessage(m.id, active.id)}
-                              className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-danger transition-all mt-0.5 px-1"
-                              title={t('chat_delete')}
-                            >
-                              <Trash2 size={11} />
-                            </button>
+                          {(mine || isAdmin) && editing?.id !== m.id && (
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all mt-0.5">
+                              {/* Your own words, for 15 minutes after sending. */}
+                              {canEdit(m) && (
+                                <button
+                                  onClick={() => setEditing({ id: m.id, body: m.body })}
+                                  className="text-text-subtle hover:text-primary px-1"
+                                  title={t('chat_edit')}
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => deleteMessage(m.id, active.id)}
+                                className="text-text-subtle hover:text-danger px-1"
+                                title={t('chat_delete')}
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -789,11 +858,12 @@ export function Chat() {
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFiles} />
 
                 <textarea
+                  ref={composerRef}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   placeholder={t('chat_messagePlaceholder')}
                   rows={1}
-                  className="flex-1 bg-surface-2 border border-border rounded-xl px-3.5 py-2.5 text-sm text-text-main placeholder-text-subtle resize-none outline-none focus:border-primary max-h-32"
+                  className="flex-1 bg-surface-2 border border-border rounded-xl px-3.5 py-2.5 text-sm text-text-main placeholder-text-subtle resize-none outline-none focus:border-primary overflow-y-auto"
                   onKeyDown={(e) => {
                     // Enter sends, Shift+Enter breaks the line — what every
                     // messaging app does, and what fingers expect here.
