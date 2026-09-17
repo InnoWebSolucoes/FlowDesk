@@ -5,6 +5,7 @@ import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import {
   ListTodo, Plus, Trash2, Link2, ChevronUp, ChevronDown, Circle, CheckCircle2,
   FolderOpen, CalendarClock, Pencil, Check, Copy, Clock,
+  GripVertical,
 } from 'lucide-react'
 import { isBefore, parseISO, startOfToday } from 'date-fns'
 import { Project, ProjectTodo } from '../../types'
@@ -65,9 +66,44 @@ export function TodoBoard({
 
   // One click: waiting. Two: done. Shared with the calendar.
   const tickTodo = useTodoTick()
-  // A todo being dragged over the list tabs, to drop it on another list.
-  const [dragTodoId, setDragTodoId] = useState<string | null>(null)
+  // A todo being carried to another list's tab. Pointer-driven, the way the
+  // calendar moves things: the browser's own drag-and-drop did not start
+  // reliably from these rows, so the pointer is followed by hand and the
+  // tab under it on release is where the todo goes.
+  const [dragTodo, setDragTodo] = useState<{ id: string; title: string } | null>(null)
+  const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null)
   const [dropListId, setDropListId] = useState<string | null>(null)
+
+  const tabAt = (x: number, y: number): string | null => {
+    const el = document.elementFromPoint(x, y)?.closest('[data-list-tab]') as HTMLElement | null
+    return el?.dataset.listTab ?? null
+  }
+
+  useEffect(() => {
+    if (!dragTodo) return
+    const onMove = (e: PointerEvent) => {
+      setDragPoint({ x: e.clientX, y: e.clientY })
+      setDropListId(tabAt(e.clientX, e.clientY))
+    }
+    const onUp = (e: PointerEvent) => {
+      const target = tabAt(e.clientX, e.clientY)
+      const id = dragTodo.id
+      setDragTodo(null)
+      setDragPoint(null)
+      setDropListId(null)
+      if (target && target !== currentListId) moveTodoToList(id, target)
+    }
+    const previousSelect = document.body.style.userSelect
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      document.body.style.userSelect = previousSelect
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragTodo])
 
   const [newTitle, setNewTitle] = useState('')
   // Details filled in before the todo exists. Kept together so one reset
@@ -328,15 +364,7 @@ export function TodoBoard({
     return (
       <div
         ref={highlight.isHighlighted(todo.id) ? highlight.ref : undefined}
-        // Picked up and dropped on another list's tab to move it there.
-        draggable={canEdit && !isEditing}
-        onDragStart={(e) => {
-          e.dataTransfer.effectAllowed = 'move'
-          e.dataTransfer.setData('text/plain', todo.id)
-          setDragTodoId(todo.id)
-        }}
-        onDragEnd={() => { setDragTodoId(null); setDropListId(null) }}
-        className={`group border rounded-xl px-3 py-2.5 ${dragTodoId === todo.id ? 'opacity-40' : ''} ${
+        className={`group border rounded-xl px-3 py-2.5 ${dragTodo?.id === todo.id ? 'opacity-40' : ''} ${
           todo.isUrgent && !todo.isCompleted
             ? `${URGENT_CLASS} border-l-4 border-l-danger`
             : 'bg-surface border-border'
@@ -347,6 +375,21 @@ export function TodoBoard({
         {/* Checkbox · title · metadata · actions. The metadata wraps under the
             title when the row runs out of width, rather than crushing it. */}
         <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+          {/* Hold this and carry the row onto another list's tab to move it. */}
+          {canEdit && lists.length > 1 && (
+            <button
+              onPointerDown={(e) => {
+                if (e.button !== 0) return
+                e.preventDefault()
+                setDragTodo({ id: todo.id, title: todo.title })
+                setDragPoint({ x: e.clientX, y: e.clientY })
+              }}
+              title={t('todo_dragToList')}
+              className="flex-shrink-0 text-text-subtle hover:text-text-main cursor-grab active:cursor-grabbing -ml-1"
+            >
+              <GripVertical size={14} />
+            </button>
+          )}
           <button
             onClick={() => canEdit && tickTodo(todo.id)}
             onContextMenu={(e) => {
@@ -570,34 +613,19 @@ export function TodoBoard({
             )
           }
 
-          const canDrop = !!dragTodoId && list.id !== currentListId
+          const canDrop = !!dragTodo && list.id !== currentListId
           return (
             <div
               key={list.id}
+              data-list-tab={list.id}
               onContextMenu={(e) => {
                 if (!canEdit) return
                 e.preventDefault()
                 setListMenu({ listId: list.id, x: e.clientX, y: e.clientY })
               }}
-              // A todo dragged from the rows below lands in this list.
-              onDragOver={(e) => {
-                if (!canDrop) return
-                e.preventDefault()
-                e.dataTransfer.dropEffect = 'move'
-                if (dropListId !== list.id) setDropListId(list.id)
-              }}
-              onDragLeave={() => { if (dropListId === list.id) setDropListId(null) }}
-              onDrop={(e) => {
-                if (!canDrop) return
-                e.preventDefault()
-                const id = e.dataTransfer.getData('text/plain') || dragTodoId
-                setDragTodoId(null)
-                setDropListId(null)
-                if (id) moveTodoToList(id, list.id)
-              }}
               className={`flex items-center gap-1.5 px-3 py-2 border-b-2 -mb-px flex-shrink-0 rounded-t-lg transition-colors ${
                 isActive ? 'border-primary' : 'border-transparent'
-              } ${dropListId === list.id ? 'bg-primary-light ring-2 ring-primary/40' : canDrop ? 'bg-surface-2/60' : ''}`}
+              } ${canDrop && dropListId === list.id ? 'bg-primary-light ring-2 ring-primary/40' : canDrop ? 'bg-surface-2/60' : ''}`}
             >
               <button
                 onClick={() => selectList(list.id)}
@@ -624,6 +652,17 @@ export function TodoBoard({
             <Plus size={14} />{t('todo_list')}</button>
         )}
       </div>
+
+      {/* The carried todo follows the pointer, so it is clear what is being
+          moved and which tab it is over. */}
+      {dragTodo && dragPoint && (
+        <div
+          className="fixed z-50 pointer-events-none px-2 py-1 rounded-md text-xs font-medium shadow-lg bg-primary text-white max-w-[220px] truncate"
+          style={{ left: dragPoint.x + 12, top: dragPoint.y + 12 }}
+        >
+          {dragTodo.title}
+        </div>
+      )}
 
       {/* Right-click menu on a list tab */}
       {listMenu && (() => {

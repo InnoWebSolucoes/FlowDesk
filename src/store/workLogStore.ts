@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import { WorkLogEntry } from '../types'
+import { useAuthStore } from './authStore'
 
 function toEntry(row: any): WorkLogEntry {
   return {
@@ -74,8 +75,10 @@ export const useWorkLogStore = create<WorkLogState>()((set, get) => ({
   },
 
   add: async ({ projectId, title, description, minutes, workedOn, itemIds, links }) => {
-    const { data: auth } = await supabase.auth.getUser()
-    const uid = auth.user?.id
+    // Whoever the app is acting as. Viewing an employee's side as them, that
+    // is the employee: the entry is theirs, and saving it under the real
+    // account put it on a list nobody was looking at.
+    const uid = useAuthStore.getState().currentUser?.id
     if (!uid) throw new Error('You are not signed in.')
 
     const { data, error } = await supabase
