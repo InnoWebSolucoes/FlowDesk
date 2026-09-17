@@ -78,6 +78,13 @@ interface Block {
   ownWork?: boolean
   /** Marked urgent: ringed in red, flagged, and first in its day. */
   urgent?: boolean
+  /**
+   * The day this work was planned for, which it has since left: it was
+   * not done, so it moved on to today. Drawn faded and dashed, so the day
+   * still shows what was meant to happen on it. Not draggable or tickable;
+   * the real block is on today.
+   */
+  ghost?: boolean
 }
 
 interface CalendarBoardProps {
@@ -223,22 +230,32 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   // Every task occurrence on screen, placed on its day by the same rule My
   // Tasks uses, so a task is never on one day here and another day there.
   const occurrencesByDay = useMemo(() => {
-    const map = new Map<string, { occ: TaskOccurrence; employeeId: string }[]>()
+    const map = new Map<string, { occ: TaskOccurrence; employeeId: string; ghost?: boolean }[]>()
     if (days.length === 0) return map
     const owners = canOverlay ? [...overlaid] : ownerId ? [ownerId] : []
     // The rule needs statuses: missed stops a task moving on, and started
     // shows as under way wherever it has moved to.
     const statusRows = statusRowsFrom(taskStatuses, taskStartedAt)
-    const range = {
-      from: dayKey(days[0]),
-      to: dayKey(days[days.length - 1]),
-      today: dayKey(new Date()),
-    }
+    const today = dayKey(new Date())
+    const first = dayKey(days[0])
+    const last = dayKey(days[days.length - 1])
+    // Generated out to today even when today is off screen: work that left a
+    // day on screen for today is still drawn on that day, as a ghost.
+    const range = { from: first, to: last > today ? last : today, today }
     for (const emp of owners) {
       for (const occ of taskOccurrences(tasks, emp, completionLogs, range, statusRows, 365, taskMoves)) {
-        const list = map.get(occ.showOn) ?? []
-        list.push({ occ, employeeId: emp })
-        map.set(occ.showOn, list)
+        if (occ.showOn >= first && occ.showOn <= last) {
+          const list = map.get(occ.showOn) ?? []
+          list.push({ occ, employeeId: emp })
+          map.set(occ.showOn, list)
+        }
+        // Where it was meant to be, when it has moved on from there.
+        const home = occ.movedTo ?? occ.date
+        if (occ.carried && home !== occ.showOn && home >= first && home <= last) {
+          const list = map.get(home) ?? []
+          list.push({ occ, employeeId: emp, ghost: true })
+          map.set(home, list)
+        }
       }
     }
     return map
@@ -298,10 +315,11 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       // day until that day is over, then carried forward a day at a time until
       // it is done, then left on the day it was done.
       {
-        for (const { occ, employeeId: empIdForCal } of occurrencesByDay.get(day) ?? []) {
+        for (const { occ, employeeId: empIdForCal, ghost } of occurrencesByDay.get(day) ?? []) {
           const who = employees.find((e) => e.id === empIdForCal)
           blocks.push({
-            key: `task-${occ.task.id}-${empIdForCal}-${occ.date}`,
+            key: `task-${occ.task.id}-${empIdForCal}-${occ.date}${ghost ? '-ghost' : ''}`,
+            ghost,
             label: occ.task.title,
             color: personColor(empIdForCal),
             task: occ.task,
@@ -1056,7 +1074,7 @@ function DayGrid({
                     // Todos and time blocks are dragged by whoever owns the
                     // board. An assigned task is dragged only by the owner:
                     // one day of it moves, and the schedule stays.
-                    readOnly
+                    readOnly || b.ghost
                       ? undefined
                       : b.todo
                         ? () => onDragTodo(b.todo!)
@@ -1067,7 +1085,7 @@ function DayGrid({
                             : undefined
                   }
                   onToggleDone={
-                    readOnly
+                    readOnly || b.ghost
                       ? undefined
                       : b.todo
                         ? () => onToggleDone(b.todo!.id)
@@ -1078,7 +1096,7 @@ function DayGrid({
                   onContext={
                     // A task's menu edits the task itself, which only the
                     // owner does; for anyone else a task block has no menu.
-                    readOnly || (b.task && !canManageTasks)
+                    readOnly || b.ghost || (b.task && !canManageTasks)
                       ? undefined
                       : (x, y) => onBlockContext(x, y, {
                           todoId: b.todo?.id,
@@ -1215,7 +1233,7 @@ function MonthGrid({
                     // Todos and time blocks are dragged by whoever owns the
                     // board. An assigned task is dragged only by the owner:
                     // one day of it moves, and the schedule stays.
-                    readOnly
+                    readOnly || b.ghost
                       ? undefined
                       : b.todo
                         ? () => onDragTodo(b.todo!)
@@ -1226,7 +1244,7 @@ function MonthGrid({
                             : undefined
                   }
                   onToggleDone={
-                    readOnly
+                    readOnly || b.ghost
                       ? undefined
                       : b.todo
                         ? () => onToggleDone(b.todo!.id)
@@ -1237,7 +1255,7 @@ function MonthGrid({
                   onContext={
                     // A task's menu edits the task itself, which only the
                     // owner does; for anyone else a task block has no menu.
-                    readOnly || (b.task && !canManageTasks)
+                    readOnly || b.ghost || (b.task && !canManageTasks)
                       ? undefined
                       : (x, y) => onBlockContext(x, y, {
                           todoId: b.todo?.id,
@@ -1335,8 +1353,8 @@ function BlockChip({
       } ${
         // Urgent and still to do: a red ring outside the person's colour, so
         // it stands out without losing whose it is.
-        block.urgent && !(block.todo?.isCompleted || block.done) ? 'ring-2 ring-danger ring-offset-1' : ''
-      }`}
+        block.urgent && !(block.todo?.isCompleted || block.done) && !block.ghost ? 'ring-2 ring-danger ring-offset-1' : ''
+      } ${block.ghost ? 'opacity-40' : ''}`}
       style={
         block.ownWork
           ? // Their own todo: outlined in their colour on white, at full
@@ -1348,6 +1366,14 @@ function BlockChip({
               color: block.color,
               backgroundColor: '#FFFFFF',
             }
+          : block.ghost
+            ? // Where it was planned: the person's colour as a dashed outline
+              // on nothing, since the work itself is on today now.
+              {
+                border: `2px dashed ${block.color}`,
+                color: block.color,
+                backgroundColor: 'transparent',
+              }
           : // Scheduled work, in the person's colour exactly as it is — no
             // mix into white. Diluting it made every block a pale wash and
             // two people's work hard to tell apart at a glance. White text
@@ -1397,6 +1423,7 @@ function BlockChip({
             )}
             {block.missed && <span className="font-semibold">{t('taskcard_missed')} · </span>}
             {block.label}
+            {block.ghost && <span className="font-semibold"> → {t('ui_today').toLowerCase()}</span>}
           </span>
           {/* Whose it is, when the team's calendars are overlaid on yours. */}
           {block.ownerName && (

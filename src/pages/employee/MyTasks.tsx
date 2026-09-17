@@ -521,7 +521,9 @@ export function MyTasks({
             </>
           )}
 
-          {completedOcc.length > 0 && !allDone && (
+          {/* Under the all-done note too: what was done is the record of
+              the day, not something to hide once it is finished. */}
+          {completedOcc.length > 0 && (
             <div>
               <button
                 onClick={() => setCompletedCollapsed((c) => !c)}
