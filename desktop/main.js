@@ -691,7 +691,7 @@ function buildMenu() {
         { type: 'separator' },
         // reload() keeps the current page; loadURL() would jump back to the
         // app root, which reads as being logged out.
-        { label: 'Reload FlowDesk', accelerator: 'CmdOrCtrl+R', click: () => flowView.webContents.reload() },
+        { label: 'Reload FlowDesk', accelerator: 'CmdOrCtrl+R', click: reloadFlowDesk },
         {
           // A plain reload serves whatever index-*.js the cache already holds,
           // so a deployed fix can sit there unseen while the site itself is
@@ -787,6 +787,17 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+/**
+ * Reload FlowDesk with a fresh bundle. A plain reload() was happy to serve
+ * the index-*.js the cache already held, so a fix that was live on the site
+ * could sit there unseen through several reloads. Ignoring the cache costs a
+ * few hundred kilobytes and means Ctrl+R always shows what is deployed.
+ */
+function reloadFlowDesk() {
+  if (!flowView || flowView.webContents.isDestroyed()) return
+  flowView.webContents.reloadIgnoringCache()
+}
+
 function createWindow() {
   const bounds = settings.windowBounds || { width: 1600, height: 950 }
   win = new BrowserWindow({
@@ -849,6 +860,28 @@ function createWindow() {
   attachContextMenu(flowView, 'FlowDesk')
   attachContextMenu(claudeView, 'Claude')
   attachContextMenu(whatsappView, 'WhatsApp')
+
+  // Ctrl+R from anywhere. The menu accelerator only fires while a pane has
+  // keyboard focus, so after clicking the divider, the WhatsApp title bar or
+  // an empty spot the shortcut did nothing until something was clicked
+  // again — which is why it seemed to work half the time. Every pane reads
+  // the key itself and reloads FlowDesk, whichever of them has focus.
+  for (const view of [flowView, claudeView, whatsappView, whatsappChrome, overlayView]) {
+    view.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return
+      const mod = process.platform === 'darwin' ? input.meta : input.control
+      if (!mod || input.shift || input.alt || input.key.toLowerCase() !== 'r') return
+      event.preventDefault()
+      reloadFlowDesk()
+    })
+  }
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    const mod = process.platform === 'darwin' ? input.meta : input.control
+    if (!mod || input.shift || input.alt || input.key.toLowerCase() !== 'r') return
+    event.preventDefault()
+    reloadFlowDesk()
+  })
 
   win.contentView.addChildView(flowView)
   win.contentView.addChildView(claudeView)
