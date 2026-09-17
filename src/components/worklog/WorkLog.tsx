@@ -9,6 +9,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useAuthStore } from '../../store/authStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { EmptyState } from '../shared/EmptyState'
+import { AttachmentCard, MissingAttachment } from '../shared/AttachmentCard'
 import { useT } from '../../i18n/useT'
 import { Linkify } from '../shared/Linkify'
 
@@ -37,7 +38,7 @@ export function WorkLog({
 }) {
   const { t } = useT()
   const { entries, loadedFor, loading, load, add, remove } = useWorkLogStore()
-  const { createItem } = useProjectStore()
+  const { createItem, items, ensureItems } = useProjectStore()
   const { currentUser } = useAuthStore()
   const { employees } = useEmployeeStore()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -58,6 +59,16 @@ export function WorkLog({
   useEffect(() => {
     if (loadedFor !== project.id) load(project.id)
   }, [project.id, loadedFor, load])
+
+  // The documents behind every entry on screen, so each can be drawn as a
+  // preview rather than a count. Fetched once per set of ids.
+  const attachedIds = entries.flatMap((e) => e.itemIds)
+  const attachedKey = attachedIds.join(',')
+  useEffect(() => {
+    if (attachedIds.length > 0) ensureItems(attachedIds)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachedKey, ensureItems])
+  const itemOf = (id: string) => items.find((i) => i.id === id)
 
   // One person's entries. The store holds the project's, because a manager
   // moving between profiles should not refetch on every click.
@@ -288,6 +299,22 @@ export function WorkLog({
             </div>
           </div>
 
+          {itemIds.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {itemIds.map((id) => {
+                const item = itemOf(id)
+                return item ? (
+                  <AttachmentCard
+                    key={id}
+                    item={item}
+                    width={140}
+                    onRemove={() => setItemIds((p) => p.filter((x) => x !== id))}
+                  />
+                ) : <MissingAttachment key={id} width={140} />
+              })}
+            </div>
+          )}
+
           {links.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {links.map((l, i) => (
@@ -371,13 +398,21 @@ export function WorkLog({
                     </div>
                   </div>
 
-                  {(e.itemIds.length > 0 || e.links.length > 0) && (
+                  {/* Each document as a preview that opens on click, for
+                      the person who logged it and the manager reading it. */}
+                  {e.itemIds.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2.5">
+                      {e.itemIds.map((id) => {
+                        const item = itemOf(id)
+                        return item
+                          ? <AttachmentCard key={id} item={item} />
+                          : <MissingAttachment key={id} />
+                      })}
+                    </div>
+                  )}
+
+                  {e.links.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
-                      {e.itemIds.length > 0 && (
-                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-2 border border-border text-[11px] text-text-muted">
-                          <Paperclip size={10} /> {e.itemIds.length}
-                        </span>
-                      )}
                       {e.links.map((l, i) => (
                         <a
                           key={i}
