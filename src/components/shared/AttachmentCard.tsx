@@ -1,27 +1,110 @@
-import React from 'react'
-import { X } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { X, Download, ExternalLink } from 'lucide-react'
 import { ResourceItem } from '../../types'
-import { useProjectStore } from '../../store/projectStore'
-import { ResourceThumbnail, formatFileSize } from '../resources/ResourceThumbnail'
+import {
+  ResourceThumbnail, formatFileSize, fileKind, useSignedUrl, FileKindIcon,
+} from '../resources/ResourceThumbnail'
 import { useT } from '../../i18n/useT'
 
 /**
- * Opens a document the way a reader expects: an image, PDF or video in a
- * new tab where the browser can show it, anything else as a download. A
- * link item goes straight to its address. Never in the current tab — in
- * the desktop shell that replaced the whole app with the file.
+ * A document opened inside FlowDesk: an image, video, audio or PDF shown
+ * over the page, anything else offered as a download. Nothing leaves the
+ * app — a new tab in the desktop shell is a window with no way back.
  */
-export async function openResourceItem(
-  item: ResourceItem,
-  getFileUrl: (storagePath: string) => Promise<string | null>,
-) {
-  if (!item.storagePath) {
-    if (item.links[0]) window.open(item.links[0].url, '_blank', 'noopener,noreferrer')
-    return
+export function AttachmentViewer({ item, onClose }: { item: ResourceItem; onClose: () => void }) {
+  const { t } = useT()
+  const kind = item.links.length > 0 ? 'link' : fileKind(item.mimeType, item.fileName)
+  const url = useSignedUrl(kind === 'link' ? null : item.storagePath)
+  const name = item.fileName ?? item.title
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const download = () => {
+    if (!url) return
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
   }
-  const url = await getFileUrl(item.storagePath)
-  if (!url) return
-  window.open(url, '_blank', 'noopener,noreferrer')
+
+  const inline = kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'pdf'
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/80 flex flex-col" onClick={onClose}>
+      <div
+        className="flex items-center gap-3 px-4 py-2.5 bg-black/40 text-white flex-shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="text-sm font-medium truncate flex-1">{name}</span>
+        {item.size ? <span className="text-xs text-white/60">{formatFileSize(item.size)}</span> : null}
+        {kind === 'link' ? (
+          <a
+            href={item.links[0]?.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md bg-white/10 hover:bg-white/20"
+          >
+            <ExternalLink size={13} /> {t('attachment_open')}
+          </a>
+        ) : (
+          <button
+            onClick={download}
+            disabled={!url}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-50"
+          >
+            <Download size={13} /> {t('attachment_download')}
+          </button>
+        )}
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/20" title={t('ui_close')}>
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 flex items-center justify-center p-4">
+        {inline && url ? (
+          kind === 'image' ? (
+            <img src={url} alt={name} className="max-w-full max-h-full object-contain" onClick={(e) => e.stopPropagation()} />
+          ) : kind === 'video' ? (
+            <video src={url} controls autoPlay className="max-w-full max-h-full" onClick={(e) => e.stopPropagation()} />
+          ) : kind === 'audio' ? (
+            <audio src={url} controls autoPlay onClick={(e) => e.stopPropagation()} />
+          ) : (
+            <iframe
+              src={`${url}#toolbar=1&view=FitH`}
+              title={name}
+              className="w-full h-full max-w-5xl bg-white rounded-lg border-0"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )
+        ) : (
+          // Nothing the browser can draw. Say what it is and offer it.
+          <div
+            className="bg-surface rounded-xl p-8 flex flex-col items-center gap-3 text-center max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <FileKindIcon mime={item.mimeType} fileName={item.fileName} size={40} />
+            <p className="text-sm text-text-main font-medium break-all">{name}</p>
+            <p className="text-xs text-text-muted">{t('attachment_noPreview')}</p>
+            {kind !== 'link' && (
+              <button
+                onClick={download}
+                disabled={!url}
+                className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark disabled:opacity-50"
+              >
+                <Download size={14} /> {t('attachment_download')}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 /**
@@ -39,7 +122,7 @@ export function AttachmentCard({
   width?: number
 }) {
   const { t } = useT()
-  const getFileUrl = useProjectStore((s) => s.getFileUrl)
+  const [viewing, setViewing] = useState(false)
   const height = Math.round(width * 0.62)
 
   return (
@@ -49,7 +132,7 @@ export function AttachmentCard({
     >
       <button
         type="button"
-        onClick={() => openResourceItem(item, getFileUrl)}
+        onClick={() => setViewing(true)}
         title={t('attachment_open')}
         className="block w-full text-left"
       >
@@ -75,6 +158,7 @@ export function AttachmentCard({
           <X size={11} />
         </button>
       )}
+      {viewing && <AttachmentViewer item={item} onClose={() => setViewing(false)} />}
     </div>
   )
 }

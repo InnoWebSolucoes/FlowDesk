@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Eye, Plus } from 'lucide-react'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useToolStore } from '../../store/toolStore'
@@ -41,8 +41,23 @@ export function EmployeeProfile() {
   const getProject = useProjectStore((s) => s.getProject)
   const { t, dateLocale } = useT()
 
-  const [tab, setTab] = useState<Tab>('tasks')
-  const [taskSection, setTaskSection] = useState<TaskSection>('today')
+  // Both in the address, so a reload — or coming back from "open as them"
+  // — lands on the tab and section that were open, not on the first one.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const isTab = (v: string | null): v is Tab => !!v && (TABS as readonly string[]).includes(v)
+  const isSection = (v: string | null): v is TaskSection => !!v && (TASK_SECTIONS as readonly string[]).includes(v)
+  const tabParam = searchParams.get('tab')
+  const sectionParam = searchParams.get('section')
+  const tab: Tab = isTab(tabParam) ? tabParam : 'tasks'
+  const taskSection: TaskSection = isSection(sectionParam) ? sectionParam : 'today'
+  const setTab = (next: Tab) => setSearchParams((p) => {
+    if (next === 'tasks') p.delete('tab'); else p.set('tab', next)
+    return p
+  }, { replace: true })
+  const setTaskSection = (next: TaskSection) => setSearchParams((p) => {
+    if (next === 'today') p.delete('section'); else p.set('section', next)
+    return p
+  }, { replace: true })
   const [guideSaved, setGuideSaved] = useState(false)
   const [creating, setCreating] = useState(false)
 

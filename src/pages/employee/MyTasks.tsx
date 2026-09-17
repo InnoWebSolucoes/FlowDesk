@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore'
 import { TaskCard } from '../../components/shared/TaskCard'
 import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/taskScheduler'
 import { Task } from '../../types'
+import { useSearchParams } from 'react-router-dom'
 import { Select } from '../../components/shared/Select'
 import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
@@ -167,9 +168,15 @@ export function MyTasks({
   const { t, dateLocale } = useT()
   // Controlled from outside when a single section was asked for, so the
   // manager's four-section view drives which period is on screen.
-  const [ownTab, setOwnTab] = useState<TaskPeriod>('today')
+  // The period sits in the address, so a reload comes back to the same one.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const periodParam = searchParams.get('period')
+  const ownTab: TaskPeriod = (TABS as readonly string[]).includes(periodParam ?? '') ? (periodParam as TaskPeriod) : 'today'
   const tab = section ?? ownTab
-  const setTab = setOwnTab
+  const setTab = (next: TaskPeriod) => setSearchParams((p) => {
+    if (next === 'today') p.delete('period'); else p.set('period', next)
+    return p
+  }, { replace: true })
   // Today starts open, because it is the day you came here to read — but it is
   // only a starting point, and can be folded away to see the rest of the week.
   const [expandedDays, setExpandedDays] = useState<Set<string>>(
