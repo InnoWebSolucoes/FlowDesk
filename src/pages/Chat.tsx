@@ -18,9 +18,6 @@ import { Avatar } from '../components/shared/Avatar'
 import { Linkify } from '../components/shared/Linkify'
 import type { TranslationKey } from '../i18n/translations'
 
-/** Where a document sent in chat should be filed, beyond the room's own folder. */
-type UploadTarget = { clusterId: string | null; label: string }
-
 function initials(name: string) {
   return name
     .split(' ')
@@ -53,7 +50,7 @@ export function Chat() {
     people, error, clearError,
   } = useChatStore()
   const {
-    items, createItem, setItemClusters, loadResources, resourcesLoadedFor, getFileUrl,
+    items, createItem, loadResources, resourcesLoadedFor, getFileUrl,
     ensureItems,
   } = useProjectStore()
 
@@ -70,7 +67,6 @@ export function Chat() {
   const [pendingItems, setPendingItems] = useState<ResourceItem[]>([])
   const [uploading, setUploading] = useState(false)
   const [picking, setPicking] = useState(false)
-  const [choosingTarget, setChoosingTarget] = useState<File[] | null>(null)
   const [sending, setSending] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -261,36 +257,25 @@ export function Chat() {
 
   /**
    * Files picked in chat become real project documents, not thread-only
-   * attachments. Every one is filed in the room's own folder, and the target
-   * chooser can put it in another cluster as well.
+   * attachments. Every one is filed in the room's own folder, and nowhere
+   * else: there used to be a chooser for filing it in another folder as
+   * well, which was a dialog in the way of every attachment. It can come
+   * back if it is missed; the folder is what makes a chat file findable.
    */
-  const uploadInto = async (files: File[], target: UploadTarget) => {
+  const uploadInto = async (files: File[]) => {
     if (!active || !activeProjectId) return
     const activeId = active.id
     setUploading(true)
     try {
       const roomCluster = await ensureCluster(activeId, titleOf(active))
       for (const file of files) {
-        // The room's folder is the home; a chosen cluster is where it also
-        // appears, so the document is never only in one place the sender knows.
-        const home = target.clusterId ?? roomCluster
         const created = await createItem(
           activeProjectId,
-          home,
+          roomCluster,
           { title: file.name, description: '' },
           file
         )
-        if (!created) continue
-
-        // Filed in both, when the sender chose somewhere other than the room:
-        // the room's folder is what makes a chat file findable later, so it is
-        // added as a second tag rather than being replaced by the choice.
-        if (target.clusterId && roomCluster && target.clusterId !== roomCluster) {
-          await setItemClusters(created.id, [
-            ...new Set([...created.clusterIds, roomCluster]),
-          ])
-        }
-        setPendingItems((prev) => [...prev, created])
+        if (created) setPendingItems((prev) => [...prev, created])
       }
     } catch (e) {
       // createItem throws now; without this the file vanished and the composer
@@ -300,17 +285,13 @@ export function Chat() {
       })
     } finally {
       setUploading(false)
-      setChoosingTarget(null)
     }
   }
 
   const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
     if (fileInputRef.current) fileInputRef.current.value = ''
-    if (files.length === 0) return
-    // Ask where it should be filed before uploading; the room's folder is the
-    // default, so this is one keystroke away from being skipped.
-    setChoosingTarget(files)
+    if (files.length > 0) uploadInto(files)
   }
 
   const handleSend = async () => {
@@ -832,19 +813,6 @@ export function Chat() {
         />
       )}
 
-      {/* Where an upload should be filed. The room's own folder is the default;
-          anywhere else is a deliberate choice, so it is offered rather than
-          assumed. */}
-      {choosingTarget && (
-        <UploadTargetDialog
-          fileCount={choosingTarget.length}
-          projectId={activeProjectId}
-          roomLabel={active ? titleOf(active) : ''}
-          onCancel={() => setChoosingTarget(null)}
-          onChoose={(target) => uploadInto(choosingTarget, target)}
-        />
-      )}
-
       {/* Clearing a chat, and saying plainly whose copy goes. A manager
           clears it for everyone, which is what the button has always done.
           Anyone else clears their own side only — reaching across to delete
@@ -892,105 +860,6 @@ export function Chat() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-/**
- * Picks the cluster an uploaded document is filed into. The room's folder is
- * always one of them — the point of the room folder is that chat files are
- * findable later — and this asks whether it should also live somewhere else.
- */
-function UploadTargetDialog({
-  fileCount,
-  projectId,
-  roomLabel,
-  onCancel,
-  onChoose,
-}: {
-  fileCount: number
-  projectId: string | null
-  roomLabel: string
-  onCancel: () => void
-  onChoose: (target: UploadTarget) => void
-}) {
-  const { t } = useT()
-  const { clusters } = useProjectStore()
-  const [query, setQuery] = useState('')
-
-  const options = useMemo(
-    () =>
-      clusters
-        .filter((c) => c.projectId === projectId)
-        .filter((c) => !query.trim() || c.title.toLowerCase().includes(query.trim().toLowerCase())),
-    [clusters, projectId, query]
-  )
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onCancel}>
-      <div
-        className="bg-surface border border-border rounded-xl shadow-lg w-full max-w-md max-h-[80vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-4 py-3 border-b border-border">
-          <p className="text-text-main font-semibold text-sm">{t('chat_whereToFile')}</p>
-          <p className="text-text-subtle text-xs mt-0.5">
-            {t('chat_whereToFileDesc').replace('{n}', String(fileCount))}
-          </p>
-        </div>
-
-        <div className="p-3 border-b border-border">
-          <button
-            onClick={() => onChoose({ clusterId: null, label: roomLabel })}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-primary text-white text-left hover:bg-primary/90 transition-colors"
-          >
-            <MessageSquare size={15} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{t('chat_fileInRoom')}</p>
-              <p className="text-[11px] text-white/70 truncate">{roomLabel}</p>
-            </div>
-          </button>
-        </div>
-
-        <div className="px-3 pt-3">
-          <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-subtle" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('chat_searchFolders')}
-              className="w-full bg-surface-2 border border-border rounded-lg pl-8 pr-3 py-2 text-sm text-text-main placeholder-text-subtle outline-none focus:border-primary"
-            />
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-3 space-y-0.5">
-          {options.length === 0 ? (
-            <p className="text-xs text-text-subtle text-center py-6">{t('chat_noFolders')}</p>
-          ) : (
-            options.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => onChoose({ clusterId: c.id, label: c.title })}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left hover:bg-surface-2 transition-colors"
-              >
-                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: c.color }} />
-                <span className="text-sm text-text-main truncate flex-1">{c.title}</span>
-              </button>
-            ))
-          )}
-        </div>
-
-        <div className="px-4 py-3 border-t border-border flex justify-end">
-          <button
-            onClick={onCancel}
-            className="text-sm text-text-muted hover:text-text-main px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors"
-          >
-            {t('chat_cancel')}
-          </button>
-        </div>
-      </div>
-
     </div>
   )
 }

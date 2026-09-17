@@ -22,7 +22,26 @@ interface FormState {
 
 const emptyForm: FormState = { name: '', email: '', password: '', jobTitle: '', department: '' }
 
-export function ProjectEmployees() {
+/** What can be done to somebody on the team, for a card drawn elsewhere. */
+export interface MemberActions {
+  removeFromProject: () => void
+  toggleActive: () => void
+  remove: () => void
+}
+
+/**
+ * The team: who is on the project, and adding, assigning, deactivating and
+ * deleting them. The overview draws its own card for each person — one with
+ * their day on it — through `renderMember`; on its own this draws the plain
+ * roster card.
+ */
+export function ProjectEmployees({
+  title,
+  renderMember,
+}: {
+  title?: string
+  renderMember?: (emp: Employee, actions: MemberActions) => React.ReactNode
+} = {}) {
   const { t } = useT()
   const { project } = useOutletContext<Ctx>()
   const { employees, createEmployee, deleteEmployee, setEmployeeActive, addToProject, removeFromProject } = useEmployeeStore()
@@ -124,7 +143,12 @@ export function ProjectEmployees() {
         </div>
       )}
 
-      {members.length > 0 && <div className="flex justify-end mb-5">{addButton}</div>}
+      {members.length > 0 && (
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          {title ? <h2 className="text-text-main font-semibold text-base">{title}</h2> : <span />}
+          {addButton}
+        </div>
+      )}
 
       {/* Who may run this project. An admin granted here can do everything the
           owner can inside it, and nothing outside it. */}
@@ -138,6 +162,17 @@ export function ProjectEmployees() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {members.map((emp) => {
+            if (renderMember) {
+              return (
+                <React.Fragment key={emp.id}>
+                  {renderMember(emp, {
+                    removeFromProject: () => removeFromProject(emp.id, project.id),
+                    toggleActive: () => toggleActive(emp),
+                    remove: () => setPendingDelete(emp),
+                  })}
+                </React.Fragment>
+              )
+            }
             const dueTasks = getTasksDueOnDate(tasks, emp.id, today)
             const doneToday = completionLogs.filter((l) => l.employeeId === emp.id && l.dueDate === todayStr).length
             // Capped at 100. A completion log survives the task being

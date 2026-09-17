@@ -63,6 +63,9 @@ const en = {
   overview_behindToday: 'Behind Today',
   overview_employeeProgress: 'Employee Progress Today',
   overview_noEmployees: 'No employees added yet.',
+  overview_nothingToday: 'Nothing assigned today',
+  overview_allDone: 'All done',
+  overview_nothingDoneYet: 'Nothing done yet',
 
   // Task Manager
   task_editTask: 'Edit Task',
@@ -815,6 +818,9 @@ const pt: typeof en = {
   overview_behindToday: 'Atrasados Hoje',
   overview_employeeProgress: 'Progresso dos Funcionários Hoje',
   overview_noEmployees: 'Nenhum funcionário adicionado ainda.',
+  overview_nothingToday: 'Nada atribuído hoje',
+  overview_allDone: 'Tudo feito',
+  overview_nothingDoneYet: 'Ainda nada feito',
 
   // Task Manager
   task_editTask: 'Editar Tarefa',
