@@ -674,7 +674,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               dragging={!!drag}
               onOpenTodo={setOpenTodo}
               onOpenEntry={setOpenEntry}
-              onOpenTask={setOpenTask}
+              onOpenTask={canMoveTasks ? setEditTask : setOpenTask}
               onCreate={createAt}
               onOpenDay={openDay}
               onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
@@ -701,7 +701,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               dragging={!!drag}
               onOpenTodo={setOpenTodo}
               onOpenEntry={setOpenEntry}
-              onOpenTask={setOpenTask}
+              onOpenTask={canMoveTasks ? setEditTask : setOpenTask}
               onCreate={createAt}
               onOpenDay={openDay}
               onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
