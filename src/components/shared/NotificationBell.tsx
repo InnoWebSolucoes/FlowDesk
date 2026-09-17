@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Bell, X, CheckCircle2, AlertTriangle, MessageSquare, Clock, Calendar,
-  PlayCircle, RotateCcw, Paperclip,
+  PlayCircle, RotateCcw, Paperclip, Smartphone,
 } from 'lucide-react'
 import { useMatch, useNavigate } from 'react-router-dom'
 import { useNotificationStore } from '../../store/notificationStore'
@@ -13,6 +13,7 @@ import { useT } from '../../i18n/useT'
 import { AppNotification } from '../../types'
 import { getTasksDueOnDate } from '../../utils/taskScheduler'
 import { withHighlight } from '../../lib/highlight'
+import { pushStatus, enablePush, disablePush, PushStatus } from '../../lib/pushNotify'
 
 function notifIcon(type: AppNotification['type']) {
   switch (type) {
@@ -41,12 +42,28 @@ export function NotificationBell({
   panelClass = 'right-0 top-full mt-2',
 }: { panelClass?: string } = {}) {
   const { t } = useT()
-  const { currentUser } = useAuthStore()
+  const { currentUser, realUser } = useAuthStore()
   const { tasks, completionLogs } = useTaskStore()
   const { employees } = useEmployeeStore()
   const { notifications, addNotification, markRead, markAllRead, dismiss, getUnreadCount, getNotificationsFor } = useNotificationStore()
 
   const [open, setOpen] = useState(false)
+  // Whether this phone gets notifications while FlowDesk is closed. Asked
+  // each time the panel opens: the answer lives in the browser, not here.
+  const [push, setPush] = useState<PushStatus>('unsupported')
+  useEffect(() => {
+    if (open) pushStatus().then(setPush)
+  }, [open])
+  const togglePush = async () => {
+    // The real account, not a preview: a phone belongs to the person holding it.
+    if (!realUser) return
+    if (push === 'on') {
+      await disablePush()
+      setPush('off')
+    } else {
+      setPush(await enablePush(realUser.id))
+    }
+  }
   const panelRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   // Which project the reader is in, so opening a notification does not move
@@ -276,6 +293,34 @@ export function NotificationBell({
               </button>
             </div>
           </div>
+
+          {/* Push to this phone. Hidden where it cannot work at all; on an
+              iPhone in Safari it explains the Home Screen step instead. */}
+          {push !== 'unsupported' && (
+            <div className="px-4 py-2 border-b border-border">
+              {push === 'needs-install' ? (
+                <p className="text-[11px] text-text-muted">{t('notif_pushInstall')}</p>
+              ) : push === 'denied' ? (
+                <p className="text-[11px] text-text-muted">{t('notif_pushDenied')}</p>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-text-main flex items-center gap-1.5">
+                    <Smartphone size={13} className="text-text-muted" />
+                    {t('notif_pushOn')}
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={push === 'on'}
+                    onClick={togglePush}
+                    className={`relative w-9 h-5 rounded-full transition-colors ${push === 'on' ? 'bg-primary' : 'bg-border'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${push === 'on' ? 'translate-x-4' : ''}`} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Notifications list */}
           <div className="max-h-96 overflow-y-auto">

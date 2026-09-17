@@ -6,6 +6,7 @@ import { useTaskStore } from './store/taskStore'
 import { useEmployeeStore } from './store/employeeStore'
 import { useToolStore } from './store/toolStore'
 import { useNotificationStore } from './store/notificationStore'
+import { syncPush } from './lib/pushNotify'
 import { useProjectStore } from './store/projectStore'
 import { useChatStore } from './store/chatStore'
 import { Layout } from './components/shared/Layout'
@@ -145,6 +146,9 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
       // Chat is per-person — whose rooms these are decides what comes back —
       // so it needs the id, not just the fact that someone is signed in.
       if (chatUserId) initChat(chatUserId)
+      // A phone that has notifications on keeps them pointed at the real
+      // account: a preview must not redirect the owner's phone to an employee.
+      if (realUserId) syncPush(realUserId)
       // How often the app is opened and for how long. Recorded for everyone;
       // only the owner can read it back. Keyed on the real account, so a
       // preview is recorded against the owner doing the previewing — which is

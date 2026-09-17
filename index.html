@@ -10,6 +10,15 @@
       // iOS Safari ignores user-scalable=no, so its pinch gesture is stopped here.
       document.addEventListener('gesturestart', function (e) { e.preventDefault() }, { passive: false })
     </script>
+    <!-- Phones: installable to the home screen, which is what makes push
+         notifications possible on iPhone. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#1A5C3A" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="FlowDesk" />
     <title>FlowDesk</title>
   </head>
   <body>
