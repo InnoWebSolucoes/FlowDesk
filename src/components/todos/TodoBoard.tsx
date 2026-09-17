@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useHighlight } from '../../hooks/useHighlight'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
@@ -66,32 +66,59 @@ export function TodoBoard({
 
   // One click: waiting. Two: done. Shared with the calendar.
   const tickTodo = useTodoTick()
-  // A todo being carried to another list's tab. Pointer-driven, the way the
-  // calendar moves things: the browser's own drag-and-drop did not start
-  // reliably from these rows, so the pointer is followed by hand and the
-  // tab under it on release is where the todo goes.
+  // A todo being carried by its grip: over the rows to reorder within the
+  // list, or onto another list's tab to move it there. Pointer-driven, the
+  // way the calendar moves things: the browser's own drag-and-drop did not
+  // start reliably from these rows, so the pointer is followed by hand.
   const [dragTodo, setDragTodo] = useState<{ id: string; title: string } | null>(null)
   const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null)
   const [dropListId, setDropListId] = useState<string | null>(null)
+  // The order the rows would take if released now: the dragged one slotted
+  // where the pointer is. Shown live, written on release.
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null)
 
   const tabAt = (x: number, y: number): string | null => {
     const el = document.elementFromPoint(x, y)?.closest('[data-list-tab]') as HTMLElement | null
     return el?.dataset.listTab ?? null
+  }
+  const rowAt = (x: number, y: number): { id: string; upperHalf: boolean } | null => {
+    const el = document.elementFromPoint(x, y)?.closest('[data-todo-row]') as HTMLElement | null
+    if (!el) return null
+    const box = el.getBoundingClientRect()
+    return { id: el.dataset.todoRow!, upperHalf: y < box.top + box.height / 2 }
   }
 
   useEffect(() => {
     if (!dragTodo) return
     const onMove = (e: PointerEvent) => {
       setDragPoint({ x: e.clientX, y: e.clientY })
-      setDropListId(tabAt(e.clientX, e.clientY))
+      const tab = tabAt(e.clientX, e.clientY)
+      setDropListId(tab)
+      if (tab) return
+      const row = rowAt(e.clientX, e.clientY)
+      if (!row || row.id === dragTodo.id) return
+      setDragOrder((prev) => {
+        const base = prev ?? reorderable.map((t) => t.id)
+        if (!base.includes(row.id) || !base.includes(dragTodo.id)) return prev
+        const without = base.filter((id) => id !== dragTodo.id)
+        const at = without.indexOf(row.id) + (row.upperHalf ? 0 : 1)
+        const next = [...without.slice(0, at), dragTodo.id, ...without.slice(at)]
+        return next.every((id, i) => id === base[i]) ? prev : next
+      })
     }
     const onUp = (e: PointerEvent) => {
       const target = tabAt(e.clientX, e.clientY)
       const id = dragTodo.id
+      const order = dragOrderRef.current
       setDragTodo(null)
       setDragPoint(null)
       setDropListId(null)
-      if (target && target !== currentListId) moveTodoToList(id, target)
+      setDragOrder(null)
+      if (target && target !== currentListId) {
+        moveTodoToList(id, target)
+      } else if (order) {
+        reorderTodos(order)
+      }
     }
     const previousSelect = document.body.style.userSelect
     document.body.style.userSelect = 'none'
@@ -120,6 +147,8 @@ export function TodoBoard({
   const [error, setError] = useState('')
   const [showCompleted, setShowCompleted] = useState(true)
   const [sortMode, setSortMode] = useState<SortMode>('manual')
+  const dragOrderRef = useRef<string[] | null>(null)
+  useEffect(() => { dragOrderRef.current = dragOrder }, [dragOrder])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [linkingId, setLinkingId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
@@ -233,6 +262,21 @@ export function TodoBoard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   })()), [listTodos, sortMode, adminBoard, settleAt])
 
+  // What a drag can reorder: the open todos still to do, in manual order.
+  // Waiting todos keep their own order (by when they started waiting).
+  const reorderable = useMemo(
+    () => openTodos.filter((t) => !adminBoard || !t.waitingSince),
+    [openTodos, adminBoard],
+  )
+  // Rows in the order being dragged into, while a drag is under way.
+  const shownOpen = useMemo(() => {
+    if (!dragOrder) return openTodos
+    const byId = new Map(openTodos.map((t) => [t.id, t]))
+    const moved = dragOrder.map((id) => byId.get(id)!).filter(Boolean)
+    const rest = openTodos.filter((t) => !dragOrder.includes(t.id))
+    return [...moved, ...rest]
+  }, [openTodos, dragOrder])
+
   const completedTodos = useMemo(
     () => listTodos.filter((t) => t.isCompleted).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')),
     [listTodos]
@@ -332,19 +376,6 @@ export function TodoBoard({
     if (created) selectList(created.id)
   }
 
-  const move = (todo: ProjectTodo, direction: -1 | 1) => {
-    // Within its own group. Waiting todos are ordered by when they started
-    // waiting, so on the managers' board only the to-do group rearranges.
-    const ids = openTodos
-      .filter((t) => !adminBoard || !t.waitingSince === !todo.waitingSince)
-      .map((t) => t.id)
-    const idx = ids.indexOf(todo.id)
-    const next = idx + direction
-    if (idx === -1 || next < 0 || next >= ids.length) return
-    ;[ids[idx], ids[next]] = [ids[next], ids[idx]]
-    reorderTodos(ids)
-  }
-
   const linkLabel = (link: { itemId: string | null; clusterId: string | null }) => {
     if (link.itemId) {
       const item = items.find((i) => i.id === link.itemId)
@@ -364,7 +395,8 @@ export function TodoBoard({
     return (
       <div
         ref={highlight.isHighlighted(todo.id) ? highlight.ref : undefined}
-        className={`group border rounded-xl px-3 py-2.5 ${dragTodo?.id === todo.id ? 'opacity-40' : ''} ${
+        data-todo-row={todo.id}
+        className={`group border rounded-xl px-3 py-2.5 transition-[opacity,transform] ${dragTodo?.id === todo.id ? 'opacity-40 ring-2 ring-primary/40' : ''} ${
           todo.isUrgent && !todo.isCompleted
             ? `${URGENT_CLASS} border-l-4 border-l-danger`
             : 'bg-surface border-border'
@@ -375,16 +407,18 @@ export function TodoBoard({
         {/* Checkbox · title · metadata · actions. The metadata wraps under the
             title when the row runs out of width, rather than crushing it. */}
         <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-          {/* Hold this and carry the row onto another list's tab to move it. */}
-          {canEdit && lists.length > 1 && (
+          {/* Hold this and carry the row: up or down to reorder, or onto
+              another list's tab to move it there. */}
+          {canEdit && !todo.isCompleted && (
             <button
               onPointerDown={(e) => {
                 if (e.button !== 0) return
                 e.preventDefault()
+                if (sortMode !== 'manual') setSortMode('manual')
                 setDragTodo({ id: todo.id, title: todo.title })
                 setDragPoint({ x: e.clientX, y: e.clientY })
               }}
-              title={t('todo_dragToList')}
+              title={t('todo_dragHint')}
               className="flex-shrink-0 text-text-subtle hover:text-text-main cursor-grab active:cursor-grabbing -ml-1"
             >
               <GripVertical size={14} />
@@ -532,16 +566,6 @@ export function TodoBoard({
             {/* Row actions, revealed on hover */}
             {canEdit && (
             <div className="flex items-center w-0 overflow-hidden opacity-0 group-hover:w-auto group-hover:opacity-100 focus-within:w-auto focus-within:opacity-100 transition-opacity">
-              {!todo.isCompleted && !waiting && sortMode === 'manual' && (
-                <>
-                  <button onClick={() => move(todo, -1)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title={t('todo_moveUp')}>
-                    <ChevronUp size={14} />
-                  </button>
-                  <button onClick={() => move(todo, 1)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title={t('todo_moveDown')}>
-                    <ChevronDown size={14} />
-                  </button>
-                </>
-              )}
               <button onClick={() => setEditingId(todo.id)} className="text-text-subtle hover:text-text-main p-0.5 rounded" title={t('ui_edit')}>
                 <Pencil size={13} />
               </button>
@@ -901,7 +925,7 @@ export function TodoBoard({
         />
       ) : (
         <div className="space-y-2">
-          {openTodos.map((todo) => <TodoRow key={todo.id} todo={todo} />)}
+          {shownOpen.map((todo) => <TodoRow key={todo.id} todo={todo} />)}
 
           {completedTodos.length > 0 && (
             <div className="pt-4">
