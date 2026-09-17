@@ -627,9 +627,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   ensureCluster: async (conversationId, title) => {
-    const conv = get().conversations.find((c) => c.id === conversationId)
-    if (conv?.clusterId) return conv.clusterId
-
+    // Always asked of the database, even when a folder id is already in
+    // hand: the folder can have been deleted in Resources since this
+    // session loaded, and filing into a folder that is gone failed the
+    // upload with a foreign-key error. The function hands back the folder
+    // if it still exists and makes a fresh one if not.
+    //
     // Clusters are admin-only to write, so the room's folder is made by a
     // definer function that checks membership rather than the caller's role.
     const { data, error } = await supabase.rpc('ensure_conversation_cluster', {
