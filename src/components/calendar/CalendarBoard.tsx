@@ -143,6 +143,10 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   // to see the team's week to plan against it. Empty means just this board.
   const [overlaid, setOverlaid] = useState<Set<string>>(new Set())
   const canOverlay = ownerId === null
+  // Your own calendar is one of the switches too, on by default. It was in
+  // the list but wired to nothing: ticking it changed nothing and unticking
+  // it did not take your own blocks away.
+  const [showMine, setShowMine] = useState(true)
 
   const [view, setView] = useState<View>('week')
   const [cursor, setCursor] = useState(() => new Date())
@@ -254,7 +258,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
     (day: string): Block[] => {
       const blocks: Block[] = []
 
-      {
+      if (!canOverlay || showMine) {
         for (const t of todos) {
           if (t.doDate !== day) continue
           // Whose board this is. The fetch is scoped, but the store holds
@@ -320,7 +324,9 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         // whose it is so a busy day is attributable.
         const mine = !ownerId || e.ownerId === ownerId
         const theirs = canOverlay && overlaid.has(e.ownerId)
-        if (!mine && !theirs && canOverlay && overlaid.size > 0) continue
+        // On the managers' board a block is drawn only for someone who is
+        // switched on — you included. Nobody on, nothing drawn.
+        if (canOverlay && !((mine && showMine) || theirs)) continue
         blocks.push({
           key: `entry-${e.id}`,
           label: e.title,
@@ -334,7 +340,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       return blocks.sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, tasks, employees, overlaid, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay],
+    [todos, overlayTodos, calendarEntries, tasks, employees, overlaid, showMine, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -613,30 +619,35 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
                         </p>
                       )}
                       <div className="max-h-56 overflow-y-auto">
-                        {employees.map((emp) => (
-                          <button
-                            key={emp.id}
-                            onClick={() =>
-                              setOverlaid((prev) => {
-                                const next = new Set(prev)
-                                if (next.has(emp.id)) next.delete(emp.id)
-                                else next.add(emp.id)
-                                return next
-                              })
-                            }
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-main hover:bg-surface-2"
-                          >
-                            <span className="w-3 h-3 rounded-full bg-primary/70 flex-shrink-0" />
-                            <span className="flex-1 text-left truncate">{emp.name}</span>
-                            {overlaid.has(emp.id) && <Check size={13} className="text-primary" />}
-                          </button>
-                        ))}
+                        {employees.map((emp) => {
+                          const isMe = emp.id === currentUserId
+                          const on = isMe ? showMine : overlaid.has(emp.id)
+                          return (
+                            <button
+                              key={emp.id}
+                              onClick={() => {
+                                if (isMe) { setShowMine((v) => !v); return }
+                                setOverlaid((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(emp.id)) next.delete(emp.id)
+                                  else next.add(emp.id)
+                                  return next
+                                })
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-main hover:bg-surface-2"
+                            >
+                              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: personColor(emp.id) }} />
+                              <span className="flex-1 text-left truncate">{emp.name}{isMe ? ` (${t('chat_you').toLowerCase()})` : ''}</span>
+                              {on && <Check size={13} className="text-primary" />}
+                            </button>
+                          )
+                        })}
                       </div>
-                      {overlaid.size > 0 && (
+                      {(overlaid.size > 0 || !showMine) && (
                         <>
                           <div className="h-px bg-border my-1.5" />
                           <button
-                            onClick={() => setOverlaid(new Set())}
+                            onClick={() => { setOverlaid(new Set()); setShowMine(true) }}
                             className="w-full px-3 py-1.5 text-left text-xs text-text-muted hover:bg-surface-2"
                           >{t('cal_showOnlyMine')}</button>
                         </>
