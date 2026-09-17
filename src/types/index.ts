@@ -469,6 +469,8 @@ export interface Conversation {
   lastMessageAt: string
   /** Members of a direct room. Empty for a task room, whose audience is derived. */
   memberIds: string[]
+  /** The two people of a direct room, sorted and joined. Both the same for notes to yourself. */
+  pairKey: string | null
   /** Set when the discussion was finished with. Archived, not deleted. */
   resolvedAt?: string | null
   /** When the signed-in user last read this room. */

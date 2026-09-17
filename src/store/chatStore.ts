@@ -80,6 +80,7 @@ function toConversation(row: any): Conversation {
     createdAt: row.created_at,
     lastMessageAt: row.last_message_at,
     memberIds: (row.conversation_members ?? []).map((m: any) => m.user_id),
+    pairKey: row.pair_key ?? null,
     resolvedAt: row.resolved_at ?? null,
     lastReadAt: null,
     unread: 0,
@@ -519,8 +520,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (!userId) return null
     const key = pairKey(userId, otherUserId)
 
+    // By the pair, not by membership: every direct room has you in it, so
+    // asking for the room with yourself found whichever came first.
     const existing = get().conversations.find(
-      (c) => c.kind === 'direct' && c.memberIds.includes(otherUserId)
+      (c) => c.kind === 'direct' && (c.pairKey === key || (!c.pairKey && userId !== otherUserId && c.memberIds.includes(otherUserId)))
     )
     if (existing) return existing
 
@@ -560,14 +563,15 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return conv
     }
 
-    await supabase.from('conversation_members').insert([
-      { conversation_id: data.id, user_id: userId },
-      { conversation_id: data.id, user_id: otherUserId },
-    ])
+    // A room with yourself has one member, not the same one twice.
+    const memberIds = userId === otherUserId ? [userId] : [userId, otherUserId]
+    await supabase.from('conversation_members').insert(
+      memberIds.map((user_id) => ({ conversation_id: data.id, user_id })),
+    )
 
     const conv: Conversation = {
       ...toConversation(data),
-      memberIds: [userId, otherUserId],
+      memberIds,
     }
     set((s) => ({ conversations: [conv, ...s.conversations] }))
     return conv

@@ -209,13 +209,17 @@ export function Chat() {
     return people.find((p) => p.id === userId)?.name ?? 'Someone'
   }
 
-  /** What a room is called in the list: the other person, or the task. */
+  /** A direct room with only yourself in it: a place for your own notes. */
+  const isSelfRoom = (c: Conversation) => c.kind === 'direct' && c.pairKey === `${me}:${me}`
+
+  /** What a room is called in the list: the other person, the task, or you. */
   const titleOf = (c: Conversation) => {
     if (c.kind === 'task') {
       return allTasks.find((x) => x.id === c.taskId)?.title ?? 'Task'
     }
+    if (isSelfRoom(c)) return t('chat_yourself')
     const other = c.memberIds.find((id) => id !== me)
-    return other ? nameOf(other) : 'Direct message'
+    return other ? nameOf(other) : t('chat_direct')
   }
 
   const q = query.trim().toLowerCase()
@@ -226,7 +230,14 @@ export function Chat() {
   const matches = (c: typeof conversations[number]) =>
     !q || titleOf(c).toLowerCase().includes(q)
 
-  const directRooms = conversations.filter((c) => c.kind === 'direct' && matches(c))
+  // Yourself first, then everyone you have a room with. A room whose other
+  // person is gone — their account deleted — is left out: it showed up as a
+  // nameless "Direct message" and there is nobody to talk to in it.
+  const directRooms = conversations
+    .filter((c) => c.kind === 'direct' && matches(c))
+    .filter((c) => isSelfRoom(c) || c.memberIds.some((id) => id !== me && people.some((p) => p.id === id)))
+    .sort((a, b) => Number(isSelfRoom(b)) - Number(isSelfRoom(a)))
+  const hasSelfRoom = conversations.some(isSelfRoom)
 
   const taskRooms = conversations.filter(
     (c) => c.kind === 'task' && !c.resolvedAt && matches(c),
@@ -373,7 +384,7 @@ export function Chat() {
             {title}
           </p>
           <p className={`text-[11px] truncate ${isActive ? 'text-white/70' : 'text-text-subtle'}`}>
-            {c.kind === 'task' ? t('chat_taskThread') : t('chat_direct')}
+            {c.kind === 'task' ? t('chat_taskThread') : isSelfRoom(c) ? t('chat_yourselfHint') : t('chat_direct')}
           </p>
         </div>
         {unread > 0 && !isActive && (
@@ -431,8 +442,24 @@ export function Chat() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-2">
-          {directRooms.length > 0 && (
+          {(directRooms.length > 0 || !hasSelfRoom) && (
             <Section label={t('chat_people')}>
+              {/* Your own room, offered before it exists so there is always
+                  one place at the top that is you. */}
+              {!hasSelfRoom && (!q || t('chat_yourself').toLowerCase().includes(q)) && (
+                <button
+                  onClick={() => openDirect(me).then((c) => c && setActiveId(c.id))}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left hover:bg-surface-2 transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-full bg-primary-light border border-primary/30 flex items-center justify-center flex-shrink-0">
+                    <span className="text-primary text-[10px] font-bold">{initials(currentUser?.name ?? 'Me')}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-text-main truncate">{t('chat_yourself')}</p>
+                    <p className="text-[11px] text-text-subtle truncate">{t('chat_yourselfHint')}</p>
+                  </div>
+                </button>
+              )}
               {directRooms.map((c) => <RoomRow key={c.id} c={c} />)}
             </Section>
           )}
