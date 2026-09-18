@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Plus, Paperclip, Link2, X, Clock, Trash2, Loader2, NotebookPen, MessageSquare,
+  Plus, Paperclip, Link2, X, Clock, Trash2, Loader2, NotebookPen, MessageSquare, Send,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { format, parseISO, startOfWeek, startOfMonth } from 'date-fns'
 import { Project } from '../../types'
 import { useWorkLogStore } from '../../store/workLogStore'
@@ -13,7 +12,6 @@ import { EmptyState } from '../shared/EmptyState'
 import { AttachmentCard, MissingAttachment } from '../shared/AttachmentCard'
 import { useT } from '../../i18n/useT'
 import { Linkify } from '../shared/Linkify'
-import { useChatStore } from '../../store/chatStore'
 import { useHighlight } from '../../hooks/useHighlight'
 import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 
@@ -41,17 +39,20 @@ export function WorkLog({
   readOnly?: boolean
 }) {
   const { t } = useT()
-  const { entries, loadedFor, loading, load, add, remove } = useWorkLogStore()
+  const {
+    entries, loadedFor, loading, load, add, remove,
+    comments, addComment, removeComment,
+  } = useWorkLogStore()
   const { createItem, items, ensureItems } = useProjectStore()
   const { currentUser } = useAuthStore()
   const { employees } = useEmployeeStore()
   const fileRef = useRef<HTMLInputElement>(null)
-  const navigate = useNavigate()
   const highlight = useHighlight()
-  // An entry can be discussed, the same as a task. The room is the count, so
-  // the card says whether there is anything to read.
-  const { conversations, messages, openEntryRoom } = useChatStore()
-  const [opening, setOpening] = useState<string | null>(null)
+  // Which entry's comments are open, and the words being typed into it. One at
+  // a time: the thread belongs to the entry you are looking at.
+  const [commentingOn, setCommentingOn] = useState<string | null>(null)
+  const [commentDraft, setCommentDraft] = useState('')
+  const [sending, setSending] = useState(false)
 
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -87,23 +88,17 @@ export function WorkLog({
 
   const isAdmin = currentUser?.role === 'admin'
 
-  /**
-   * Open the discussion of one entry. As with a task, the room is made on
-   * demand — an entry nobody has asked about yet still has somewhere to go, it
-   * just does not exist until someone opens it.
-   */
-  const openDiscussion = async (entryId: string) => {
-    setOpening(entryId)
+  const submitComment = async (entryId: string) => {
+    const body = commentDraft.trim()
+    if (!body) return
+    setSending(true)
     try {
-      const conv = await openEntryRoom(entryId, project.id)
-      if (!conv) return
-      navigate(
-        isAdmin
-          ? `/admin/projects/${project.id}/chat?conversation=${conv.id}`
-          : `/employee/chat?conversation=${conv.id}`
-      )
+      await addComment(entryId, body)
+      setCommentDraft('')
+    } catch (err) {
+      setError((err as Error).message)
     } finally {
-      setOpening(null)
+      setSending(false)
     }
   }
 
@@ -403,8 +398,7 @@ export function WorkLog({
 
             <div className="space-y-2">
               {group.entries.map((e) => {
-                const room = conversations.find((c) => c.entryId === e.id)
-                const messageCount = room ? (messages[room.id] ?? []).length : 0
+                const entryComments = comments[e.id] ?? []
                 return (
                 <div
                   key={e.id}
@@ -426,18 +420,20 @@ export function WorkLog({
                           <Clock size={11} /> {e.minutes} min
                         </span>
                       )}
-                      {/* Asking about an entry is not writing into it, so a
+                      {/* Commenting on an entry is not writing into it, so a
                           manager reading someone's log gets this too. */}
                       <button
-                        onClick={() => openDiscussion(e.id)}
-                        disabled={opening === e.id}
-                        title={t('worklog_discuss')}
-                        className="flex items-center gap-1 text-[11px] text-text-subtle hover:text-primary p-1 disabled:opacity-60"
+                        onClick={() => {
+                          setCommentDraft('')
+                          setCommentingOn(commentingOn === e.id ? null : e.id)
+                        }}
+                        title={t('worklog_comment')}
+                        className={`flex items-center gap-1 text-[11px] p-1 ${
+                          commentingOn === e.id ? 'text-primary' : 'text-text-subtle hover:text-primary'
+                        }`}
                       >
-                        {opening === e.id
-                          ? <Loader2 size={12} className="animate-spin" />
-                          : <MessageSquare size={12} />}
-                        {messageCount > 0 && messageCount}
+                        <MessageSquare size={12} />
+                        {entryComments.length > 0 && entryComments.length}
                       </button>
                       {(e.authorId === currentUser?.id || isAdmin) && (
                         <button
@@ -483,6 +479,73 @@ export function WorkLog({
                   <p className="text-text-subtle text-[10px] mt-2">
                     {nameOf(e.authorId)} · {format(parseISO(e.createdAt), 'HH:mm')}
                   </p>
+
+                  {/* The comments, under the entry they are about. Shown when
+                      the thread is open, and whenever there is something to
+                      read — a remark nobody can see is worth nothing. */}
+                  {(commentingOn === e.id || entryComments.length > 0) && (
+                    <div className="mt-3 pt-3 border-t border-border space-y-2">
+                      {entryComments.map((c) => (
+                        <div key={c.id} className="flex items-start gap-2 group">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] text-text-subtle">
+                              {nameOf(c.authorId)} · {format(parseISO(c.createdAt), 'd MMM HH:mm')}
+                            </p>
+                            <p className="text-text-main text-xs whitespace-pre-wrap break-words">
+                              <Linkify text={c.body} />
+                            </p>
+                          </div>
+                          {c.authorId === currentUser?.id && (
+                            <button
+                              onClick={() => removeComment(c.id, e.id).catch((err) => setError((err as Error).message))}
+                              title={t('ui_delete')}
+                              className="text-text-subtle hover:text-danger p-1 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                      {commentingOn === e.id ? (
+                        <div className="flex items-end gap-2 pt-1">
+                          <textarea
+                            autoFocus
+                            rows={1}
+                            value={commentDraft}
+                            onChange={(ev) => setCommentDraft(ev.target.value)}
+                            // Enter sends, as it does everywhere else in the
+                            // app; shift+enter is how you get a second line.
+                            onKeyDown={(ev) => {
+                              if (ev.key === 'Enter' && !ev.shiftKey) {
+                                ev.preventDefault()
+                                submitComment(e.id)
+                              }
+                            }}
+                            placeholder={t('worklog_commentPlaceholder')}
+                            className="flex-1 bg-surface-2 border border-border rounded-lg px-3 py-1.5 text-xs text-text-main resize-none focus:outline-none focus:border-primary"
+                          />
+                          <button
+                            onClick={() => submitComment(e.id)}
+                            disabled={sending || !commentDraft.trim()}
+                            className="bg-primary text-white p-1.5 rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50"
+                            title={t('worklog_commentSend')}
+                          >
+                            {sending
+                              ? <Loader2 size={13} className="animate-spin" />
+                              : <Send size={13} />}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setCommentDraft(''); setCommentingOn(e.id) }}
+                          className="text-[11px] text-primary hover:underline"
+                        >
+                          {t('worklog_comment')}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 )
               })}

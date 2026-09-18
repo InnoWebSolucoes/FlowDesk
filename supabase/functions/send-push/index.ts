@@ -36,10 +36,14 @@ function json(body: unknown, status = 200) {
 function linkFor(row: {
   conversation_id: string | null
   task_id: string | null
+  entry_id: string | null
   target_role: string | null
 }) {
   const base = row.target_role === 'admin' ? '/admin' : '/employee'
   if (row.conversation_id) return `${base}/chat?conversation=${row.conversation_id}`
+  // A manager's work log lives on the author's profile, which this does not
+  // know from here — the bell resolves that. Their own log is a real page.
+  if (row.entry_id) return row.target_role === 'admin' ? '/admin/projects' : '/employee/work-log'
   if (row.task_id) return row.target_role === 'admin' ? '/admin/projects' : '/employee/tasks'
   return '/'
 }
@@ -71,7 +75,7 @@ Deno.serve(async (req) => {
 
     const { data: row, error } = await admin
       .from('notifications')
-      .select('id, title, message, task_id, conversation_id, target_user_id, target_role')
+      .select('id, title, message, task_id, conversation_id, entry_id, target_user_id, target_role')
       .eq('id', notification_id)
       .single()
     if (error || !row) return json({ error: 'No such notification' }, 404)

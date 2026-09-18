@@ -2,14 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Send, Paperclip, Search, MessageSquare, CheckSquare, Trash2, Download, CheckCircle2, Pencil, Check,
-  FolderOpen, X, Link2, ArrowRight, ArrowLeft, NotebookPen,
+  FolderOpen, X, Link2, ArrowRight, ArrowLeft,
 } from 'lucide-react'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
 import { useAuthStore } from '../store/authStore'
 import { useChatStore } from '../store/chatStore'
 import { useTaskStore } from '../store/taskStore'
 import { useProjectStore } from '../store/projectStore'
-import { useWorkLogStore } from '../store/workLogStore'
 import { ResourceLinkPicker, LinkKey } from '../components/shared/ResourceLinkPicker'
 import { FileKindIcon, formatFileSize } from '../components/resources/ResourceThumbnail'
 import { ChatMessage, Conversation, ResourceItem } from '../types'
@@ -47,12 +46,9 @@ export function Chat() {
   const {
     conversations, messages, loadMessages, sendMessage, deleteMessage, editMessage, clearConversation, setResolved,
     clearForMe, clearedAt,
-    openDirect, openTaskRoom, openEntryRoom, ensureCluster, markRead, unreadCount, loadedRooms,
+    openDirect, openTaskRoom, ensureCluster, markRead, unreadCount, loadedRooms,
     people, error, clearError,
   } = useChatStore()
-  // Entry rooms are named after the entry they are about, which a manager may
-  // hold across several projects.
-  const { entryInfo, ensureEntryInfo } = useWorkLogStore()
   const {
     items, createItem, loadResources, resourcesLoadedFor, getFileUrl,
     ensureItems,
@@ -146,22 +142,6 @@ export function Chat() {
       if (c) setActiveId(c.id)
     })
   }, [searchParams, setSearchParams, allTasks, openTaskRoom])
-
-  // ?entry=<id>&project=<id> opens (or starts) the room for a work log entry,
-  // which is how the discussion button in the work log gets here. The project
-  // travels with it: an entry is not in the task list, so there is nothing
-  // loaded here to look it up in.
-  useEffect(() => {
-    const wanted = searchParams.get('entry')
-    const project = searchParams.get('project')
-    if (!wanted || !project) return
-    searchParams.delete('entry')
-    searchParams.delete('project')
-    setSearchParams(searchParams, { replace: true })
-    openEntryRoom(wanted, project).then((c) => {
-      if (c) setActiveId(c.id)
-    })
-  }, [searchParams, setSearchParams, openEntryRoom, setActiveId])
 
   // ?user=<id> opens (or starts) a direct chat with that person.
   useEffect(() => {
@@ -261,16 +241,10 @@ export function Chat() {
   /** A direct room with only yourself in it: a place for your own notes. */
   const isSelfRoom = (c: Conversation) => c.kind === 'direct' && c.pairKey === `${me}:${me}`
 
-  /**
-   * What a room is called in the list: the other person, the task, the work
-   * log entry, or you.
-   */
+  /** What a room is called in the list: the other person, the task, or you. */
   const titleOf = (c: Conversation) => {
     if (c.kind === 'task') {
       return allTasks.find((x) => x.id === c.taskId)?.title ?? 'Task'
-    }
-    if (c.kind === 'work_log') {
-      return (c.entryId ? entryInfo[c.entryId]?.title : null) ?? t('chat_workLogThread')
     }
     if (isSelfRoom(c)) return t('chat_yourself')
     const other = c.memberIds.find((id) => id !== me)
@@ -298,23 +272,9 @@ export function Chat() {
     (c) => c.kind === 'task' && !c.resolvedAt && matches(c),
   )
 
-  const entryRooms = conversations.filter(
-    (c) => c.kind === 'work_log' && !c.resolvedAt && matches(c),
-  )
-
-  // Finished discussions of either kind, in one archive.
   const resolvedRooms = conversations.filter(
-    (c) => c.kind !== 'direct' && c.resolvedAt && matches(c),
+    (c) => c.kind === 'task' && c.resolvedAt && matches(c),
   )
-
-  // A room's name comes from its entry, so the names have to be fetched before
-  // the list can show anything but a placeholder.
-  useEffect(() => {
-    const ids = conversations
-      .filter((c) => c.kind === 'work_log' && c.entryId)
-      .map((c) => c.entryId as string)
-    if (ids.length) ensureEntryInfo(ids)
-  }, [conversations, ensureEntryInfo])
 
   /**
    * Everyone you could start a chat with who you have no room with yet. A
@@ -408,23 +368,6 @@ export function Chat() {
     a.remove()
   }
 
-  /**
-   * Take the reader from a work log room to the entry it is about: their own
-   * log, or — for a manager — the log on the profile of whoever wrote it.
-   */
-  const goToEntry = (entryId: string) => {
-    const info = entryInfo[entryId]
-    if (!info) return
-    navigate(
-      withHighlight(
-        isAdmin
-          ? `/admin/projects/${info.projectId}/employees/team/${info.authorId}?tab=worklog`
-          : '/employee/work-log',
-        entryId
-      )
-    )
-  }
-
   /** Take the reader from a task room to the task it is about. */
   const goToTask = (taskId: string) => {
     const task = allTasks.find((x) => x.id === taskId)
@@ -456,15 +399,11 @@ export function Chat() {
           className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
             c.kind === 'task'
               ? isActive ? 'bg-white/20' : 'bg-amber/15'
-              : c.kind === 'work_log'
-                ? isActive ? 'bg-white/20' : 'bg-primary/10'
-                : isActive ? 'bg-white/20' : 'bg-primary'
+              : isActive ? 'bg-white/20' : 'bg-primary'
           }`}
         >
           {c.kind === 'task' ? (
             <CheckSquare size={14} className={isActive ? 'text-white' : 'text-amber'} />
-          ) : c.kind === 'work_log' ? (
-            <NotebookPen size={14} className={isActive ? 'text-white' : 'text-primary'} />
           ) : (
             <span className="text-white text-[10px] font-bold">{initials(title)}</span>
           )}
@@ -474,11 +413,7 @@ export function Chat() {
             {title}
           </p>
           <p className={`text-[11px] truncate ${isActive ? 'text-white/70' : 'text-text-subtle'}`}>
-            {c.kind === 'task'
-              ? t('chat_taskThread')
-              : c.kind === 'work_log'
-                ? t('chat_workLogThread')
-                : isSelfRoom(c) ? t('chat_yourselfHint') : t('chat_direct')}
+            {c.kind === 'task' ? t('chat_taskThread') : isSelfRoom(c) ? t('chat_yourselfHint') : t('chat_direct')}
           </p>
         </div>
         {unread > 0 && !isActive && (
@@ -564,12 +499,6 @@ export function Chat() {
             </Section>
           )}
 
-          {entryRooms.length > 0 && (
-            <Section label={t('chat_workLogThreads')}>
-              {entryRooms.map((c) => <RoomRow key={c.id} c={c} />)}
-            </Section>
-          )}
-
           {resolvedRooms.length > 0 && (
             <Section label={`${t('chat_resolved')} (${resolvedRooms.length})`}>
               {showResolved
@@ -616,7 +545,7 @@ export function Chat() {
             </Section>
           )}
 
-          {directRooms.length === 0 && taskRooms.length === 0 && entryRooms.length === 0 && startable.length === 0 && (
+          {directRooms.length === 0 && taskRooms.length === 0 && startable.length === 0 && (
             <div className="py-10 flex flex-col items-center gap-2 px-4 text-center">
               <MessageSquare size={26} className="text-text-subtle" />
               <p className="text-sm text-text-muted font-medium">{t('chat_noConversations')}</p>
@@ -684,15 +613,6 @@ export function Chat() {
                   >
                     <CheckSquare size={13} />
                     {t('chat_openTask')}
-                  </button>
-                )}
-                {active.kind === 'work_log' && active.entryId && (
-                  <button
-                    onClick={() => goToEntry(active.entryId!)}
-                    className="flex items-center gap-1.5 text-xs bg-primary/10 text-primary px-2.5 py-1.5 rounded-lg hover:bg-primary/20 transition-colors font-medium"
-                  >
-                    <NotebookPen size={13} />
-                    {t('chat_openEntry')}
                   </button>
                 )}
                 {active.clusterId && activeProjectId && (

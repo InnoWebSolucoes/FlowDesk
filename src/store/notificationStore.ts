@@ -26,6 +26,7 @@ function toNotification(row: any): AppNotification {
     message: row.message,
     taskId: row.task_id ?? undefined,
     conversationId: row.conversation_id ?? undefined,
+    entryId: row.entry_id ?? undefined,
     subjectUserId: row.subject_user_id ?? undefined,
     isRead: row.is_read,
     createdAt: row.created_at,

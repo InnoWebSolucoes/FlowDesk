@@ -435,6 +435,15 @@ export interface WorkLogEntry {
   links: { url: string; label: string }[]
 }
 
+/** A remark on one work log entry, shown under it. */
+export interface WorkLogComment {
+  id: string
+  entryId: string
+  authorId: string
+  body: string
+  createdAt: string
+}
+
 export interface TaskComment {
   id: string
   taskId: string
@@ -459,12 +468,10 @@ export interface ActivityLog {
  */
 export interface Conversation {
   id: string
-  kind: 'direct' | 'task' | 'work_log'
+  kind: 'direct' | 'task'
   projectId: string | null
   /** Set when kind is 'task'. What the room is about. */
   taskId: string | null
-  /** Set when kind is 'work_log'. The entry being discussed. */
-  entryId: string | null
   /** The room's folder in Resources. Created on the first upload. */
   clusterId: string | null
   createdAt: string
@@ -516,11 +523,16 @@ export interface AppNotification {
     | 'file_uploaded'
     // A message in chat, pointing at the room it was sent in.
     | 'chat_message'
+    // Somebody wrote up work they had done, and somebody commenting on it.
+    | 'work_logged'
+    | 'work_log_comment'
   title: string
   message: string
   taskId?: string
   /** The room a chat notification opens. */
   conversationId?: string
+  /** The work log entry a comment notification opens. */
+  entryId?: string
   /**
    * Who the notification is ABOUT, as against who it is for. A workload alert
    * goes to the managers but concerns one employee, and this is what lets

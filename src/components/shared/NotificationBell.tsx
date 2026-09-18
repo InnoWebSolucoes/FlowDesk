@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Bell, X, CheckCircle2, AlertTriangle, MessageSquare, Clock, Calendar,
-  PlayCircle, RotateCcw, Paperclip, Smartphone,
+  PlayCircle, RotateCcw, Paperclip, Smartphone, NotebookPen,
 } from 'lucide-react'
 import { useMatch, useNavigate } from 'react-router-dom'
 import { useNotificationStore } from '../../store/notificationStore'
@@ -29,6 +29,8 @@ function notifIcon(type: AppNotification['type']) {
     case 'task_reopened': return <RotateCcw size={14} className="text-amber" />
     case 'file_uploaded': return <Paperclip size={14} className="text-primary" />
     case 'chat_message': return <MessageSquare size={14} className="text-primary" />
+    case 'work_logged': return <NotebookPen size={14} className="text-primary" />
+    case 'work_log_comment': return <MessageSquare size={14} className="text-primary" />
     default: return <Bell size={14} className="text-text-muted" />
   }
 }
@@ -204,6 +206,30 @@ export function NotificationBell({
             ? `/admin/projects/${activeProjectId}/chat`
             : '/admin/chat'
       navigate(`${chatBase}?conversation=${notif.conversationId}`)
+      return
+    }
+
+    // A comment points at the entry it is on: your own log, or — for a
+    // manager — the log on the profile of whoever wrote it.
+    if (notif.entryId) {
+      if (role !== 'admin') {
+        navigate(withHighlight('/employee/work-log', notif.entryId))
+        return
+      }
+      const who = employees.find((e) => e.id === notif.subjectUserId)
+      const project =
+        activeProjectId ??
+        (who?.projectIds?.length ? who.projectIds[0] : who?.projectId ?? undefined)
+      if (who && project) {
+        navigate(
+          withHighlight(
+            `/admin/projects/${project}/employees/team/${who.id}?tab=worklog`,
+            notif.entryId
+          )
+        )
+        return
+      }
+      navigate('/admin/projects')
       return
     }
 

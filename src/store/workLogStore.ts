@@ -1,7 +1,17 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
-import { WorkLogEntry } from '../types'
+import { WorkLogComment, WorkLogEntry } from '../types'
 import { useAuthStore } from './authStore'
+
+function toComment(row: any): WorkLogComment {
+  return {
+    id: row.id,
+    entryId: row.entry_id,
+    authorId: row.author_id,
+    body: row.body,
+    createdAt: row.created_at,
+  }
+}
 
 function toEntry(row: any): WorkLogEntry {
   return {
@@ -34,16 +44,16 @@ interface WorkLogState {
   loadedFor: string | null
   loading: boolean
   /**
-   * Just enough about an entry to name its discussion and get back to it, by
-   * id. Chat names a room after the entry it is about, and a manager's rooms
-   * span projects — more than the one project `entries` holds at a time — so
-   * this is kept apart from it.
+   * The comments on each entry, by entry id, oldest first. Loaded for the
+   * whole project in one go, so every card can show its count without a
+   * request of its own.
    */
-  entryInfo: Record<string, { title: string; authorId: string; projectId: string }>
+  comments: Record<string, WorkLogComment[]>
 
   load: (projectId: string) => Promise<void>
-  /** Look up the entries not already known. */
-  ensureEntryInfo: (entryIds: string[]) => Promise<void>
+  /** Say something on an entry. */
+  addComment: (entryId: string, body: string) => Promise<void>
+  removeComment: (id: string, entryId: string) => Promise<void>
   add: (input: {
     projectId: string
     title: string
@@ -56,29 +66,44 @@ interface WorkLogState {
   remove: (id: string) => Promise<void>
 }
 
-export const useWorkLogStore = create<WorkLogState>()((set, get) => ({
+export const useWorkLogStore = create<WorkLogState>()((set) => ({
   entries: [],
   loadedFor: null,
   loading: false,
-  entryInfo: {},
+  comments: {},
 
-  ensureEntryInfo: async (entryIds) => {
-    const have = get().entryInfo
-    const missing = [...new Set(entryIds)].filter((id) => id && !have[id])
-    if (missing.length === 0) return
+  addComment: async (entryId, body) => {
+    // Whoever the app is acting as, for the same reason add() uses it: viewing
+    // an employee's side as them, the words are theirs.
+    const uid = useAuthStore.getState().currentUser?.id
+    if (!uid) throw new Error('You are not signed in.')
 
-    const { data } = await supabase
-      .from('work_log_entries')
-      .select('id, title, author_id, project_id')
-      .in('id', missing)
+    const { data, error } = await supabase
+      .from('work_log_comments')
+      .insert({ entry_id: entryId, author_id: uid, body })
+      .select()
+      .single()
 
-    if (!data?.length) return
+    if (error || !data) {
+      console.error('[workLog] comment failed:', error)
+      throw new Error(error?.message ?? 'That could not be saved.')
+    }
+
     set((s) => ({
-      entryInfo: {
-        ...s.entryInfo,
-        ...Object.fromEntries(
-          data.map((r) => [r.id, { title: r.title, authorId: r.author_id, projectId: r.project_id }])
-        ),
+      comments: { ...s.comments, [entryId]: [...(s.comments[entryId] ?? []), toComment(data)] },
+    }))
+  },
+
+  removeComment: async (id, entryId) => {
+    const { error } = await supabase.from('work_log_comments').delete().eq('id', id)
+    if (error) {
+      console.error('[workLog] comment delete failed:', error)
+      throw new Error(error.message)
+    }
+    set((s) => ({
+      comments: {
+        ...s.comments,
+        [entryId]: (s.comments[entryId] ?? []).filter((c) => c.id !== id),
       },
     }))
   },
@@ -99,18 +124,26 @@ export const useWorkLogStore = create<WorkLogState>()((set, get) => ({
       return
     }
     const entries = (data ?? []).map(toEntry)
-    set((s) => ({
-      entries,
-      loadedFor: projectId,
-      loading: false,
-      // Whatever has been loaded here, chat can name without asking again.
-      entryInfo: {
-        ...s.entryInfo,
-        ...Object.fromEntries(
-          entries.map((e) => [e.id, { title: e.title, authorId: e.authorId, projectId: e.projectId }])
-        ),
-      },
-    }))
+    set({ entries, loadedFor: projectId, loading: false })
+
+    // The comments on all of them, in one request rather than one per card.
+    if (entries.length === 0) {
+      set({ comments: {} })
+      return
+    }
+
+    const { data: rows } = await supabase
+      .from('work_log_comments')
+      .select('*')
+      .in('entry_id', entries.map((e) => e.id))
+      .order('created_at', { ascending: true })
+
+    const comments: Record<string, WorkLogComment[]> = {}
+    for (const row of rows ?? []) {
+      const c = toComment(row)
+      ;(comments[c.entryId] ??= []).push(c)
+    }
+    set({ comments })
   },
 
   add: async ({ projectId, title, description, minutes, workedOn, itemIds, links }) => {
