@@ -459,10 +459,12 @@ export interface ActivityLog {
  */
 export interface Conversation {
   id: string
-  kind: 'direct' | 'task'
+  kind: 'direct' | 'task' | 'work_log'
   projectId: string | null
   /** Set when kind is 'task'. What the room is about. */
   taskId: string | null
+  /** Set when kind is 'work_log'. The entry being discussed. */
+  entryId: string | null
   /** The room's folder in Resources. Created on the first upload. */
   clusterId: string | null
   createdAt: string

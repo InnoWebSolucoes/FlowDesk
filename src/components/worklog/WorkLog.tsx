@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Plus, Paperclip, Link2, X, Clock, Trash2, Loader2, NotebookPen,
+  Plus, Paperclip, Link2, X, Clock, Trash2, Loader2, NotebookPen, MessageSquare,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { format, parseISO, startOfWeek, startOfMonth } from 'date-fns'
 import { Project } from '../../types'
 import { useWorkLogStore } from '../../store/workLogStore'
@@ -12,6 +13,9 @@ import { EmptyState } from '../shared/EmptyState'
 import { AttachmentCard, MissingAttachment } from '../shared/AttachmentCard'
 import { useT } from '../../i18n/useT'
 import { Linkify } from '../shared/Linkify'
+import { useChatStore } from '../../store/chatStore'
+import { useHighlight } from '../../hooks/useHighlight'
+import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 
 type Grouping = 'day' | 'week' | 'month'
 
@@ -42,6 +46,12 @@ export function WorkLog({
   const { currentUser } = useAuthStore()
   const { employees } = useEmployeeStore()
   const fileRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
+  const highlight = useHighlight()
+  // An entry can be discussed, the same as a task. The room is the count, so
+  // the card says whether there is anything to read.
+  const { conversations, messages, openEntryRoom } = useChatStore()
+  const [opening, setOpening] = useState<string | null>(null)
 
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -76,6 +86,27 @@ export function WorkLog({
   const mine = entries.filter((e) => e.authorId === who)
 
   const isAdmin = currentUser?.role === 'admin'
+
+  /**
+   * Open the discussion of one entry. As with a task, the room is made on
+   * demand — an entry nobody has asked about yet still has somewhere to go, it
+   * just does not exist until someone opens it.
+   */
+  const openDiscussion = async (entryId: string) => {
+    setOpening(entryId)
+    try {
+      const conv = await openEntryRoom(entryId, project.id)
+      if (!conv) return
+      navigate(
+        isAdmin
+          ? `/admin/projects/${project.id}/chat?conversation=${conv.id}`
+          : `/employee/chat?conversation=${conv.id}`
+      )
+    } finally {
+      setOpening(null)
+    }
+  }
+
   const nameOf = (id: string) =>
     id === currentUser?.id ? t('worklog_you') : employees.find((e) => e.id === id)?.name ?? '—'
 
@@ -371,8 +402,17 @@ export function WorkLog({
             </div>
 
             <div className="space-y-2">
-              {group.entries.map((e) => (
-                <div key={e.id} className="bg-surface border border-border rounded-xl px-4 py-3">
+              {group.entries.map((e) => {
+                const room = conversations.find((c) => c.entryId === e.id)
+                const messageCount = room ? (messages[room.id] ?? []).length : 0
+                return (
+                <div
+                  key={e.id}
+                  ref={highlight.isHighlighted(e.id) ? highlight.ref : undefined}
+                  className={`bg-surface border border-border rounded-xl px-4 py-3 ${
+                    highlight.isHighlighted(e.id) ? HIGHLIGHT_CLASS : ''
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-text-main text-sm font-medium">{e.title}</p>
@@ -386,6 +426,19 @@ export function WorkLog({
                           <Clock size={11} /> {e.minutes} min
                         </span>
                       )}
+                      {/* Asking about an entry is not writing into it, so a
+                          manager reading someone's log gets this too. */}
+                      <button
+                        onClick={() => openDiscussion(e.id)}
+                        disabled={opening === e.id}
+                        title={t('worklog_discuss')}
+                        className="flex items-center gap-1 text-[11px] text-text-subtle hover:text-primary p-1 disabled:opacity-60"
+                      >
+                        {opening === e.id
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <MessageSquare size={12} />}
+                        {messageCount > 0 && messageCount}
+                      </button>
                       {(e.authorId === currentUser?.id || isAdmin) && (
                         <button
                           onClick={() => remove(e.id)}
@@ -431,7 +484,8 @@ export function WorkLog({
                     {nameOf(e.authorId)} · {format(parseISO(e.createdAt), 'HH:mm')}
                   </p>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         ))}

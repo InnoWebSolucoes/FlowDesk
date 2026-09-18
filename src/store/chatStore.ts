@@ -63,6 +63,8 @@ interface ChatState {
   openDirect: (otherUserId: string) => Promise<Conversation | null>
   /** The room for this task, opening one if it does not exist yet. */
   openTaskRoom: (taskId: string, projectId: string) => Promise<Conversation | null>
+  /** The room for this work log entry, opening one if it does not exist yet. */
+  openEntryRoom: (entryId: string, projectId: string) => Promise<Conversation | null>
 
   /** The room's folder in Resources, created on demand. */
   ensureCluster: (conversationId: string, title: string) => Promise<string | null>
@@ -78,6 +80,7 @@ function toConversation(row: any): Conversation {
     kind: row.kind,
     projectId: row.project_id ?? null,
     taskId: row.task_id ?? null,
+    entryId: row.entry_id ?? null,
     clusterId: row.cluster_id ?? null,
     createdAt: row.created_at,
     lastMessageAt: row.last_message_at,
@@ -154,6 +157,67 @@ async function me(): Promise<string | null> {
  */
 let cachedUserId: string | null = null
 
+/**
+ * The room for one thing — a task, a work log entry — opened on demand.
+ *
+ * Both are keyed by a column with a unique index, and the dance is the same
+ * for either: look in what is already loaded, ask the database (a manager has
+ * rooms they have never messaged in), then create one; and if that create
+ * loses a race with someone else opening the same room, take theirs.
+ */
+async function keyedRoom(
+  column: 'task_id' | 'entry_id',
+  value: string,
+  kind: 'task' | 'work_log',
+  projectId: string,
+  set: (fn: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
+  get: () => ChatState,
+): Promise<Conversation | null> {
+  const userId = await me()
+  if (!userId) return null
+
+  const key = column === 'task_id' ? 'taskId' : 'entryId'
+  const existing = get().conversations.find((c) => c[key] === value)
+  if (existing) return existing
+
+  const fetchRoom = () =>
+    supabase
+      .from('conversations')
+      .select('*, conversation_members(user_id, last_read_at)')
+      .eq(column, value)
+      .maybeSingle()
+
+  const { data: found } = await fetchRoom()
+  if (found) {
+    const conv = toConversation(found)
+    set((s) => ({ conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)] }))
+    return conv
+  }
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .insert({ kind, [column]: value, project_id: projectId, created_by: userId })
+    .select()
+    .single()
+
+  if (error || !data) {
+    // Same race as a direct room: the unique index rejected a duplicate.
+    const { data: theirs } = await fetchRoom()
+    if (!theirs) {
+      console.error('[chat] could not open the room:', error?.message)
+      set({ error: error?.message ?? 'Could not open that discussion.' })
+      return null
+    }
+    const conv = toConversation(theirs)
+    set((s) => ({ conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)] }))
+    return conv
+  }
+
+  const conv = toConversation(data)
+  set((s) => ({ conversations: [conv, ...s.conversations] }))
+  return conv
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
   conversations: [],
   people: [],
@@ -189,8 +253,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     get().loadPeople()
 
-    // RLS decides what comes back: your direct rooms, and the task rooms for
-    // tasks you are on — every task room, for a manager.
+    // RLS decides what comes back: your direct rooms, the task rooms for tasks
+    // you are on, and the rooms for work log entries you wrote — every task and
+    // entry room, for a manager.
     const { data, error } = await supabase
       .from('conversations')
       .select('*, conversation_members(user_id, last_read_at)')
@@ -603,54 +668,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     return conv
   },
 
-  openTaskRoom: async (taskId, projectId) => {
-    const userId = await me()
-    if (!userId) return null
+  openTaskRoom: async (taskId, projectId) => keyedRoom('task_id', taskId, 'task', projectId, set, get),
 
-    const existing = get().conversations.find((c) => c.taskId === taskId)
-    if (existing) return existing
-
-    // It may exist without this client having seen it — a manager has rooms
-    // for tasks they have never messaged in.
-    const { data: found } = await supabase
-      .from('conversations')
-      .select('*, conversation_members(user_id, last_read_at)')
-      .eq('task_id', taskId)
-      .maybeSingle()
-
-    if (found) {
-      const conv = toConversation(found)
-      set((s) => ({ conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)] }))
-      return conv
-    }
-
-    const { data, error } = await supabase
-      .from('conversations')
-      .insert({ kind: 'task', task_id: taskId, project_id: projectId, created_by: userId })
-      .select()
-      .single()
-
-    if (error || !data) {
-      // Same race as a direct room: the unique index rejected a duplicate.
-      const { data: theirs } = await supabase
-        .from('conversations')
-        .select('*, conversation_members(user_id, last_read_at)')
-        .eq('task_id', taskId)
-        .maybeSingle()
-      if (!theirs) {
-        console.error('[chat] could not open the task room:', error?.message)
-        set({ error: error?.message ?? 'Could not open that discussion.' })
-        return null
-      }
-      const conv = toConversation(theirs)
-      set((s) => ({ conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)] }))
-      return conv
-    }
-
-    const conv = toConversation(data)
-    set((s) => ({ conversations: [conv, ...s.conversations] }))
-    return conv
-  },
+  openEntryRoom: async (entryId, projectId) => keyedRoom('entry_id', entryId, 'work_log', projectId, set, get),
 
   ensureCluster: async (conversationId, title) => {
     // Always asked of the database, even when a folder id is already in

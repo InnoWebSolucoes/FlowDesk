@@ -33,8 +33,17 @@ interface WorkLogState {
   entries: WorkLogEntry[]
   loadedFor: string | null
   loading: boolean
+  /**
+   * Just enough about an entry to name its discussion and get back to it, by
+   * id. Chat names a room after the entry it is about, and a manager's rooms
+   * span projects — more than the one project `entries` holds at a time — so
+   * this is kept apart from it.
+   */
+  entryInfo: Record<string, { title: string; authorId: string; projectId: string }>
 
   load: (projectId: string) => Promise<void>
+  /** Look up the entries not already known. */
+  ensureEntryInfo: (entryIds: string[]) => Promise<void>
   add: (input: {
     projectId: string
     title: string
@@ -51,6 +60,28 @@ export const useWorkLogStore = create<WorkLogState>()((set, get) => ({
   entries: [],
   loadedFor: null,
   loading: false,
+  entryInfo: {},
+
+  ensureEntryInfo: async (entryIds) => {
+    const have = get().entryInfo
+    const missing = [...new Set(entryIds)].filter((id) => id && !have[id])
+    if (missing.length === 0) return
+
+    const { data } = await supabase
+      .from('work_log_entries')
+      .select('id, title, author_id, project_id')
+      .in('id', missing)
+
+    if (!data?.length) return
+    set((s) => ({
+      entryInfo: {
+        ...s.entryInfo,
+        ...Object.fromEntries(
+          data.map((r) => [r.id, { title: r.title, authorId: r.author_id, projectId: r.project_id }])
+        ),
+      },
+    }))
+  },
 
   load: async (projectId) => {
     set({ loading: true })
@@ -67,11 +98,19 @@ export const useWorkLogStore = create<WorkLogState>()((set, get) => ({
       set({ loading: false })
       return
     }
-    set({
-      entries: (data ?? []).map(toEntry),
+    const entries = (data ?? []).map(toEntry)
+    set((s) => ({
+      entries,
       loadedFor: projectId,
       loading: false,
-    })
+      // Whatever has been loaded here, chat can name without asking again.
+      entryInfo: {
+        ...s.entryInfo,
+        ...Object.fromEntries(
+          entries.map((e) => [e.id, { title: e.title, authorId: e.authorId, projectId: e.projectId }])
+        ),
+      },
+    }))
   },
 
   add: async ({ projectId, title, description, minutes, workedOn, itemIds, links }) => {
