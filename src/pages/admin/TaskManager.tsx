@@ -12,6 +12,7 @@ import { HIGHLIGHT_CLASS } from '../../lib/highlight'
 import { useCreateTask } from '../../hooks/useCreateTask'
 import { UrgentBadge, UrgentToggle } from '../../components/shared/Urgent'
 import { Select } from '../../components/shared/Select'
+import { DeleteTaskDialog } from '../../components/shared/DeleteTaskDialog'
 
 const FREQ_OPTIONS: FrequencyType[] = ['daily', 'weekly', 'monthly', 'one-off']
 
@@ -401,7 +402,7 @@ function TaskStatusCells({ task }: { task: Task }) {
 }
 
 export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: string }) {
-  const { tasks, categories, updateTask, deleteTask, addCategory } = useTaskStore()
+  const { tasks, categories, updateTask, addCategory } = useTaskStore()
   const { employees } = useEmployeeStore()
   // Work is assigned to staff, not to managers.
   const staff = employees.filter((e) => e.role === 'employee')
@@ -417,6 +418,9 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(0)
   const [editing, setEditing] = useState<Task | null | 'new'>(null)
+  // The task whose deletion is being confirmed. A repeating task has more
+  // than one possible meaning for "delete", so it is asked rather than assumed.
+  const [deleting, setDeleting] = useState<Task | null>(null)
 
   const PAGE_SIZE = 20
 
@@ -493,15 +497,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
     }
   }
 
-  const handleDelete = async (id: string) => {
-    // deleteTask throws on a refusal now, and an unhandled rejection here
-    // would leave the row on screen with nothing said.
-    try {
-      await deleteTask(id)
-    } catch (e) {
-      alert(e instanceof Error ? e.message : t('task_couldNotDelete'))
-    }
-  }
+
 
   const freqLabel = (task: Task) => {
     const f = task.frequency
@@ -635,7 +631,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
                                 className="p-1.5 rounded hover:bg-surface-2 text-text-subtle hover:text-text-main transition-colors">
                                 <Pencil size={13} />
                               </button>
-                              <button onClick={() => handleDelete(task.id)}
+                              <button onClick={() => setDeleting(task)}
                                 className="p-1.5 rounded hover:bg-danger-bg text-text-subtle hover:text-danger transition-colors">
                                 <Trash2 size={13} />
                               </button>
@@ -680,6 +676,13 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
             onAddCategory={addCategory}
           />
         </div>
+      )}
+
+      {/* A repeating task can go for one day or for good, and this is where
+          that is asked. There is no day in view here, so the day on offer is
+          today — the day the status column reports on. */}
+      {deleting && (
+        <DeleteTaskDialog task={deleting} onClose={() => setDeleting(null)} />
       )}
     </div>
   )

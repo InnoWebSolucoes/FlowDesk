@@ -5,6 +5,7 @@ import { useEmployeeStore } from '../../store/employeeStore'
 import { TaskForm } from '../../pages/admin/TaskManager'
 import { useCreateTask } from '../../hooks/useCreateTask'
 import { useT } from '../../i18n/useT'
+import { DeleteTaskDialog } from './DeleteTaskDialog'
 
 /**
  * Editing one task from wherever it happens to be on screen.
@@ -47,9 +48,17 @@ export function TaskEditDialog({
     }
   }
 
-  // Deleting is one click, no confirmation: the bin is beside Cancel and a
-  // step in between was one more thing to click through every time.
+  // Deleting a one-off is one click, no confirmation: the bin is beside Cancel
+  // and a step in between was one more thing to click through every time. A
+  // repeating task is the exception — that click used to take every day it had
+  // ever produced, so it asks which is meant.
+  const [confirming, setConfirming] = useState(false)
+
   const remove = async () => {
+    if (task.frequency.type !== 'one-off') {
+      setConfirming(true)
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -88,6 +97,19 @@ export function TaskEditDialog({
           </p>
         )}
       </div>
+
+      {/* A repeating task's bin asks which is meant rather than taking every
+          day it has ever produced. */}
+      {confirming && (
+        <DeleteTaskDialog
+          task={task}
+          onClose={() => {
+            setConfirming(false)
+            // Gone or kept, the editor is done either way.
+            onClose()
+          }}
+        />
+      )}
     </div>
   )
 }

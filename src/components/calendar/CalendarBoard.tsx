@@ -126,7 +126,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   const {
     tasks, completionLogs, completeTask, uncompleteTask, isTaskCompleted,
     setInProgress, clearInProgress, isInProgress, isMissed, clearMissed, taskStatuses, taskStartedAt,
-    taskMoves, moveTaskOccurrence, deleteTask,
+    taskMoves, moveTaskOccurrence, deleteTask, deleteTaskOccurrence,
   } = useTaskStore()
   // One click: waiting. Two: done. The same rule as the todo board.
   const tickTodo = useTodoTick()
@@ -798,7 +798,12 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         const bTask = tasks.find((x) => x.id === blockMenu.taskId)
         if (!bTask) return null
         const act = (fn: () => void) => () => { fn(); setBlockMenu(null) }
-        const pos = menuPos(blockMenu.x, blockMenu.y, 2)
+        // A repeating task has days beyond this one, so deleting it has two
+        // possible meanings. Which was never asked: the whole series went,
+        // every day of it, past and future, from one click on one day.
+        const repeats = bTask.frequency.type !== 'one-off'
+        const oneDay = repeats && !!blockMenu.employeeId && !!blockMenu.occDate
+        const pos = menuPos(blockMenu.x, blockMenu.y, oneDay ? 3 : 2)
         return (
           <>
             <div
@@ -818,13 +823,23 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
                 className="w-full text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >{t('ui_edit')}</button>
               <div className="h-px bg-border my-1" />
+              {oneDay && (
+                <button
+                  onClick={act(() => {
+                    setError('')
+                    deleteTaskOccurrence(bTask.id, blockMenu.employeeId!, blockMenu.occDate!)
+                      .catch((err) => setError((err as Error).message || t('task_couldNotDelete')))
+                  })}
+                  className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
+                >{t('task_deleteOnlyThis').replace('{date}', format(new Date(`${blockMenu.occDate}T00:00:00`), 'd MMM'))}</button>
+              )}
               <button
                 onClick={act(() => {
                   setError('')
                   deleteTask(bTask.id).catch((err) => setError((err as Error).message || t('task_couldNotDelete')))
                 })}
                 className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
-              >{t('ui_delete')}</button>
+              >{oneDay ? t('task_deleteEveryRepeat') : t('ui_delete')}</button>
             </div>
           </>
         )
@@ -1351,9 +1366,9 @@ function BlockChip({
         // Done work fades and strikes through, whichever kind it is.
         block.todo?.isCompleted || block.done ? 'line-through opacity-45' : block.missed ? 'opacity-45' : ''
       } ${
-        // Urgent and still to do: a red ring outside the person's colour, so
-        // it stands out without losing whose it is.
-        block.urgent && !(block.todo?.isCompleted || block.done) && !block.ghost ? 'ring-2 ring-danger ring-offset-1' : ''
+        // Urgent and still to do: a red glow outside the person's colour, so
+        // it stands out without losing whose it is. See .urgent-glow.
+        block.urgent && !(block.todo?.isCompleted || block.done) && !block.ghost ? 'urgent-glow z-10' : ''
       } ${block.ghost ? 'opacity-40' : ''}`}
       style={
         block.ownWork
