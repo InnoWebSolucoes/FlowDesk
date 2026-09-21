@@ -33,7 +33,18 @@ where board_key is null;
 alter table public.day_order
   alter column board_key set not null;
 
--- A shared board's rows have no owner, so the column can no longer demand one.
+-- Re-key on the board, before anything touches owner_id: a column that is
+-- still part of the primary key cannot be made nullable, and Postgres refuses
+-- the whole migration rather than half of it.
+--
+-- A swap rather than a fresh table, so the orders already arranged survive.
+alter table public.day_order
+  drop constraint if exists day_order_pkey;
+alter table public.day_order
+  add primary key (board_key, day, kind, item_id);
+
+-- Now it is free: a shared board's rows have no owner, so the column can no
+-- longer demand one.
 alter table public.day_order
   alter column owner_id drop not null;
 
@@ -42,13 +53,6 @@ alter table public.day_order
   drop constraint if exists day_order_one_board;
 alter table public.day_order
   add constraint day_order_one_board check (num_nonnulls(owner_id, project_id) = 1);
-
--- Re-key on the board. Done as a swap rather than a fresh table so the orders
--- already arranged survive it.
-alter table public.day_order
-  drop constraint if exists day_order_pkey;
-alter table public.day_order
-  add primary key (board_key, day, kind, item_id);
 
 create index if not exists day_order_board_day_idx
   on public.day_order(board_key, day);
