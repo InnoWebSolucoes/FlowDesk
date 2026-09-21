@@ -11,3 +11,6 @@ dist
 # Installers downloaded from the GitHub build; they live on the release page.
 desktop/dist-mac/
 desktop/dist-win/
+
+# One-time push setup, generated with the project key inlined. Local only.
+SETUP_PUSH.sql

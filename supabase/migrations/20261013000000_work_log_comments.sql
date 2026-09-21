@@ -128,24 +128,41 @@ end $$;
 -- Entry discussions briefly lived in chat. Anything actually said there is
 -- moved into the comments above rather than dropped, and then those rooms go.
 
-insert into public.work_log_comments (entry_id, author_id, body, created_at)
-select c.entry_id, m.author_id, m.body, m.created_at
-from public.conversations c
-join public.chat_messages m on m.conversation_id = c.id
-where c.kind = 'work_log'
-  and c.entry_id is not null
-  and coalesce(m.body, '') <> ''
-  and not exists (
-    -- Re-running this migration must not duplicate what it already moved.
-    select 1 from public.work_log_comments w
-    where w.entry_id = c.entry_id
-      and w.author_id = m.author_id
-      and w.created_at = m.created_at
-  );
+-- Guarded, and run through EXECUTE, because the rooms may never have existed:
+-- the migration that made them is one nobody was obliged to run, and a plain
+-- reference to conversations.entry_id fails to parse when that column is not
+-- there — taking the rest of this file with it.
 
-delete from public.conversations where kind = 'work_log';
+do $do$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'conversations'
+      and column_name = 'entry_id'
+  ) then
+    execute $sql$
+      insert into public.work_log_comments (entry_id, author_id, body, created_at)
+      select c.entry_id, m.author_id, m.body, m.created_at
+      from public.conversations c
+      join public.chat_messages m on m.conversation_id = c.id
+      where c.kind = 'work_log'
+        and c.entry_id is not null
+        and coalesce(m.body, '') <> ''
+        and not exists (
+          -- Re-running this must not duplicate what it already moved.
+          select 1 from public.work_log_comments w
+          where w.entry_id = c.entry_id
+            and w.author_id = m.author_id
+            and w.created_at = m.created_at
+        )
+    $sql$;
 
-alter table public.conversations drop column if exists entry_id;
+    execute $sql$ delete from public.conversations where kind = 'work_log' $sql$;
+    execute $sql$ alter table public.conversations drop column entry_id $sql$;
+  end if;
+end
+$do$;
 
 alter table public.conversations
   drop constraint if exists conversations_kind_check;
