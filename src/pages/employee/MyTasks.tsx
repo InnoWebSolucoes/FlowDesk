@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { format, addDays, addWeeks } from 'date-fns'
-import { ChevronDown, ChevronRight, ChevronLeft, PartyPopper, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronLeft, PartyPopper, Search, GripVertical, ArrowUpDown, Check } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskCard } from '../../components/shared/TaskCard'
@@ -11,6 +11,7 @@ import { Select } from '../../components/shared/Select'
 import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
 import { TaskEditDialog } from '../../components/shared/TaskEditDialog'
+import { useDayOrderStore } from '../../store/dayOrderStore'
 
 const TABS = ['today', 'week', 'month'] as const
 export type TaskPeriod = typeof TABS[number]
@@ -107,6 +108,62 @@ function TimeBlock({
 }
 
 /**
+ * Today as a list of handles, for putting it in the order you mean to work in.
+ *
+ * Deliberately not the cards: a card is for doing the work — it ticks, it
+ * opens, it has a menu — and every one of those is something to hit by
+ * accident while dragging. Arranging is its own mode, so a row here is a
+ * handle, a title and nothing else.
+ *
+ * The order written is the day's, not this list's, so it is the same order the
+ * calendar draws.
+ */
+function ReorderList({
+  occurrences,
+  onMove,
+}: {
+  occurrences: TaskOccurrence[]
+  onMove: (from: number, to: number) => void
+}) {
+  const [dragging, setDragging] = useState<number | null>(null)
+  const [over, setOver] = useState<number | null>(null)
+
+  return (
+    <div className="space-y-1.5 mb-5">
+      {occurrences.map((occ, i) => (
+        <div
+          key={occKey(occ)}
+          draggable
+          onDragStart={() => setDragging(i)}
+          onDragEnd={() => { setDragging(null); setOver(null) }}
+          onDragOver={(e) => { e.preventDefault(); setOver(i) }}
+          onDrop={(e) => {
+            e.preventDefault()
+            if (dragging !== null && dragging !== i) onMove(dragging, i)
+            setDragging(null)
+            setOver(null)
+          }}
+          className={`flex items-center gap-2.5 px-3 py-2.5 bg-surface border rounded-lg cursor-grab active:cursor-grabbing transition-colors ${
+            dragging === i
+              ? 'opacity-40 border-primary'
+              : over === i
+                ? 'border-primary bg-primary-light/40'
+                : 'border-border'
+          }`}
+        >
+          <GripVertical size={14} className="text-text-subtle flex-shrink-0" />
+          <span className="text-text-subtle text-xs tabular-nums w-5 flex-shrink-0">{i + 1}</span>
+          <span className="text-text-main text-sm truncate">{occ.task.title}</span>
+          {occ.task.isUrgent && (
+            <span className="ml-auto text-[10px] font-semibold text-danger flex-shrink-0">●</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
  * What the period holds in total, above the day-by-day breakdown. Counted from
  * the same occurrences the rows below show, so the bar and the rows cannot
  * disagree.
@@ -198,9 +255,25 @@ export function MyTasks({
   const [filterCategoryId, setFilterCategoryId] = useState('')
   const [completedCollapsed, setCompletedCollapsed] = useState(false)
 
+  // Arranging today by hand. Off by default: the day reads as a day, and only
+  // becomes a list of handles when you say you are rearranging it.
+  const [reordering, setReordering] = useState(false)
+  const {
+    positions: dayPositions, hasOrder, sortForDay, setOrder,
+    load: loadDayOrder, subscribe: subscribeDayOrder,
+  } = useDayOrderStore()
+
   const highlight = useHighlight()
 
   const empId = employeeId ?? currentUser?.id ?? ''
+
+  // The same rows the calendar reads, so arranging a day in either place
+  // arranges it in both.
+  useEffect(() => {
+    if (!empId) return
+    loadDayOrder([empId])
+    subscribeDayOrder()
+  }, [empId, loadDayOrder, subscribeDayOrder])
 
   // Two todays. The real one decides where work has moved to — a task only
   // carries forward in real time. The anchored one is the day the view is
@@ -266,10 +339,21 @@ export function MyTasks({
       list.push(occ)
       map.set(occ.showOn, list)
     }
-    // Urgent first on every day, so the week and month rows lead with it too.
-    for (const list of map.values()) list.sort((a, b) => Number(b.task.isUrgent) - Number(a.task.isUrgent))
+    for (const [day, list] of map) {
+      // A day arranged by hand — here or on the calendar — keeps that order,
+      // urgent included: having decided where it goes, it should stay there.
+      // Any other day leads with urgent work, as it always did.
+      if (empId && hasOrder(empId, day)) {
+        map.set(day, sortForDay(empId, day, list, (occ) => ({ kind: 'task', itemId: occ.task.id })))
+      } else {
+        list.sort((a, b) => Number(b.task.isUrgent) - Number(a.task.isUrgent))
+      }
+    }
     return map
-  }, [occurrences])
+    // dayPositions rather than the getters: the sort has to re-run when an
+    // order arrives or changes, and a getter identity never changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [occurrences, empId, dayPositions])
 
   const onDay = (dateStr: string) => byDay.get(dateStr) ?? []
   const countDone = (list: TaskOccurrence[]) => list.filter((o) => o.completed).length
@@ -512,13 +596,64 @@ export function MyTasks({
             </div>
           )}
 
-          {!allDone && !noResults && (
-            <>
-              <TimeBlock label={t('urgent_label')} occurrences={urgent} cardProps={cardProps} />
-              <TimeBlock label={t('mytasks_morning')} occurrences={morning} cardProps={cardProps} />
-              <TimeBlock label={t('mytasks_afternoon')} occurrences={afternoon} cardProps={cardProps} />
-              <TimeBlock label={t('mytasks_endOfDay')} occurrences={endOfDay} cardProps={cardProps} />
-            </>
+          {/* Arranging the day. Offered whenever there is more than one thing
+              to arrange, and only for the real today: reordering a day you are
+              only looking back at is arranging something already done. */}
+          {!allDone && !noResults && pendingOcc.length > 1 && todayStr === realTodayStr && (
+            <button
+              onClick={() => {
+                if (reordering) {
+                  setReordering(false)
+                  return
+                }
+                setReordering(true)
+              }}
+              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors mb-3 ${
+                reordering
+                  ? 'bg-primary text-white border-primary'
+                  : 'border-border text-text-muted hover:text-text-main hover:bg-surface-2'
+              }`}
+            >
+              {reordering ? <Check size={13} /> : <ArrowUpDown size={13} />}
+              {reordering ? t('mytasks_reorderDone') : t('mytasks_reorder')}
+            </button>
+          )}
+
+          {!allDone && !noResults && reordering && (
+            <ReorderList
+              occurrences={pendingOcc}
+              onMove={(from, to) => {
+                const next = [...pendingOcc]
+                const [moved] = next.splice(from, 1)
+                next.splice(to, 0, moved)
+                // The whole day, completed work included, so the positions
+                // written cover everything the calendar draws for that day.
+                const order = [...next, ...completedOcc].map((o) => ({
+                  kind: 'task' as const,
+                  itemId: o.task.id,
+                }))
+                setOrder(empId, todayStr, order).catch(() => {
+                  // The store has already moved it on screen; a failure here
+                  // means the next load puts it back where it was.
+                })
+              }}
+            />
+          )}
+
+          {!allDone && !noResults && !reordering && (
+            hasOrder(empId, todayStr) ? (
+              // Arranged by hand, so it is one list in that order rather than
+              // buckets guessed from category names — those would scatter the
+              // order across four headings and lose it.
+              <TimeBlock label={t('mytasks_yourOrder')} occurrences={pendingOcc} cardProps={cardProps} />
+            ) : (
+              <>
+                <TimeBlock label={t('urgent_label')} occurrences={urgent} cardProps={cardProps} />
+                <TimeBlock label={t('mytasks_morning')} occurrences={morning} cardProps={cardProps} />
+                <TimeBlock label={t('mytasks_afternoon')} occurrences={afternoon} cardProps={cardProps} />
+                <TimeBlock label={t('mytasks_endOfDay')} occurrences={endOfDay} cardProps={cardProps} />
+              </>
+            )
           )}
 
           {/* Under the all-done note too: what was done is the record of

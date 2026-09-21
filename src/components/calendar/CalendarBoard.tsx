@@ -12,6 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useAuthStore } from '../../store/authStore'
+import { useDayOrderStore, DayItemKind } from '../../store/dayOrderStore'
 import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/taskScheduler'
 import { personColor, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
@@ -24,6 +25,19 @@ import {
 import { useT } from '../../i18n/useT'
 
 type View = 'day' | 'week' | 'month'
+
+/**
+ * What a block is, for the purposes of arranging a day. Ghosts are excluded:
+ * they are a note of where work was planned, drawn on a day it has already
+ * left, so they have no place of their own to hold.
+ */
+function orderIdOf(block: Block): { kind: DayItemKind; itemId: string } | null {
+  if (block.ghost) return null
+  if (block.task) return { kind: 'task', itemId: block.task.id }
+  if (block.todo) return { kind: 'todo', itemId: block.todo.id }
+  if (block.entry) return { kind: 'entry', itemId: block.entry.id }
+  return null
+}
 
 /** Keeps a right-click menu on screen. */
 function menuPos(x: number, y: number, rows: number, width = 192) {
@@ -128,6 +142,12 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
     setInProgress, clearInProgress, isInProgress, isMissed, clearMissed, taskStatuses, taskStartedAt,
     taskMoves, moveTaskOccurrence, deleteTask, deleteTaskOccurrence,
   } = useTaskStore()
+  // The day's order, as somebody arranged it. `positions` is subscribed to
+  // rather than read through the getters alone, so a day rearranged on another
+  // screen — or in My Tasks — redraws this one.
+  const dayPositions = useDayOrderStore((s) => s.positions)
+  const { hasOrder, sortForDay, setOrder, load: loadDayOrder, subscribe: subscribeDayOrder } = useDayOrderStore()
+
   // One click: waiting. Two: done. The same rule as the todo board.
   const tickTodo = useTodoTick()
   const { employees } = useEmployeeStore()
@@ -189,6 +209,14 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   // An assigned task being edited from its right-click menu.
   const [editTask, setEditTask] = useState<string | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+
+  // Whoever's days can be arranged on this board. The shared managers' board
+  // belongs to nobody in particular, so it keeps the urgent-first order.
+  useEffect(() => {
+    if (!ownerId) return
+    loadDayOrder([ownerId])
+    subscribeDayOrder()
+  }, [ownerId, loadDayOrder, subscribeDayOrder])
 
   useEffect(() => {
     // The marker is keyed by board, so the managers' shared one is ":shared".
@@ -354,11 +382,16 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         })
       }
 
-      // Urgent work leads the day.
+      // Arranged by hand, if this day has been: one order for the calendar and
+      // My Tasks both, so the day reads the same in either. Failing that,
+      // urgent work leads the day as it always did.
+      if (ownerId && hasOrder(ownerId, day)) {
+        return sortForDay(ownerId, day, blocks, orderIdOf)
+      }
       return blocks.sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, tasks, employees, overlaid, showMine, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay],
+    [todos, overlayTodos, calendarEntries, tasks, employees, overlaid, showMine, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay, dayPositions],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -374,11 +407,68 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
     return el?.dataset.day ?? null
   }, [])
 
+  /**
+   * Where in a day the pointer is: how many blocks it is past.
+   *
+   * A day column's blocks are measured rather than tracked in state, because
+   * what is on screen is the authoritative answer — a block's height depends
+   * on its title wrapping, and the view it is in. Above a block's midpoint
+   * means before it, below means after.
+   */
+  const dropIndexAt = useCallback((clientY: number, day: string): number => {
+    const column = document.querySelector(`[data-day="${day}"]`)
+    if (!column) return 0
+    const chips = [...column.querySelectorAll('[data-order-id]')] as HTMLElement[]
+    let index = 0
+    for (const chip of chips) {
+      const box = chip.getBoundingClientRect()
+      if (clientY > box.top + box.height / 2) index++
+    }
+    return index
+  }, [])
+
   /** Whether a screen point is over the unscheduled panel. */
   const overDropOut = useCallback((clientX: number, clientY: number) => {
     const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
     return !!el?.closest('[data-unscheduled]')
   }, [])
+
+  /**
+   * Put one item at a place in a day, and write the whole day's order.
+   *
+   * The whole day, rather than the one item, because a position only means
+   * anything relative to its neighbours: writing 3 for one block while the
+   * rest of the day has no positions at all would put it third among nothing.
+   * The first arrangement of a day is therefore what fixes every other block
+   * where it already appeared to be.
+   *
+   * Does nothing on the managers' shared board, which belongs to no single
+   * person and so has no day of theirs to arrange.
+   */
+  const placeInDay = useCallback(
+    async (day: string, moved: { kind: DayItemKind; itemId: string }, index: number) => {
+      if (!ownerId) return
+
+      // What the day holds now, in the order it is currently drawn, minus the
+      // thing being placed — it is about to be put back at `index`.
+      const current = blocksFor(day)
+        .map(orderIdOf)
+        .filter((id): id is { kind: DayItemKind; itemId: string } => !!id)
+        .filter((id) => !(id.kind === moved.kind && id.itemId === moved.itemId))
+
+      const next = [...current]
+      next.splice(Math.max(0, Math.min(index, next.length)), 0, moved)
+
+      try {
+        await setOrder(ownerId, day, next)
+      } catch (err) {
+        setError((err as Error).message || t('cal_couldNotMove'))
+      }
+    },
+    // blocksFor is rebuilt whenever the day's contents change, which is
+    // exactly when this needs to see them afresh.
+    [ownerId, blocksFor, setOrder, t],
+  )
 
   useEffect(() => {
     if (!drag) return
@@ -412,8 +502,12 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
 
       if (!day) return
 
+      // Where in the day it was let go, measured before anything moves.
+      const dropAt = dropIndexAt(e.clientY, day)
+
       if (drag.kind === 'unscheduled' || drag.kind === 'todo') {
         await updateTodo(drag.id, { doDate: day })
+        await placeInDay(day, { kind: 'todo', itemId: drag.id }, dropAt)
         return
       }
 
@@ -422,7 +516,12 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       if (drag.kind === 'task') {
         setError('')
         try {
-          await moveTaskOccurrence(drag.id, drag.employeeId, drag.date, day)
+          // Dropped back on the day it already sits on, this is not a move at
+          // all — it is the day being arranged, which is its own thing.
+          if (day !== drag.date) {
+            await moveTaskOccurrence(drag.id, drag.employeeId, drag.date, day)
+          }
+          await placeInDay(day, { kind: 'task', itemId: drag.id }, dropAt)
         } catch (err) {
           setError((err as Error).message || t('cal_couldNotMove'))
         }
@@ -439,6 +538,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         )
         const newEnd = new Date(dayDate(day).getTime() + span * 864e5)
         await updateCalendarEntry(entry.id, { startsOn: day, endsOn: dayKey(newEnd) })
+        await placeInDay(day, { kind: 'entry', itemId: entry.id }, dropAt)
       }
     }
 
@@ -454,7 +554,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [drag, slotAt, overDropOut, updateTodo, updateCalendarEntry, calendarEntries, moveTaskOccurrence, t])
+  }, [drag, slotAt, overDropOut, dropIndexAt, placeInDay, updateTodo, updateCalendarEntry, calendarEntries, moveTaskOccurrence, t])
 
   /** Click on empty space in a day → a new entry on that day. */
   /**
@@ -1355,6 +1455,9 @@ function BlockChip({
         onContext(e.clientX, e.clientY)
       }}
       title={block.ownerName ? `${block.label} — ${block.ownerName}` : block.label}
+      // What this block is, so a drop can be measured against the blocks
+      // already in the day. Absent on a ghost, which holds no place.
+      data-order-id={(() => { const id = orderIdOf(block); return id ? `${id.kind}:${id.itemId}` : undefined })()}
       className={`relative rounded-md text-xs leading-snug select-none shadow-sm ${
         onDragStart ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
       } ${
