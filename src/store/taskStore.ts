@@ -6,6 +6,7 @@ import {
   TaskSkipRow, setSkippedOccurrences,
 } from '../utils/taskScheduler'
 import { useAuthStore } from './authStore'
+import { recordUndo } from './undoStore'
 import { format } from 'date-fns'
 
 interface TaskState {
@@ -65,6 +66,8 @@ interface TaskState {
    * it where it is.
    */
   deleteTaskOccurrence: (taskId: string, empId: string, date: string) => Promise<void>
+  /** Put back a day that was deleted on its own. What Cmd+Z does to a skip. */
+  restoreTaskOccurrence: (taskId: string, empId: string, date: string) => Promise<void>
   /** Take a missed mark back, which lets the task start moving forward again. */
   clearMissed: (taskId: string, empId: string, date: string) => Promise<void>
   isMissed: (taskId: string, empId: string, date: string) => boolean
@@ -341,9 +344,42 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
         task_assignments: task.assignedTo.map((id) => ({ employee_id: id })),
       }),
     ]))
+
+    // Undoing a task that was only just made is deleting it; redoing it puts
+    // it back under the same id, so anything recorded after it on the undo
+    // stack still points at a task that exists.
+    recordUndo({
+      label: 'added a task',
+      undo: () => get().deleteTask(data.id),
+      redo: async () => {
+        const { error: err } = await supabase.from('tasks').insert({ ...base, id: data.id })
+        if (err) throw new Error(err.message)
+        if (task.assignedTo.length > 0) {
+          await supabase
+            .from('task_assignments')
+            .insert(task.assignedTo.map((employeeId) => ({ task_id: data.id, employee_id: employeeId })))
+        }
+        set((s) => applyTasks(s.scopedProjectId, [
+          ...s.allTasks.filter((t) => t.id !== data.id),
+          toTask({ ...data, task_assignments: task.assignedTo.map((id) => ({ employee_id: id })) }),
+        ]))
+      },
+    })
   },
 
   updateTask: async (id, updates) => {
+    // What it was, before it is not any more. Only the fields actually being
+    // changed, so undoing an edit does not quietly rewrite the rest of the
+    // task with whatever this client last happened to have loaded.
+    const before = get().allTasks.find((t) => t.id === id)
+    const previous: Partial<Task> | null = before
+      ? (Object.fromEntries(
+          Object.keys(updates)
+            .filter((k) => k in before)
+            .map((k) => [k, (before as unknown as Record<string, unknown>)[k]]),
+        ) as Partial<Task>)
+      : null
+
     const patch: Record<string, unknown> = {}
     if (updates.title !== undefined) patch.title = updates.title
     if (updates.description !== undefined) patch.description = updates.description
@@ -376,9 +412,32 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     }
 
     set((s) => applyTasks(s.scopedProjectId, s.allTasks.map((t) => (t.id === id ? { ...t, ...updates } : t))))
+
+    if (previous && Object.keys(previous).length > 0) {
+      recordUndo({
+        label: 'edited a task',
+        undo: () => get().updateTask(id, previous),
+        redo: () => get().updateTask(id, updates),
+      })
+    }
   },
 
   deleteTask: async (id) => {
+    // Everything that hangs off the task, read before it is gone. The row
+    // itself is only half of a task: the rest is who it is for, which days
+    // were ticked, which were started, which were moved and which were
+    // skipped, and all of it cascades away with the delete. Undo without this
+    // would bring back a task stripped of its history, which is worse than
+    // not bringing it back at all.
+    const [taskRow, assignments, statuses, logs, moves, skips] = await Promise.all([
+      supabase.from('tasks').select('*').eq('id', id).maybeSingle(),
+      supabase.from('task_assignments').select('*').eq('task_id', id),
+      supabase.from('task_statuses').select('*').eq('task_id', id),
+      supabase.from('completion_logs').select('*').eq('task_id', id),
+      supabase.from('task_moves').select('*').eq('task_id', id),
+      supabase.from('task_skips').select('*').eq('task_id', id),
+    ])
+
     // The result was thrown away and the row dropped from local state either
     // way, so a refused delete looked exactly like a successful one until the
     // task reappeared on the next reload. Say so instead.
@@ -388,6 +447,42 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       throw new Error(error.message)
     }
     set((s) => applyTasks(s.scopedProjectId, s.allTasks.filter((t) => t.id !== id)))
+
+    if (!taskRow.data) return
+
+    recordUndo({
+      label: 'deleted a task',
+      undo: async () => {
+        const { error: err } = await supabase.from('tasks').insert(taskRow.data)
+        if (err) throw new Error(err.message)
+
+        // Each of these is only worth attempting if there was anything there.
+        // Failures are logged rather than thrown: the task is back, and
+        // losing it again because one completion log would not re-insert
+        // would be the wrong trade.
+        for (const [table, rows] of [
+          ['task_assignments', assignments.data],
+          ['task_statuses', statuses.data],
+          ['completion_logs', logs.data],
+          ['task_moves', moves.data],
+          ['task_skips', skips.data],
+        ] as const) {
+          if (!rows?.length) continue
+          const { error: rowErr } = await supabase.from(table).insert(rows)
+          if (rowErr) console.error(`[deleteTask/undo] ${table} did not come back:`, rowErr)
+        }
+
+        // Re-read rather than patch state back together by hand: the task is
+        // back along with its assignments, ticks, moves and skips, and every
+        // one of those feeds a different derived list.
+        await get().refresh()
+      },
+      redo: async () => {
+        const { error: err } = await supabase.from('tasks').delete().eq('id', id)
+        if (err) throw new Error(err.message)
+        set((s) => applyTasks(s.scopedProjectId, s.allTasks.filter((t) => t.id !== id)))
+      },
+    })
   },
 
   completeTask: async (taskId, employeeId, dueDate) => {
@@ -416,6 +511,11 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     if (!error && data) {
       set((s) => ({ completionLogs: [...s.completionLogs, toCompletionLog(data)] }))
       await get().addActivityLog({ taskId, actorId: employeeId, action: 'completed' })
+      recordUndo({
+        label: 'ticked a task off',
+        undo: () => get().uncompleteTask(taskId, employeeId, dueDate),
+        redo: () => get().completeTask(taskId, employeeId, dueDate),
+      })
     }
   },
 
@@ -434,6 +534,12 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     }))
 
     await get().addActivityLog({ taskId, actorId: employeeId, action: 'uncompleted' })
+
+    recordUndo({
+      label: 'un-ticked a task',
+      undo: () => get().completeTask(taskId, employeeId, dueDate),
+      redo: () => get().uncompleteTask(taskId, employeeId, dueDate),
+    })
   },
 
   isTaskCompleted: (taskId, employeeId, date) => {
@@ -497,7 +603,14 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     const task = get().allTasks.find((t) => t.id === taskId)
     if (!task) return
 
+    // Where this day sat before the move. Undo puts it back there, which is
+    // not always the day it belongs to: a day moved twice goes back one step,
+    // the same as every other undo.
+    const wasAt =
+      get().taskMoves.find((m) => m.taskId === taskId && m.employeeId === empId && m.date === date)?.movedTo ?? date
+
     // A one-off is its own only day, so moving it is changing its date.
+    // updateTask records its own undo, so nothing more is needed here.
     if (task.frequency.type === 'one-off') {
       await get().updateTask(taskId, { frequency: { ...task.frequency, date: to } })
       return
@@ -516,6 +629,11 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       set((s) => ({
         taskMoves: s.taskMoves.filter((m) => !(m.taskId === taskId && m.employeeId === empId && m.date === date)),
       }))
+      recordUndo({
+        label: 'moved a task back',
+        undo: () => get().moveTaskOccurrence(taskId, empId, date, wasAt),
+        redo: () => get().moveTaskOccurrence(taskId, empId, date, to),
+      })
       return
     }
 
@@ -537,6 +655,12 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
         { taskId, employeeId: empId, date, movedTo: to },
       ],
     }))
+
+    recordUndo({
+      label: 'rescheduled a task',
+      undo: () => get().moveTaskOccurrence(taskId, empId, date, wasAt),
+      redo: () => get().moveTaskOccurrence(taskId, empId, date, to),
+    })
   },
 
   deleteTaskOccurrence: async (taskId, empId, date) => {
@@ -559,6 +683,28 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     // Fresh task arrays as well: every screen that works out a task's days
     // memoises on them, and the registry changing underneath is invisible
     // to a memo.
+    set((s) => ({ taskSkips, ...applyTasks(s.scopedProjectId, [...s.allTasks]) }))
+
+    recordUndo({
+      label: 'deleted a day of a task',
+      undo: () => get().restoreTaskOccurrence(taskId, empId, date),
+      redo: () => get().deleteTaskOccurrence(taskId, empId, date),
+    })
+  },
+
+  restoreTaskOccurrence: async (taskId, empId, date) => {
+    const { error } = await supabase
+      .from('task_skips')
+      .delete()
+      .eq('task_id', taskId).eq('employee_id', empId).eq('due_date', date)
+    if (error) {
+      console.error('[restoreTaskOccurrence] failed:', error)
+      throw new Error(error.message)
+    }
+    const taskSkips = get().taskSkips.filter(
+      (r) => !(r.taskId === taskId && r.employeeId === empId && r.date === date),
+    )
+    setSkippedOccurrences(taskSkips)
     set((s) => ({ taskSkips, ...applyTasks(s.scopedProjectId, [...s.allTasks]) }))
   },
 

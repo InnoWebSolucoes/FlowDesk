@@ -7,6 +7,10 @@ import { useEmployeeStore } from './store/employeeStore'
 import { useToolStore } from './store/toolStore'
 import { useNotificationStore } from './store/notificationStore'
 import { syncPush } from './lib/pushNotify'
+import { useUndoShortcut } from './hooks/useUndoShortcut'
+import { UndoToast } from './components/shared/UndoToast'
+import { useUndoStore } from './store/undoStore'
+import { useDayOrderStore } from './store/dayOrderStore'
 import { useProjectStore } from './store/projectStore'
 import { useChatStore } from './store/chatStore'
 import { Layout } from './components/shared/Layout'
@@ -135,6 +139,7 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
   const tearDownNotifications = useNotificationStore(s => s.teardown)
   const tearDownProjects = useProjectStore(s => s.teardown)
   const tearDownChat = useChatStore(s => s.teardown)
+  const tearDownDayOrder = useDayOrderStore(s => s.teardown)
 
   useEffect(() => {
     if (authStatus === 'authenticated') {
@@ -170,6 +175,9 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
     tearDownNotifications()
     tearDownProjects()
     tearDownChat()
+    tearDownDayOrder()
+    // One person's actions are not the next person's to take back.
+    useUndoStore.getState().reset()
     stopTracking()
   }, [authStatus, realUserId, chatUserId])
 
@@ -179,8 +187,13 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  // Cmd+Z anywhere in the app, registered once. Per screen it would stop
+  // working on whichever screen forgot it.
+  useUndoShortcut()
+
   return (
     <BrowserRouter>
+      <UndoToast />
       <AppInitializer>
         <Routes>
           <Route path="/" element={<RootRedirect />} />

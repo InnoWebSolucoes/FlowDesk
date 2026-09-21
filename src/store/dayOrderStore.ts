@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import { useAuthStore } from './authStore'
+import { recordUndo } from './undoStore'
 
 /** What kind of thing is being placed in a day. */
 export type DayItemKind = 'task' | 'todo' | 'entry'
@@ -150,6 +151,19 @@ export const useDayOrderStore = create<DayOrderState>()((set, get) => ({
 
   setOrder: async (ownerId, day, items) => {
     const by = useAuthStore.getState().realUser?.id ?? null
+
+    // The day as it stood, so Cmd+Z puts it back in that order. Read from
+    // what is loaded rather than refetched: it is the order on screen that is
+    // being replaced, and that is what should come back.
+    const before = get().positions[dayKeyFor(ownerId, day)]
+    const previous: DayOrderItem[] | null = before
+      ? Object.entries(before)
+          .sort((a, b) => a[1] - b[1])
+          .map(([key]) => {
+            const [kind, itemId] = key.split(':') as [DayItemKind, string]
+            return { kind, itemId }
+          })
+      : null
     const rows = items.map((it, i) => ({
       owner_id: ownerId,
       day,
@@ -177,6 +191,17 @@ export const useDayOrderStore = create<DayOrderState>()((set, get) => ({
     if (error) {
       console.error('[dayOrder] could not save the order:', error)
       throw new Error(error.message)
+    }
+
+    // Only worth recording against a day that had an order to go back to. The
+    // first arrangement of a day has no previous order, and undoing it would
+    // mean inventing one.
+    if (previous?.length) {
+      recordUndo({
+        label: 'rearranged a day',
+        undo: () => get().setOrder(ownerId, day, previous),
+        redo: () => get().setOrder(ownerId, day, items),
+      })
     }
   },
 }))

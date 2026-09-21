@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
+import { recordUndo } from './undoStore'
 import {
   Project, ResourceCluster, ResourceItem, ResourceItemLink, ResourceItemVersion,
   ProjectTodo, ProjectTodoLink, ProjectTodoList, CalendarEntry, ResourceAccess,
@@ -1530,10 +1531,36 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
     const todo = toTodo(data)
     set((s) => ({ todos: [...s.todos, todo] }))
+
+    recordUndo({
+      label: 'added a todo',
+      undo: async () => {
+        await supabase.from('project_todos').delete().eq('id', todo.id)
+        set((s) => ({ todos: s.todos.filter((t) => t.id !== todo.id) }))
+      },
+      // Back under the same id, so anything recorded after it still lines up.
+      redo: async () => {
+        const { error } = await supabase.from('project_todos').insert({ ...base, id: todo.id })
+        if (error) throw new Error(error.message)
+        set((s) => ({ todos: [...s.todos.filter((t) => t.id !== todo.id), todo] }))
+      },
+    })
+
     return todo
   },
 
   updateTodo: async (id, updates) => {
+    // What these fields were, so Cmd+Z can put them back. Only the ones being
+    // changed: undoing a rename should not also undo a tick.
+    const was = get().todos.find((t) => t.id === id)
+    const previous = was
+      ? (Object.fromEntries(
+          Object.keys(updates)
+            .filter((k) => k in was)
+            .map((k) => [k, (was as unknown as Record<string, unknown>)[k]]),
+        ) as Partial<ProjectTodo>)
+      : null
+
     const patch: Record<string, unknown> = {}
     if (updates.title !== undefined) patch.title = updates.title
     if (updates.notes !== undefined) patch.notes = updates.notes
@@ -1570,6 +1597,16 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           : t
       ),
     }))
+
+    if (previous && Object.keys(previous).length > 0) {
+      recordUndo({
+        // A do date is the one people drag, so it is worth naming apart from
+        // any other edit.
+        label: 'doDate' in updates ? 'moved a todo' : 'edited a todo',
+        undo: () => get().updateTodo(id, previous),
+        redo: () => get().updateTodo(id, updates),
+      })
+    }
   },
 
   toggleTodo: async (id) => {
@@ -1597,8 +1634,32 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   deleteTodo: async (id) => {
+    // Read whole before it goes, so undo puts back the same row under the
+    // same id — anything pointing at it still points at it.
+    const { data: row } = await supabase
+      .from('project_todos')
+      .select('*, project_todo_links(*)')
+      .eq('id', id)
+      .maybeSingle()
+
     await supabase.from('project_todos').delete().eq('id', id)
     set((s) => ({ todos: s.todos.filter((t) => t.id !== id) }))
+
+    if (!row) return
+    const { project_todo_links: links, ...todoRow } = row
+    recordUndo({
+      label: 'deleted a todo',
+      undo: async () => {
+        const { error } = await supabase.from('project_todos').insert(todoRow)
+        if (error) throw new Error(error.message)
+        if (links?.length) await supabase.from('project_todo_links').insert(links)
+        set((s) => ({ todos: [...s.todos.filter((t) => t.id !== id), toTodo({ ...todoRow, project_todo_links: links ?? [] })] }))
+      },
+      redo: async () => {
+        await supabase.from('project_todos').delete().eq('id', id)
+        set((s) => ({ todos: s.todos.filter((t) => t.id !== id) }))
+      },
+    })
   },
 
   reorderTodos: async (orderedIds) => {
@@ -1723,16 +1784,60 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (updates.visibility !== undefined) patch.visibility = updates.visibility || null
     if (Object.keys(patch).length === 0) return
 
+    const was = get().calendarEntries.find((e) => e.id === id)
+    const previous = was
+      ? (Object.fromEntries(
+          Object.keys(updates)
+            .filter((k) => k in was)
+            .map((k) => [k, (was as unknown as Record<string, unknown>)[k]]),
+        ) as Partial<CalendarEntry>)
+      : null
+
     // Optimistic: dragging an entry around the calendar must not snap back.
     set((s) => ({
       calendarEntries: s.calendarEntries.map((e) => (e.id === id ? { ...e, ...updates } : e)),
     }))
     await supabase.from('calendar_entries').update(patch).eq('id', id)
+
+    if (previous && Object.keys(previous).length > 0) {
+      recordUndo({
+        label: 'startsOn' in updates ? 'moved a calendar block' : 'edited a calendar block',
+        undo: () => get().updateCalendarEntry(id, previous),
+        redo: () => get().updateCalendarEntry(id, updates),
+      })
+    }
   },
 
   deleteCalendarEntry: async (id) => {
+    const { data: row } = await supabase
+      .from('calendar_entries')
+      .select('*, calendar_entry_links(*)')
+      .eq('id', id)
+      .maybeSingle()
+
     await supabase.from('calendar_entries').delete().eq('id', id)
     set((s) => ({ calendarEntries: s.calendarEntries.filter((e) => e.id !== id) }))
+
+    if (!row) return
+    const { calendar_entry_links: links, ...entryRow } = row
+    recordUndo({
+      label: 'deleted a calendar block',
+      undo: async () => {
+        const { error } = await supabase.from('calendar_entries').insert(entryRow)
+        if (error) throw new Error(error.message)
+        if (links?.length) await supabase.from('calendar_entry_links').insert(links)
+        set((s) => ({
+          calendarEntries: [
+            ...s.calendarEntries.filter((e) => e.id !== id),
+            toCalendarEntry({ ...entryRow, calendar_entry_links: links ?? [] }),
+          ],
+        }))
+      },
+      redo: async () => {
+        await supabase.from('calendar_entries').delete().eq('id', id)
+        set((s) => ({ calendarEntries: s.calendarEntries.filter((e) => e.id !== id) }))
+      },
+    })
   },
 
   setCalendarEntryLinks: async (entryId, links) => {
