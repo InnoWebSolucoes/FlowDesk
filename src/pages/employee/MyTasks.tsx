@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { format, addDays, addWeeks } from 'date-fns'
 import { ChevronDown, ChevronRight, ChevronLeft, PartyPopper, Search, GripVertical, ArrowUpDown, Check } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
@@ -11,7 +11,7 @@ import { Select } from '../../components/shared/Select'
 import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
 import { TaskEditDialog } from '../../components/shared/TaskEditDialog'
-import { useDayOrderStore } from '../../store/dayOrderStore'
+import { useDayOrderStore, DayBoard } from '../../store/dayOrderStore'
 
 const TABS = ['today', 'week', 'month'] as const
 export type TaskPeriod = typeof TABS[number]
@@ -127,26 +127,60 @@ function ReorderList({
 }) {
   const [dragging, setDragging] = useState<number | null>(null)
   const [over, setOver] = useState<number | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * Pointer events, not HTML5 drag-and-drop.
+   *
+   * The calendar drags on pointer events, and this has to work the same way
+   * for two reasons: HTML5 dragging does nothing at all on a touchscreen — so
+   * the phone could never reorder anything — and in Firefox a dragstart that
+   * does not call dataTransfer.setData is cancelled outright, so it did
+   * nothing there either.
+   */
+  const startDrag = (index: number, e: React.PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return
+    e.preventDefault()
+    setDragging(index)
+    setOver(index)
+
+    const rowAt = (clientY: number) => {
+      const rows = [...(listRef.current?.querySelectorAll('[data-row]') ?? [])] as HTMLElement[]
+      let target = 0
+      for (const row of rows) {
+        const box = row.getBoundingClientRect()
+        if (clientY > box.top + box.height / 2) target++
+      }
+      // The row being dragged is still in the list, so landing past its own
+      // midpoint would otherwise read as one place further down than it is.
+      return Math.max(0, Math.min(target, rows.length - 1))
+    }
+
+    const onMoveEvent = (ev: PointerEvent) => setOver(rowAt(ev.clientY))
+
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMoveEvent)
+      const to = rowAt(ev.clientY)
+      setDragging(null)
+      setOver(null)
+      if (to !== index) onMove(index, to)
+    }
+
+    window.addEventListener('pointermove', onMoveEvent)
+    window.addEventListener('pointerup', onUp, { once: true })
+  }
 
   return (
-    <div className="space-y-1.5 mb-5">
+    <div ref={listRef} className="space-y-1.5 mb-5 touch-none">
       {occurrences.map((occ, i) => (
         <div
           key={occKey(occ)}
-          draggable
-          onDragStart={() => setDragging(i)}
-          onDragEnd={() => { setDragging(null); setOver(null) }}
-          onDragOver={(e) => { e.preventDefault(); setOver(i) }}
-          onDrop={(e) => {
-            e.preventDefault()
-            if (dragging !== null && dragging !== i) onMove(dragging, i)
-            setDragging(null)
-            setOver(null)
-          }}
-          className={`flex items-center gap-2.5 px-3 py-2.5 bg-surface border rounded-lg cursor-grab active:cursor-grabbing transition-colors ${
+          data-row
+          onPointerDown={(e) => startDrag(i, e)}
+          className={`flex items-center gap-2.5 px-3 py-2.5 bg-surface border rounded-lg cursor-grab active:cursor-grabbing transition-colors select-none ${
             dragging === i
               ? 'opacity-40 border-primary'
-              : over === i
+              : over === i && dragging !== null
                 ? 'border-primary bg-primary-light/40'
                 : 'border-border'
           }`}
@@ -267,13 +301,15 @@ export function MyTasks({
 
   const empId = employeeId ?? currentUser?.id ?? ''
 
-  // The same rows the calendar reads, so arranging a day in either place
-  // arranges it in both.
+  // The same board the person's calendar reads, so arranging a day in either
+  // place arranges it in both.
+  const board = useMemo<DayBoard>(() => ({ kind: 'user', userId: empId }), [empId])
+
   useEffect(() => {
     if (!empId) return
-    loadDayOrder([empId])
+    loadDayOrder([board])
     subscribeDayOrder()
-  }, [empId, loadDayOrder, subscribeDayOrder])
+  }, [empId, board, loadDayOrder, subscribeDayOrder])
 
   // Two todays. The real one decides where work has moved to — a task only
   // carries forward in real time. The anchored one is the day the view is
@@ -343,8 +379,8 @@ export function MyTasks({
       // A day arranged by hand — here or on the calendar — keeps that order,
       // urgent included: having decided where it goes, it should stay there.
       // Any other day leads with urgent work, as it always did.
-      if (empId && hasOrder(empId, day)) {
-        map.set(day, sortForDay(empId, day, list, (occ) => ({ kind: 'task', itemId: occ.task.id })))
+      if (empId && hasOrder(board, day)) {
+        map.set(day, sortForDay(board, day, list, (occ) => ({ kind: 'task', itemId: occ.task.id })))
       } else {
         list.sort((a, b) => Number(b.task.isUrgent) - Number(a.task.isUrgent))
       }
@@ -353,7 +389,7 @@ export function MyTasks({
     // dayPositions rather than the getters: the sort has to re-run when an
     // order arrives or changes, and a getter identity never changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [occurrences, empId, dayPositions])
+  }, [occurrences, empId, board, dayPositions])
 
   const onDay = (dateStr: string) => byDay.get(dateStr) ?? []
   const countDone = (list: TaskOccurrence[]) => list.filter((o) => o.completed).length
@@ -632,7 +668,7 @@ export function MyTasks({
                   kind: 'task' as const,
                   itemId: o.task.id,
                 }))
-                setOrder(empId, todayStr, order).catch(() => {
+                setOrder(board, todayStr, order).catch(() => {
                   // The store has already moved it on screen; a failure here
                   // means the next load puts it back where it was.
                 })
@@ -641,7 +677,7 @@ export function MyTasks({
           )}
 
           {!allDone && !noResults && !reordering && (
-            hasOrder(empId, todayStr) ? (
+            hasOrder(board, todayStr) ? (
               // Arranged by hand, so it is one list in that order rather than
               // buckets guessed from category names — those would scatter the
               // order across four headings and lose it.

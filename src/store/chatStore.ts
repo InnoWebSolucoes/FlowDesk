@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import { ChatMessage, Conversation } from '../types'
-import { notifyDesktop, requestNotifyPermission } from '../lib/desktopNotify'
+import { notifyDesktop } from '../lib/desktopNotify'
 
 /** Someone you can message. Everyone, managers included. */
 export interface ChatPerson {
@@ -254,7 +254,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     )
 
     if (channel) return
-    requestNotifyPermission()
     channel = supabase
       .channel('chat-live')
       .on(

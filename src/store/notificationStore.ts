@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabaseClient'
 import { AppNotification } from '../types'
-import { notifyDesktop, requestNotifyPermission } from '../lib/desktopNotify'
+import { notifyDesktop } from '../lib/desktopNotify'
 
 interface NotificationState {
   notifications: AppNotification[]
@@ -59,7 +59,6 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
     // which happens on someone else's machine. Without this a manager would
     // only ever see them by reloading the app.
     if (channel) return
-    requestNotifyPermission()
     channel = supabase
       .channel('notifications-live')
       .on(

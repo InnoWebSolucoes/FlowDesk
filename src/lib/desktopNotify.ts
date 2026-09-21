@@ -16,8 +16,16 @@ export function canNotify() {
 }
 
 /**
- * Ask permission, but only when there is a reason to. Prompting on load is how
- * an app teaches people to click Block.
+ * Ask permission — from a tap, and only from a tap.
+ *
+ * This used to be called as the app started up, which broke the thing it was
+ * for. A browser only shows the prompt for a request that came out of
+ * something the person did; iOS Safari refuses one that did not, and spends
+ * the single chance it gives per install doing so. That is why the phone
+ * never asked: by the time the bell's switch called it, there was nothing
+ * left to ask with.
+ *
+ * The bell's "Notify this device" switch is the tap. Nothing else calls this.
  */
 export async function requestNotifyPermission() {
   if (!canNotify() || asked) return

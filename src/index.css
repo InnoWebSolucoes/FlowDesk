@@ -128,23 +128,6 @@ video {
   animation: highlightPulse 1.3s ease-in-out 3;
 }
 
-/* Urgent, on a calendar block.
- *
- * A block is already filled with whoever's colour it is, so a ring in the
- * brand's deep red (#7A2020) sat almost invisibly against it — which is how
- * urgent work stopped standing out at all. This is a bright red outline with
- * a soft halo behind it: enough to pick out across a whole week, without
- * fighting the person's colour for the block itself.
- *
- * It does not move. An earlier version breathed slowly, on the reasoning that
- * urgent work should announce itself; on a day with several urgent blocks that
- * is a page that will not sit still, and the point was only ever to make them
- * easy to find.
- */
-.urgent-glow {
-  box-shadow: 0 0 0 2px #EF4444, 0 0 8px 2px rgba(239, 68, 68, 0.45);
-}
-
 /* Recharts tooltip */
 .recharts-tooltip-wrapper { z-index: 100; }
 

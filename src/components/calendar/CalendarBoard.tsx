@@ -12,7 +12,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useAuthStore } from '../../store/authStore'
-import { useDayOrderStore, DayItemKind } from '../../store/dayOrderStore'
+import { useDayOrderStore, DayItemKind, DayBoard } from '../../store/dayOrderStore'
 import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/taskScheduler'
 import { personColor, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
@@ -210,13 +210,21 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   const [editTask, setEditTask] = useState<string | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
-  // Whoever's days can be arranged on this board. The shared managers' board
-  // belongs to nobody in particular, so it keeps the urgent-first order.
+  /**
+   * Which board's order this calendar reads and writes: the person's own day
+   * when it is somebody's calendar, and the project's shared board when it is
+   * the managers' one. The shared board used to have no key at all, so every
+   * drag on it appeared to work and then sprang back.
+   */
+  const board = useMemo<DayBoard>(
+    () => (ownerId ? { kind: 'user', userId: ownerId } : { kind: 'shared', projectId: project.id }),
+    [ownerId, project.id],
+  )
+
   useEffect(() => {
-    if (!ownerId) return
-    loadDayOrder([ownerId])
+    loadDayOrder([board])
     subscribeDayOrder()
-  }, [ownerId, loadDayOrder, subscribeDayOrder])
+  }, [board, loadDayOrder, subscribeDayOrder])
 
   useEffect(() => {
     // The marker is keyed by board, so the managers' shared one is ":shared".
@@ -385,13 +393,13 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       // Arranged by hand, if this day has been: one order for the calendar and
       // My Tasks both, so the day reads the same in either. Failing that,
       // urgent work leads the day as it always did.
-      if (ownerId && hasOrder(ownerId, day)) {
-        return sortForDay(ownerId, day, blocks, orderIdOf)
+      if (hasOrder(board, day)) {
+        return sortForDay(board, day, blocks, orderIdOf)
       }
       return blocks.sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, tasks, employees, overlaid, showMine, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay, dayPositions],
+    [todos, overlayTodos, calendarEntries, tasks, employees, overlaid, showMine, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay, dayPositions, board],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -442,13 +450,11 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
    * The first arrangement of a day is therefore what fixes every other block
    * where it already appeared to be.
    *
-   * Does nothing on the managers' shared board, which belongs to no single
-   * person and so has no day of theirs to arrange.
+   * Works on anybody's calendar and on the project's shared board alike —
+   * they are simply two different boards.
    */
   const placeInDay = useCallback(
     async (day: string, moved: { kind: DayItemKind; itemId: string }, index: number) => {
-      if (!ownerId) return
-
       // What the day holds now, in the order it is currently drawn, minus the
       // thing being placed — it is about to be put back at `index`.
       const current = blocksFor(day)
@@ -460,14 +466,14 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       next.splice(Math.max(0, Math.min(index, next.length)), 0, moved)
 
       try {
-        await setOrder(ownerId, day, next)
+        await setOrder(board, day, next)
       } catch (err) {
         setError((err as Error).message || t('cal_couldNotMove'))
       }
     },
     // blocksFor is rebuilt whenever the day's contents change, which is
     // exactly when this needs to see them afresh.
-    [ownerId, blocksFor, setOrder, t],
+    [board, blocksFor, setOrder, t],
   )
 
   useEffect(() => {
@@ -1415,6 +1421,30 @@ function BlockChip({
   const { t } = useT()
   const moved = useRef(false)
 
+  /**
+   * Every edge this block wears, in one shadow.
+   *
+   * Both of them are box-shadows, and a block can want both at once: urgent
+   * work that somebody has started. They were written in two places — one a
+   * class, one inline — and the inline one silently won, so an urgent task
+   * lost its red the moment it was started. A shadow is a list; these are its
+   * layers.
+   */
+  const done = block.todo?.isCompleted || block.done
+  const shadows = [
+    // Under way but not finished: a lighter edge, so started work is
+    // visibly different from untouched work without changing whose colour
+    // it is. Only on filled blocks — an outlined one has no inside to line.
+    block.started && !block.ownWork && !block.ghost
+      ? 'inset 0 0 0 2px rgba(255,255,255,0.65)'
+      : null,
+    // Urgent and still to do: a red outline with a soft halo, outside the
+    // person's colour so it stands out without losing whose it is.
+    block.urgent && !done && !block.ghost
+      ? '0 0 0 2px #EF4444, 0 0 8px 2px rgba(239, 68, 68, 0.45)'
+      : null,
+  ].filter(Boolean)
+
   return (
     <div
       onPointerDown={(e) => {
@@ -1469,11 +1499,14 @@ function BlockChip({
         // Done work fades and strikes through, whichever kind it is.
         block.todo?.isCompleted || block.done ? 'line-through opacity-45' : block.missed ? 'opacity-45' : ''
       } ${
-        // Urgent and still to do: a red glow outside the person's colour, so
-        // it stands out without losing whose it is. See .urgent-glow.
-        block.urgent && !(block.todo?.isCompleted || block.done) && !block.ghost ? 'urgent-glow z-10' : ''
+        // Urgent is drawn in the style below, not here: it is a box-shadow,
+        // and so is the "under way" edge — a class would lose every time to
+        // the inline one, which is exactly what happened to urgent work that
+        // had been started.
+        ''
       } ${block.ghost ? 'opacity-40' : ''}`}
-      style={
+      style={{
+        ...(
         block.ownWork
           ? // Their own todo: outlined in their colour on white, at full
             // strength. Assigned work is filled, so the two are told apart
@@ -1499,12 +1532,13 @@ function BlockChip({
             {
               backgroundColor: block.color,
               color: '#FFFFFF',
-              // Under way but not finished: a lighter edge, so started work
-              // is visibly different from untouched work without changing
-              // whose colour it is.
-              boxShadow: block.started ? 'inset 0 0 0 2px rgba(255,255,255,0.65)' : undefined,
             }
-      }
+        ),
+        // Last, so whichever shape the block takes above cannot drop it.
+        boxShadow: shadows.length ? shadows.join(', ') : undefined,
+        // Lifted so the halo is not painted over by the block below it.
+        zIndex: shadows.length > 1 || (block.urgent && !done && !block.ghost) ? 10 : undefined,
+      }}
     >
       {/* A row rather than floats: the label now wraps to two lines, and a
           floated button beside a clamped block does not line up. */}

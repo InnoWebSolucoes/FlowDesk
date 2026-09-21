@@ -11,6 +11,9 @@ import { supabase } from './supabaseClient'
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
 
+/** Why turning it on did not work, when it did not. Shown under the switch. */
+export let lastPushError: string | null = null
+
 export type PushStatus =
   /** This browser cannot do push at all. */
   | 'unsupported'
@@ -75,8 +78,12 @@ export async function pushStatus(): Promise<PushStatus> {
  * permission prompt that the person did not ask for.
  */
 export async function enablePush(userId: string): Promise<PushStatus> {
+  lastPushError = null
   if (!pushSupported()) return await pushStatus()
 
+  // Straight out of the tap that called this, and nowhere else: iOS gives one
+  // chance per install and refuses a request that did not come from something
+  // the person did.
   const permission = await Notification.requestPermission()
   if (permission !== 'granted') return permission === 'denied' ? 'denied' : 'off'
 
@@ -91,13 +98,23 @@ export async function enablePush(userId: string): Promise<PushStatus> {
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY!),
       })
-    } catch {
+    } catch (e) {
       // The desktop shell has the API but no push service behind it.
+      lastPushError = (e as Error).message
       return 'unsupported'
     }
   }
 
-  await saveSubscription(userId, sub)
+  try {
+    await saveSubscription(userId, sub)
+  } catch (e) {
+    // The browser is subscribed but the server has never heard of it, which
+    // would sit there reading "on" and deliver nothing for ever. Undo the
+    // browser's half so the switch and the truth agree, and say why.
+    lastPushError = (e as Error).message
+    try { await sub.unsubscribe() } catch { /* already gone */ }
+    return 'off'
+  }
   return 'on'
 }
 
@@ -109,10 +126,21 @@ export async function disablePush() {
   await sub.unsubscribe()
 }
 
+/**
+ * Throws rather than returning quietly.
+ *
+ * The browser's half of turning notifications on can succeed while this half
+ * fails — the table missing, a policy refusing the row — and the switch then
+ * sat there saying "on" over a device the server had never heard of. Nothing
+ * would ever arrive, and nothing would ever say why.
+ */
 async function saveSubscription(userId: string, sub: PushSubscription) {
   const json = sub.toJSON()
-  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return
-  await supabase.from('push_subscriptions').upsert(
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+    throw new Error('This browser gave out an incomplete subscription.')
+  }
+
+  const { error } = await supabase.from('push_subscriptions').upsert(
     {
       endpoint: json.endpoint,
       user_id: userId,
@@ -122,6 +150,11 @@ async function saveSubscription(userId: string, sub: PushSubscription) {
     },
     { onConflict: 'endpoint' }
   )
+
+  if (error) {
+    console.error('[push] the subscription could not be saved:', error)
+    throw new Error(error.message)
+  }
 }
 
 /**
@@ -133,5 +166,11 @@ export async function syncPush(userId: string) {
   if (!pushSupported()) return
   const reg = await registerServiceWorker()
   const sub = await reg?.pushManager.getSubscription()
-  if (sub) await saveSubscription(userId, sub)
+  if (!sub) return
+  try {
+    await saveSubscription(userId, sub)
+  } catch {
+    // Runs on every sign-in with nobody watching, so it cannot throw into
+    // start-up. The switch reports it properly when someone turns it on.
+  }
 }

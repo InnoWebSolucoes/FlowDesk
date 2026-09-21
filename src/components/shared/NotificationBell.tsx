@@ -13,7 +13,7 @@ import { useT } from '../../i18n/useT'
 import { AppNotification } from '../../types'
 import { getTasksDueOnDate } from '../../utils/taskScheduler'
 import { withHighlight } from '../../lib/highlight'
-import { pushStatus, enablePush, disablePush, PushStatus } from '../../lib/pushNotify'
+import { pushStatus, enablePush, disablePush, lastPushError, PushStatus } from '../../lib/pushNotify'
 
 function notifIcon(type: AppNotification['type']) {
   switch (type) {
@@ -53,17 +53,23 @@ export function NotificationBell({
   // Whether this phone gets notifications while FlowDesk is closed. Asked
   // each time the panel opens: the answer lives in the browser, not here.
   const [push, setPush] = useState<PushStatus>('unsupported')
+  // Why it would not turn on, when it would not. Silence here was the whole
+  // problem: the switch read "on" over a device nothing could reach.
+  const [pushError, setPushError] = useState<string | null>(null)
   useEffect(() => {
     if (open) pushStatus().then(setPush)
   }, [open])
   const togglePush = async () => {
     // The real account, not a preview: a phone belongs to the person holding it.
     if (!realUser) return
+    setPushError(null)
     if (push === 'on') {
       await disablePush()
       setPush('off')
     } else {
-      setPush(await enablePush(realUser.id))
+      const next = await enablePush(realUser.id)
+      setPush(next)
+      if (next !== 'on') setPushError(lastPushError)
     }
   }
   const panelRef = useRef<HTMLDivElement>(null)
@@ -344,6 +350,9 @@ export function NotificationBell({
                     <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${push === 'on' ? 'translate-x-4' : ''}`} />
                   </button>
                 </div>
+              )}
+              {pushError && (
+                <p className="text-[11px] text-danger mt-1.5">{pushError}</p>
               )}
             </div>
           )}

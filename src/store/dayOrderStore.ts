@@ -6,15 +6,36 @@ import { recordUndo } from './undoStore'
 /** What kind of thing is being placed in a day. */
 export type DayItemKind = 'task' | 'todo' | 'entry'
 
-/** One item's place in one person's day. */
+/** One item's place in one day. */
 export interface DayOrderItem {
   kind: DayItemKind
   itemId: string
 }
 
-/** `${ownerId}:${day}` — the day being arranged. */
-function dayKeyFor(ownerId: string, day: string) {
-  return `${ownerId}:${day}`
+/**
+ * Which board a day belongs to.
+ *
+ * Somebody's own day is one board whether it is drawn on their calendar or in
+ * their My Tasks — that is what makes the two agree. A project's shared board
+ * is its own, belonging to no one person, which is why it cannot simply be
+ * keyed by a user id.
+ */
+export type DayBoard =
+  | { kind: 'user'; userId: string }
+  | { kind: 'shared'; projectId: string }
+
+/** What the rows are keyed by. Must match the two shapes in the migration. */
+export function boardKeyOf(board: DayBoard) {
+  return board.kind === 'user' ? `user:${board.userId}` : `shared:${board.projectId}`
+}
+
+function sameBoard(a: DayBoard, b: DayBoard) {
+  return boardKeyOf(a) === boardKeyOf(b)
+}
+
+/** `${boardKey}|${day}` — the one day being arranged. */
+function dayKeyFor(board: DayBoard, day: string) {
+  return `${boardKeyOf(board)}|${day}`
 }
 
 function itemKey(kind: DayItemKind, itemId: string) {
@@ -24,9 +45,9 @@ function itemKey(kind: DayItemKind, itemId: string) {
 /**
  * The order of a day's work, as somebody arranged it.
  *
- * The calendar and My Tasks both draw the same day, and until now each decided
+ * The calendar and My Tasks both draw the same day, and each used to decide
  * its own order — urgent-first on one, guessed time-of-day buckets on the
- * other. This holds the one order they now share, so dragging a block on the
+ * other. This holds the one order they share, so dragging a block on the
  * calendar moves it in My Tasks too.
  *
  * Kept as a position per item rather than an array per day, because the two
@@ -36,51 +57,49 @@ function itemKey(kind: DayItemKind, itemId: string) {
  * be showing without needing to know about the rest.
  */
 interface DayOrderState {
-  /** `${ownerId}:${day}` -> `${kind}:${itemId}` -> position. */
+  /** `${boardKey}|${day}` -> `${kind}:${itemId}` -> position. */
   positions: Record<string, Record<string, number>>
-  /** Whose orders have been fetched, so a second view does not refetch. */
+  /** Which boards have been fetched, so a second view does not refetch. */
   loadedFor: string | null
 
-  load: (ownerIds: string[]) => Promise<void>
+  load: (boards: DayBoard[]) => Promise<void>
   teardown: () => void
   /** Listen for a day rearranged on another screen. */
   subscribe: () => void
 
-  /** The position of one item, or null when that day has never been arranged. */
-  positionOf: (ownerId: string, day: string, kind: DayItemKind, itemId: string) => number | null
   /** Whether this day has been arranged by hand at all. */
-  hasOrder: (ownerId: string, day: string) => boolean
+  hasOrder: (board: DayBoard, day: string) => boolean
   /**
    * Sort what a view is drawing into the day's order. Anything the day has no
    * position for keeps its place relative to the rest, after the ordered ones
-   * — a task created since the day was arranged goes to the end rather than
+   * — work created since the day was arranged goes to the end rather than
    * jumping the queue.
    */
   sortForDay: <T>(
-    ownerId: string,
+    board: DayBoard,
     day: string,
     list: T[],
     identify: (item: T) => DayOrderItem | null,
   ) => T[]
 
   /** Write a day's order, in the order given. */
-  setOrder: (ownerId: string, day: string, items: DayOrderItem[]) => Promise<void>
+  setOrder: (board: DayBoard, day: string, items: DayOrderItem[]) => Promise<void>
 }
 
 export const useDayOrderStore = create<DayOrderState>()((set, get) => ({
   positions: {},
   loadedFor: null,
 
-  load: async (ownerIds) => {
-    const ids = [...new Set(ownerIds.filter(Boolean))].sort()
-    if (ids.length === 0) return
-    const marker = ids.join(',')
+  load: async (boards) => {
+    const keys = [...new Set(boards.map(boardKeyOf))].sort()
+    if (keys.length === 0) return
+    const marker = keys.join(',')
     if (get().loadedFor === marker) return
 
     const { data, error } = await supabase
       .from('day_order')
-      .select('owner_id, day, kind, item_id, position')
-      .in('owner_id', ids)
+      .select('board_key, day, kind, item_id, position')
+      .in('board_key', keys)
 
     if (error) {
       // Absent until the migration has run. The views fall back to the order
@@ -91,7 +110,7 @@ export const useDayOrderStore = create<DayOrderState>()((set, get) => ({
 
     const positions: Record<string, Record<string, number>> = {}
     for (const row of data ?? []) {
-      const dk = dayKeyFor(row.owner_id, row.day)
+      const dk = `${row.board_key}|${row.day}`
       ;(positions[dk] ??= {})[itemKey(row.kind, row.item_id)] = row.position
     }
     set({ positions, loadedFor: marker })
@@ -113,22 +132,24 @@ export const useDayOrderStore = create<DayOrderState>()((set, get) => ({
         // Cheap enough to refetch whole: one row per item per arranged day.
         const marker = get().loadedFor
         if (!marker) return
+        const boards: DayBoard[] = marker.split(',').map((key) =>
+          key.startsWith('shared:')
+            ? { kind: 'shared', projectId: key.slice('shared:'.length) }
+            : { kind: 'user', userId: key.slice('user:'.length) },
+        )
         set({ loadedFor: null })
-        get().load(marker.split(','))
+        get().load(boards)
       })
       .subscribe()
   },
 
-  positionOf: (ownerId, day, kind, itemId) =>
-    get().positions[dayKeyFor(ownerId, day)]?.[itemKey(kind, itemId)] ?? null,
-
-  hasOrder: (ownerId, day) => {
-    const day_ = get().positions[dayKeyFor(ownerId, day)]
-    return !!day_ && Object.keys(day_).length > 0
+  hasOrder: (board, day) => {
+    const placed = get().positions[dayKeyFor(board, day)]
+    return !!placed && Object.keys(placed).length > 0
   },
 
-  sortForDay: (ownerId, day, list, identify) => {
-    const positions = get().positions[dayKeyFor(ownerId, day)]
+  sortForDay: (board, day, list, identify) => {
+    const positions = get().positions[dayKeyFor(board, day)]
     if (!positions) return list
 
     // Decorated with the original index so the sort stays stable for
@@ -149,23 +170,27 @@ export const useDayOrderStore = create<DayOrderState>()((set, get) => ({
       .map((d) => d.item)
   },
 
-  setOrder: async (ownerId, day, items) => {
+  setOrder: async (board, day, items) => {
     const by = useAuthStore.getState().realUser?.id ?? null
+    const key = boardKeyOf(board)
 
     // The day as it stood, so Cmd+Z puts it back in that order. Read from
     // what is loaded rather than refetched: it is the order on screen that is
     // being replaced, and that is what should come back.
-    const before = get().positions[dayKeyFor(ownerId, day)]
+    const before = get().positions[dayKeyFor(board, day)]
     const previous: DayOrderItem[] | null = before
       ? Object.entries(before)
           .sort((a, b) => a[1] - b[1])
-          .map(([key]) => {
-            const [kind, itemId] = key.split(':') as [DayItemKind, string]
+          .map(([k]) => {
+            const [kind, itemId] = k.split(':') as [DayItemKind, string]
             return { kind, itemId }
           })
       : null
+
     const rows = items.map((it, i) => ({
-      owner_id: ownerId,
+      board_key: key,
+      owner_id: board.kind === 'user' ? board.userId : null,
+      project_id: board.kind === 'shared' ? board.projectId : null,
       day,
       kind: it.kind,
       item_id: it.itemId,
@@ -176,18 +201,17 @@ export const useDayOrderStore = create<DayOrderState>()((set, get) => ({
 
     // On screen first: a drag that waits for the network to land looks like a
     // drag that did not take.
-    const dk = dayKeyFor(ownerId, day)
+    const dk = dayKeyFor(board, day)
     set((s) => ({
       positions: {
         ...s.positions,
-        [dk]: {
-          ...s.positions[dk],
-          ...Object.fromEntries(rows.map((r) => [itemKey(r.kind as DayItemKind, r.item_id), r.position])),
-        },
+        [dk]: Object.fromEntries(items.map((it, i) => [itemKey(it.kind, it.itemId), i])),
       },
     }))
 
-    const { error } = await supabase.from('day_order').upsert(rows)
+    const { error } = await supabase
+      .from('day_order')
+      .upsert(rows, { onConflict: 'board_key,day,kind,item_id' })
     if (error) {
       console.error('[dayOrder] could not save the order:', error)
       throw new Error(error.message)
@@ -199,12 +223,14 @@ export const useDayOrderStore = create<DayOrderState>()((set, get) => ({
     if (previous?.length) {
       recordUndo({
         label: 'rearranged a day',
-        undo: () => get().setOrder(ownerId, day, previous),
-        redo: () => get().setOrder(ownerId, day, items),
+        undo: () => get().setOrder(board, day, previous),
+        redo: () => get().setOrder(board, day, items),
       })
     }
   },
 }))
+
+export { sameBoard }
 
 /**
  * The live subscription. Outside the store because it is a connection, not
