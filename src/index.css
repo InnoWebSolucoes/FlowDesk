@@ -132,28 +132,17 @@ video {
  *
  * A block is already filled with whoever's colour it is, so a ring in the
  * brand's deep red (#7A2020) sat almost invisibly against it — which is how
- * urgent work stopped standing out at all. This is a glow instead of an
- * outline: a bright red halo that spreads outside the block, so it reads
- * across a whole week at a glance and does not fight the person's colour for
- * the block itself. It breathes slowly rather than flashing — a calendar full
- * of urgent work should not strobe.
+ * urgent work stopped standing out at all. This is a bright red outline with
+ * a soft halo behind it: enough to pick out across a whole week, without
+ * fighting the person's colour for the block itself.
+ *
+ * It does not move. An earlier version breathed slowly, on the reasoning that
+ * urgent work should announce itself; on a day with several urgent blocks that
+ * is a page that will not sit still, and the point was only ever to make them
+ * easy to find.
  */
-@keyframes urgentGlow {
-  0%, 100% { box-shadow: 0 0 0 2px #EF4444, 0 0 6px 2px rgba(239, 68, 68, 0.55); }
-  50%      { box-shadow: 0 0 0 2px #EF4444, 0 0 11px 5px rgba(239, 68, 68, 0.8); }
-}
-
 .urgent-glow {
-  animation: urgentGlow 2.2s ease-in-out infinite;
-}
-
-/* Someone who would rather things held still. The glow stays — it is the
-   point — it just stops moving. */
-@media (prefers-reduced-motion: reduce) {
-  .urgent-glow {
-    animation: none;
-    box-shadow: 0 0 0 2px #EF4444, 0 0 9px 3px rgba(239, 68, 68, 0.7);
-  }
+  box-shadow: 0 0 0 2px #EF4444, 0 0 8px 2px rgba(239, 68, 68, 0.45);
 }
 
 /* Recharts tooltip */
