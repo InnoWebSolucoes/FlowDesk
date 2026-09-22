@@ -2,16 +2,27 @@ import { Task, CompletionLog } from '../types'
 import {
   format, startOfWeek, endOfWeek, addDays, getDay, parseISO,
   startOfMonth, endOfMonth, isWithinInterval, startOfDay, isBefore,
+  differenceInCalendarWeeks,
 } from 'date-fns'
 
 /**
- * Returns which week of the month a date falls in (1-4).
- * Week 1 = days 1–7, Week 2 = days 8–14, Week 3 = days 15–21, Week 4 = days 22+
+ * Which week of the month a date falls in.
+ *
+ * Week 1 = days 1–7, week 2 = 8–14, week 3 = 15–21, week 4 = 22–28 — and days
+ * 29 to 31 are a fifth week that the editor has no option for, so a monthly
+ * task can never land on them. That is deliberate rather than forgotten: the
+ * fifth week does not exist in every month, so work put there would silently
+ * skip most of the year. It is also why two monthly tasks, on week 1 and week
+ * 3, cannot make a fortnightly rhythm — every month with five Saturdays
+ * stretches the gap to 21 days. Bi-weekly is what that wants.
  */
 export function getWeekOfMonth(date: Date): number {
   const dayOfMonth = date.getDate()
   return Math.ceil(dayOfMonth / 7)
 }
+
+/** Weeks start Monday everywhere in this app. */
+const WEEK_OPTS = { weekStartsOn: 1 } as const
 
 /**
  * Whether a task lands on a given day for a given person.
@@ -70,6 +81,23 @@ export function isTaskDueOnDate(task: Task, employeeId: string, date: Date): boo
     case 'weekly': {
       const days = frequency.days ?? []
       return days.includes(dayOfWeek)
+    }
+
+    case 'bi-weekly': {
+      // The right day of the week, in an "on" week.
+      const days = frequency.days ?? []
+      if (!days.includes(dayOfWeek)) return false
+
+      // Which fortnight this is, counted from the week the task starts in.
+      // Counting in whole weeks rather than days is what keeps the rhythm
+      // exact across daylight saving, where a fortnight is not always
+      // 14 × 24 hours.
+      const anchorIso = frequency.date ?? task.createdAt
+      if (!anchorIso) return false
+      const weeks = differenceInCalendarWeeks(date, parseISO(anchorIso), WEEK_OPTS)
+
+      // Never before it starts, then every other week.
+      return weeks >= 0 && weeks % 2 === 0
     }
 
     case 'monthly': {

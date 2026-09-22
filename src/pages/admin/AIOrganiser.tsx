@@ -104,6 +104,10 @@ export function AIOrganiser() {
       const days = (freq.days ?? []).map((d: number) => DAY_NAMES_EN[d]).join(', ')
       return `${t('task_freqWeekly')}: ${days}`
     }
+    if (freq.type === 'bi-weekly') {
+      const days = (freq.days ?? []).map((d: number) => DAY_NAMES_EN[d]).join(', ')
+      return `${t('task_freqBiWeekly')}: ${days}`
+    }
     if (freq.type === 'monthly') return `${t('task_freqMonthly')}: ${t('task_week')} ${freq.weekOfMonth}, ${DAY_NAMES_EN[freq.dayOfWeek ?? 1]}`
     if (freq.type === 'one-off') return `${t('task_freqOneOff')}: ${freq.date ?? ''}`
     return freq.type

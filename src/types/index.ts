@@ -261,14 +261,21 @@ export interface CalendarEntryLink {
   clusterId: string | null
 }
 
-export type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'one-off'
+export type FrequencyType = 'daily' | 'weekly' | 'bi-weekly' | 'monthly' | 'one-off'
 
 export interface TaskFrequency {
   type: FrequencyType
-  days?: number[] // 0=Sun,1=Mon,...6=Sat — for weekly
+  days?: number[] // 0=Sun,1=Mon,...6=Sat — for weekly and bi-weekly
   weekOfMonth?: number // 1-4 — for monthly
   dayOfWeek?: number // 0-6 — for monthly
-  date?: string // ISO date string — for one-off
+  /**
+   * One-off: the day it happens.
+   *
+   * Bi-weekly: the week it counts from. Every other week is "on" and the rest
+   * are off, and this says which is which — without it there is no way to tell
+   * one fortnight from the next.
+   */
+  date?: string
 }
 
 export interface Category {

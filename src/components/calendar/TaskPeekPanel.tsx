@@ -27,6 +27,10 @@ function frequencyLabel(f: Task['frequency'], t: (k: TranslationKey) => string):
     const days = (f.days ?? []).map((d: number) => day(d)).join(', ')
     return days ? `${t('taskpeek_weekly')} · ${days}` : t('taskpeek_weekly')
   }
+  if (f.type === 'bi-weekly') {
+    const days = (f.days ?? []).map((d: number) => day(d)).join(', ')
+    return days ? `${t('task_freqBiWeekly')} · ${days}` : t('task_freqBiWeekly')
+  }
   if (f.type === 'monthly') {
     return `${t('taskpeek_monthly')} · ${t('task_week')} ${f.weekOfMonth ?? 1}, ${day(f.dayOfWeek ?? 1)}`
   }

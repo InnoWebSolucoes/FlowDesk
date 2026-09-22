@@ -14,7 +14,7 @@ import { UrgentBadge, UrgentToggle } from '../../components/shared/Urgent'
 import { Select } from '../../components/shared/Select'
 import { DeleteTaskDialog } from '../../components/shared/DeleteTaskDialog'
 
-const FREQ_OPTIONS: FrequencyType[] = ['daily', 'weekly', 'monthly', 'one-off']
+const FREQ_OPTIONS: FrequencyType[] = ['daily', 'weekly', 'bi-weekly', 'monthly', 'one-off']
 
 // One-off, on the day given or today: most work set up by hand happens once.
 const defaultFreq = (date?: string): TaskFrequency => ({ type: 'one-off', date: date || format(new Date(), 'yyyy-MM-dd') })
@@ -95,9 +95,13 @@ export function TaskForm({
     // An estimate is required: the day is planned from it.
     const mins = form.estimatedMinutes === '' ? 0 : Number(form.estimatedMinutes)
     if (!Number.isFinite(mins) || mins < 1) e.estimatedMinutes = t('task_errorMinutes')
-    if (form.frequency.type === 'weekly' && (!form.frequency.days || form.frequency.days.length === 0))
+    if ((form.frequency.type === 'weekly' || form.frequency.type === 'bi-weekly')
+      && (!form.frequency.days || form.frequency.days.length === 0))
       e.days = t('task_errorDays')
     if (form.frequency.type === 'one-off' && !form.frequency.date) e.date = t('task_errorDate')
+    // Without the week it counts from there is no telling one fortnight from
+    // the next, so the rule would produce nothing at all.
+    if (form.frequency.type === 'bi-weekly' && !form.frequency.date) e.date = t('task_errorBiWeeklyFrom')
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -136,6 +140,7 @@ export function TaskForm({
   const freqLabel = (type: string) => {
     if (type === 'daily') return t('task_freqDaily')
     if (type === 'weekly') return t('task_freqWeekly')
+    if (type === 'bi-weekly') return t('task_freqBiWeekly')
     if (type === 'monthly') return t('task_freqMonthly')
     if (type === 'one-off') return t('task_freqOneOff')
     return type
@@ -253,15 +258,23 @@ export function TaskForm({
             // A one-off needs a due date, so it opens on today rather than
             // blank — an empty box that only complains on save is a trap.
             // Any date already picked is kept when switching back to one-off.
+            // Both of these need a date to mean anything — a one-off its day,
+            // a fortnightly task the week it counts from — so they open on
+            // today rather than blank. An empty box that only complains on
+            // save is a trap. Any date already picked is kept.
             set('frequency',
-              type === 'one-off'
-                ? { type, date: form.frequency.date || format(new Date(), 'yyyy-MM-dd') }
+              type === 'one-off' || type === 'bi-weekly'
+                ? {
+                    type,
+                    date: form.frequency.date || format(new Date(), 'yyyy-MM-dd'),
+                    days: type === 'bi-weekly' ? form.frequency.days ?? [] : undefined,
+                  }
                 : { type })
           }}
           options={FREQ_OPTIONS.map(f => ({ value: f, label: freqLabel(f) }))}
         />
 
-        {form.frequency.type === 'weekly' && (
+        {(form.frequency.type === 'weekly' || form.frequency.type === 'bi-weekly') && (
           <div className="mt-2">
             <p className="text-xs text-text-muted mb-1.5">{t('task_selectDays')}</p>
             <div className="flex gap-1.5 flex-wrap">
@@ -277,6 +290,19 @@ export function TaskForm({
               ))}
             </div>
             {err('days')}
+          </div>
+        )}
+
+        {/* Which fortnight is the "on" one. Two weeks have no inherent
+            beginning, so somebody has to say which — and the natural way to
+            say it is to point at the first day it should happen. */}
+        {form.frequency.type === 'bi-weekly' && (
+          <div className="mt-2">
+            <label className={lbl}>{t('task_biWeeklyFrom')}</label>
+            <input type="date" className={inp} value={form.frequency.date ?? ''}
+              onChange={e => setFreq('date', e.target.value)} />
+            <p className="text-text-subtle text-[11px] mt-1">{t('task_biWeeklyFromHint')}</p>
+            {err('date')}
           </div>
         )}
 
@@ -503,6 +529,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
     const f = task.frequency
     if (f.type === 'daily') return t('task_freqDaily')
     if (f.type === 'weekly') return `${t('task_freqWeekly')} (${(f.days ?? []).map(d => DAY_NAMES[d]).join(', ')})`
+    if (f.type === 'bi-weekly') return `${t('task_freqBiWeekly')} (${(f.days ?? []).map(d => DAY_NAMES[d]).join(', ')})`
     if (f.type === 'monthly') return `${t('task_freqMonthly')} (${t('task_week')} ${f.weekOfMonth}, ${DAY_NAMES[f.dayOfWeek ?? 1]})`
     if (f.type === 'one-off') return `${t('task_freqOneOff')} (${f.date ?? ''})`
     return f.type
@@ -511,6 +538,7 @@ export function TaskManager({ preselectedEmployee }: { preselectedEmployee?: str
   const freqOptionLabel = (f: string) => {
     if (f === 'daily') return t('task_freqDaily')
     if (f === 'weekly') return t('task_freqWeekly')
+    if (f === 'bi-weekly') return t('task_freqBiWeekly')
     if (f === 'monthly') return t('task_freqMonthly')
     if (f === 'one-off') return t('task_freqOneOff')
     return f
