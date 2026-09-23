@@ -13,6 +13,7 @@ import { useUndoStore } from './store/undoStore'
 import { useDayOrderStore } from './store/dayOrderStore'
 import { useProjectStore } from './store/projectStore'
 import { useChatStore } from './store/chatStore'
+import { useContentStore } from './store/contentStore'
 import { Layout } from './components/shared/Layout'
 
 // Pages
@@ -41,6 +42,8 @@ import { MyNotes } from './pages/employee/MyNotes'
 import { MyResources } from './pages/employee/MyResources'
 import { MyCalendar } from './pages/employee/MyCalendar'
 import { Chat } from './pages/Chat'
+import { ContentCalendar } from './pages/content/ContentCalendar'
+import { ContentClientPage } from './pages/content/ContentClientPage'
 
 function LoadingScreen() {
   return (
@@ -140,6 +143,7 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
   const tearDownProjects = useProjectStore(s => s.teardown)
   const tearDownChat = useChatStore(s => s.teardown)
   const tearDownDayOrder = useDayOrderStore(s => s.teardown)
+  const tearDownContent = useContentStore(s => s.teardown)
 
   useEffect(() => {
     if (authStatus === 'authenticated') {
@@ -176,6 +180,7 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
     tearDownProjects()
     tearDownChat()
     tearDownDayOrder()
+    tearDownContent()
     // One person's actions are not the next person's to take back.
     useUndoStore.getState().reset()
     stopTracking()
@@ -212,6 +217,9 @@ export default function App() {
             <Route index element={<Navigate to="projects" replace />} />
             <Route path="overview" element={<Overview />} />
             <Route path="chat" element={<Chat />} />
+            {/* The content calendar is the whole firm's, not one project's. */}
+            <Route path="content" element={<ContentCalendar />} />
+            <Route path="content/:clientId" element={<ContentClientPage />} />
             <Route path="projects" element={<Projects />} />
             <Route path="projects/:projectId" element={<ProjectLayout />}>
               <Route index element={<Navigate to="about" replace />} />
@@ -268,6 +276,8 @@ export default function App() {
             </Route>
 
             <Route path="chat" element={<Chat />} />
+            <Route path="content" element={<ContentCalendar />} />
+            <Route path="content/:clientId" element={<ContentClientPage />} />
             <Route path="toolbox" element={<Toolbox />} />
             <Route path="guidelines" element={<Guidelines />} />
           </Route>

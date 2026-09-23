@@ -752,6 +752,7 @@ const en = {
   taskpeek_someone: 'Someone',
   // The day's other work
   nav_workLog: 'Work log',
+  nav_content: 'Content calendar',
   profile_notOnProject: 'They are not on a project yet, so there is nothing here.',
   worklog_add: 'Log work',
   worklog_comment: 'Comment',
@@ -1528,6 +1529,7 @@ const pt: typeof en = {
   taskpeek_someone: 'Alguém',
   // The day's other work
   nav_workLog: 'Registo de trabalho',
+  nav_content: 'Calendário de conteúdo',
   profile_notOnProject: 'Ainda não está num projeto, por isso não há nada aqui.',
   worklog_add: 'Registar trabalho',
   worklog_comment: 'Comentar',

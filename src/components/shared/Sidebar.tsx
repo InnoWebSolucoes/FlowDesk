@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useMatch, Link, useLocation } from 'react-router-dom'
 import {
-  NotebookPen,
+  NotebookPen, Clapperboard,
   ListTodo, Users, Info, FolderOpen, CalendarDays,
   CheckSquare, Wrench, BookOpen, Building2, MessageCircle, MessageSquare, StickyNote, Sparkles,
   LogOut, Menu, X, ChevronLeft, PanelLeftClose, PanelLeftOpen, ExternalLink
@@ -44,9 +44,12 @@ export function Sidebar() {
         { to: `/admin/projects/${activeProjectId}/notes`, label: t('nav_notes'), icon: <StickyNote size={18} /> },
         // Inside the project, so opening chat does not leave it.
         { to: `/admin/projects/${activeProjectId}/chat`, label: t('nav_chat'), icon: <MessageSquare size={18} /> },
+        // The whole firm's, so it leaves the project rather than living in it.
+        { to: '/admin/content', label: t('nav_content'), icon: <Clapperboard size={18} /> },
       ]
     : [
         { to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> },
+        { to: '/admin/content', label: t('nav_content'), icon: <Clapperboard size={18} /> },
         { to: '/admin/chat', label: t('nav_chat'), icon: <MessageSquare size={18} /> },
       ]
 
@@ -59,6 +62,7 @@ export function Sidebar() {
     { to: '/employee/todos', label: t('nav_todos'), icon: <ListTodo size={18} /> },
     { to: '/employee/resources', label: t('nav_resources'), icon: <FolderOpen size={18} /> },
     { to: '/employee/calendar', label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
+    { to: '/employee/content', label: t('nav_content'), icon: <Clapperboard size={18} /> },
     { to: '/employee/notes', label: t('nav_notes'), icon: <StickyNote size={18} /> },
     { to: '/employee/chat', label: t('nav_chat'), icon: <MessageSquare size={18} /> },
     { to: '/employee/toolbox', label: t('nav_toolbox'), icon: <Wrench size={18} /> },

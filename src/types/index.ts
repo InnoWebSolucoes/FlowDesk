@@ -551,3 +551,81 @@ export interface AppNotification {
   targetUserId: string | null // employee id, or null when targetRole is set
   targetRole: Role | null // 'admin' to notify all admins, else null
 }
+
+// ─── Content calendar ───────────────────────────────────────────────────────
+// Every piece of content is planned, recorded, edited and posted. Pieces are
+// never stored one by one: they are numbered from the counts on each session,
+// in date order. See src/utils/contentPipeline.ts.
+
+/** Somebody the firm makes content for. */
+export interface ContentClient {
+  id: string
+  name: string
+  /** Three letters on every post tag, e.g. ESP 03. */
+  code: string
+  color: string
+  /** How many pieces go out a month. Recording frequency is planned from it. */
+  postsPerMonth: number
+  contactName: string
+  contactEmail: string
+  contactPhone: string
+  handle: string
+  notes: string
+  isArchived: boolean
+  createdAt: string
+}
+
+/** A shoot, and the content plan that has to be made before it. */
+export interface ContentRecording {
+  id: string
+  clientId: string
+  recordedOn: string
+  /** How many videos this session should produce. */
+  pieces: number
+  assigneeId: string | null
+  doneAt: string | null
+  notes: string
+  /** The day the content plan is due. Null when there is no plan task. */
+  planOn: string | null
+  planAssigneeId: string | null
+  planDoneAt: string | null
+  planPath: string | null
+  planName: string | null
+  planMime: string | null
+  planNotes: string
+  createdAt: string
+}
+
+/** An editing session: how many of the videos recorded so far it finishes. */
+export interface ContentEdit {
+  id: string
+  clientId: string
+  editedOn: string
+  pieces: number
+  assigneeId: string | null
+  doneAt: string | null
+  notes: string
+  createdAt: string
+}
+
+/** When a client posts. Each matching day is one posting slot. */
+export interface ContentPostRule {
+  id: string
+  clientId: string
+  /** 0 = Sunday … 6 = Saturday. */
+  weekdays: number[]
+  /** 1 every week, 2 every other week, counted from the week of startsOn. */
+  everyWeeks: number
+  startsOn: string
+  endsOn: string | null
+  assigneeId: string | null
+  createdAt: string
+}
+
+/** A posting slot that has gone out. */
+export interface ContentPostDone {
+  clientId: string
+  postedOn: string
+  doneBy: string | null
+  doneAt: string
+}
