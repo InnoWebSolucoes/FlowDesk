@@ -106,6 +106,9 @@ export interface Piece {
   recordedOn: string
   editId: string | null
   editedOn: string | null
+  /** When its batch goes to the client for approval, and into the scheduler. */
+  deliverOn: string | null
+  scheduleOn: string | null
   /** The first day it can go out: edited, delivered and scheduled. */
   readyOn: string | null
   /** The slot it goes out in, when one has been reached. */
@@ -199,6 +202,8 @@ export function flowFor(
         recordedOn: r.recordedOn,
         editId: null,
         editedOn: null,
+        deliverOn: null,
+        scheduleOn: null,
         readyOn: null,
         postOn: null,
       })
@@ -217,6 +222,8 @@ export function flowFor(
     for (let i = edited; i < edited + takes; i++) {
       pieces[i].editId = e.id
       pieces[i].editedOn = e.editedOn
+      pieces[i].deliverOn = e.deliverOn
+      pieces[i].scheduleOn = e.scheduleOn
       pieces[i].readyOn = readyOn
     }
     flows.push({ edit: e, readyOn, available, takes, short: e.pieces - takes, from: edited + 1, to: edited + takes })

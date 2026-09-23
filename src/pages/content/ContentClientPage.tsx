@@ -218,14 +218,29 @@ export function ContentClientPage() {
               from={f.from}
               to={f.to}
               short={f.short}
-              readyOn={f.readyOn}
             />
           ))}
         </div>
       </Stage>
 
-      {/* ─── 3. Posting ─────────────────────────────────────────────────── */}
-      <Stage n={3} icon={<Send size={18} />} title={c.stagePosting} color={KIND_COLOR.post}>
+      {/* ─── 3. Delivery and scheduling ─────────────────────────────────── */}
+      {/* Their own stage, not a line under each edit: each is a task with its
+          own day, person and tick, and tucked away there it read as missing. */}
+      <Stage n={3} icon={<CalendarClock size={18} />} title={c.stageDeliveryScheduling} color={KIND_COLOR.schedule}>
+        <p className="text-sm text-text-muted mb-4 max-w-[70ch]">{c.deliveryIntro}</p>
+        {flow.edits.length === 0 ? (
+          <p className="text-sm text-text-muted">{c.noBatches}</p>
+        ) : (
+          <div className="space-y-2">
+            {flow.edits.map((f) => (
+              <BatchRow key={f.edit.id} client={client} edit={f.edit} from={f.from} to={f.to} readyOn={f.readyOn} />
+            ))}
+          </div>
+        )}
+      </Stage>
+
+      {/* ─── 4. Posting ─────────────────────────────────────────────────── */}
+      <Stage n={4} icon={<Send size={18} />} title={c.stagePosting} color={KIND_COLOR.post}>
         <p className="text-sm text-text-muted mb-4 max-w-[70ch]">{c.postingIntro}</p>
         <RuleForm client={client} defaultStart={edits.map((e) => e.editedOn).sort()[0] ?? today} />
         <div className="mt-4 space-y-2">
@@ -236,7 +251,7 @@ export function ContentClientPage() {
       </Stage>
 
       {/* ─── Pieces ─────────────────────────────────────────────────────── */}
-      <Stage n={4} icon={<ClipboardList size={18} />} title={c.stagePieces} color="#1B4F8A">
+      <Stage n={5} icon={<ClipboardList size={18} />} title={c.stagePieces} color="#1B4F8A">
         {flow.pieces.length === 0 ? (
           <p className="text-sm text-text-muted">{c.noPieces}</p>
         ) : (
@@ -247,6 +262,8 @@ export function ContentClientPage() {
                   <th className="text-left font-semibold px-3 py-2">{c.colPiece}</th>
                   <th className="text-left font-semibold px-3 py-2">{c.colRecorded}</th>
                   <th className="text-left font-semibold px-3 py-2">{c.colEdited}</th>
+                  <th className="text-left font-semibold px-3 py-2">{c.colDelivered}</th>
+                  <th className="text-left font-semibold px-3 py-2">{c.colScheduled}</th>
                   <th className="text-left font-semibold px-3 py-2">{c.colGoesLive}</th>
                   <th className="text-left font-semibold px-3 py-2">{c.colPosted}</th>
                 </tr>
@@ -262,9 +279,12 @@ export function ContentClientPage() {
                       <td className="px-3 py-1.5 whitespace-nowrap">{fmt(p.recordedOn)}</td>
                       <td className="px-3 py-1.5 whitespace-nowrap">
                         {p.editedOn ? fmt(p.editedOn) : <span className="text-text-subtle">{c.notYet}</span>}
-                        {p.readyOn && p.readyOn !== p.editedOn && (
-                          <span className="text-text-subtle">{c.readyOn(fmt(p.readyOn, { day: 'numeric', month: 'short' }))}</span>
-                        )}
+                      </td>
+                      <td className="px-3 py-1.5 whitespace-nowrap">
+                        {p.deliverOn ? fmt(p.deliverOn) : <span className="text-text-subtle">—</span>}
+                      </td>
+                      <td className="px-3 py-1.5 whitespace-nowrap">
+                        {p.scheduleOn ? fmt(p.scheduleOn) : <span className="text-text-subtle">—</span>}
                       </td>
                       <td className="px-3 py-1.5 whitespace-nowrap">
                         {p.postOn ? fmt(p.postOn) : <span className="text-text-subtle">{p.editedOn ? c.noPostingDayYet : '—'}</span>}
@@ -872,7 +892,6 @@ function EditRow({
   from,
   to,
   short,
-  readyOn,
 }: {
   client: ContentClient
   edit: ContentEdit
@@ -881,10 +900,9 @@ function EditRow({
   from: number
   to: number
   short: number
-  readyOn: string
 }) {
   const { updateEdit, deleteEdit } = useContentStore()
-  const { c, fmt } = useContentT()
+  const { c } = useContentT()
   const { available } = availableToEdit(recordings, edits, e.editedOn, e.id, e.createdAt)
   const save = (patch: Parameters<typeof updateEdit>[1]) => updateEdit(e.id, patch).catch(report)
 
@@ -923,9 +941,41 @@ function EditRow({
           </p>
         )}
       </div>
+    </div>
+  )
+}
 
-      {/* The batch's way to the feed: approval, then the scheduler. */}
-      <div className="border-t border-border bg-surface-2/40 px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+/**
+ * One edited batch on its way to the feed: approval, then the scheduler.
+ * Each is a task of its own — its day, who does it, and a tick.
+ */
+function BatchRow({
+  client,
+  edit: e,
+  from,
+  to,
+  readyOn,
+}: {
+  client: ContentClient
+  edit: ContentEdit
+  from: number
+  to: number
+  readyOn: string
+}) {
+  const updateEdit = useContentStore((s) => s.updateEdit)
+  const { c, fmt } = useContentT()
+  const save = (patch: Parameters<typeof updateEdit>[1]) => updateEdit(e.id, patch).catch(report)
+
+  return (
+    <div className="bg-surface border border-border-md rounded-md border-l-4" style={{ borderLeftColor: KIND_COLOR.schedule }}>
+      <div className="px-4 pt-3 pb-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-sm font-semibold" style={{ color: client.color }}>
+          {to >= from ? `${pieceTag(client, from)}${to > from ? `–${String(to).padStart(2, '0')}` : ''}` : c.nothingToEdit}
+        </span>
+        <span className="text-xs text-text-muted">{c.editedOnDay(fmt(e.editedOn))}</span>
+        <span className="text-xs text-text-muted ml-auto">{c.readyToPostFrom(fmt(readyOn))}</span>
+      </div>
+      <div className="px-4 pb-3 pt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
         <StepRow
           name={c.delivery}
           icon={<Truck size={14} />}
@@ -964,7 +1014,6 @@ function EditRow({
             })
           }
         />
-        <span className="text-xs text-text-muted ml-auto">{c.readyToPostFrom(fmt(readyOn))}</span>
       </div>
     </div>
   )

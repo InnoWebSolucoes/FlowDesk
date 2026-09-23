@@ -217,18 +217,24 @@ const en = {
     `${n} posting ${plural(n, 'day', 'days')} in the next two months ${plural(n, 'has', 'have')} nothing ready in time: ${endSentence(dates)} Book a shoot, or bring an edit, delivery or scheduling day forward.`,
   stageRecordings: 'Recordings',
   stageEditing: 'Editing',
+  stageDeliveryScheduling: 'Delivery and scheduling',
   stagePosting: 'Posting',
   stagePieces: 'Every piece',
   recordingsIntro:
     'Every shoot needs a content plan first — it is a task of its own, due a few days before, with a place to upload the plan.',
   editingIntro:
-    'Drag the bar to choose how many of the recorded videos a session edits. It can only take what has been recorded by its day and not edited yet, oldest first. Each batch is then delivered to the client for approval and scheduled, and its pieces can go out from the day it is scheduled.',
+    'Drag the bar to choose how many of the recorded videos a session edits. It can only take what has been recorded by its day and not edited yet, oldest first. Delivery and scheduling for each batch are in the next step.',
+  deliveryIntro:
+    'Every edited batch goes to the client for approval, then into the scheduler. Its pieces can only go out from the day it is scheduled.',
+  noBatches: 'Batches appear here once an editing session is added.',
+  editedOnDay: (date: string) => `edited ${date}`,
   postingIntro: 'Pick the days they post. Each posting day publishes the next piece that has been edited, delivered and scheduled by then.',
   noPieces: 'Pieces appear here once a recording is added.',
   colRecorded: 'Recorded',
   colEdited: 'Edited',
+  colDelivered: 'Delivered',
+  colScheduled: 'Scheduled',
   notYet: 'not yet',
-  readyOn: (date: string) => ` · ready ${date}`,
   noPostingDayYet: 'no posting day yet',
 
   // The editing bar
@@ -511,19 +517,25 @@ const pt: typeof en = {
     `${n} ${plural(n, 'dia', 'dias')} de publicação nos próximos dois meses ${plural(n, 'não tem', 'não têm')} nada pronto a tempo: ${endSentence(dates)} Marque uma gravação, ou antecipe um dia de edição, entrega ou agendamento.`,
   stageRecordings: 'Gravações',
   stageEditing: 'Edição',
+  stageDeliveryScheduling: 'Entrega e agendamento',
   stagePosting: 'Publicação',
   stagePieces: 'Todas as peças',
   recordingsIntro:
     'Cada gravação precisa primeiro de um plano de conteúdo — é uma tarefa própria, com prazo uns dias antes e um sítio para carregar o plano.',
   editingIntro:
-    'Arraste a barra para escolher quantos dos vídeos gravados uma sessão edita. Só pode incluir o que já foi gravado até esse dia e ainda não foi editado, dos mais antigos para os mais recentes. Cada lote é depois entregue ao cliente para aprovação e agendado, e as suas peças podem sair a partir do dia em que é agendado.',
+    'Arraste a barra para escolher quantos dos vídeos gravados uma sessão edita. Só pode incluir o que já foi gravado até esse dia e ainda não foi editado, dos mais antigos para os mais recentes. A entrega e o agendamento de cada lote estão no passo seguinte.',
+  deliveryIntro:
+    'Cada lote editado vai ao cliente para aprovação e depois é agendado. As suas peças só podem sair a partir do dia em que é agendado.',
+  noBatches: 'Os lotes aparecem aqui quando for adicionada uma sessão de edição.',
+  editedOnDay: (date: string) => `editado a ${date}`,
   postingIntro:
     'Escolha os dias em que publicam. Cada dia de publicação publica a próxima peça já editada, entregue e agendada até esse dia.',
   noPieces: 'As peças aparecem aqui quando for adicionada uma gravação.',
   colRecorded: 'Gravada',
   colEdited: 'Editada',
+  colDelivered: 'Entregue',
+  colScheduled: 'Agendada',
   notYet: 'ainda não',
-  readyOn: (date: string) => ` · pronta a ${date}`,
   noPostingDayYet: 'ainda sem dia de publicação',
 
   noneAvailable: '0 disponíveis',
