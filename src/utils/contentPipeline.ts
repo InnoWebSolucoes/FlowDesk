@@ -77,10 +77,13 @@ export function shiftMonth(day: string, n: number) {
   return fromUtc(Date.UTC(y, m - 1 + n, 1))
 }
 
-export const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-export function formatDay(day: string, opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }) {
-  return new Date(toUtc(day)).toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' })
+/** A day as people read it, in the language the app is in. See useContentT. */
+export function formatDay(
+  day: string,
+  opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' },
+  locale = 'en-GB',
+) {
+  return new Date(toUtc(day)).toLocaleDateString(locale, { ...opts, timeZone: 'UTC' })
 }
 
 // ─── Ordering ───────────────────────────────────────────────────────────────
@@ -281,11 +284,4 @@ export function suggestCadence(postsPerMonth: number, perShoot: number) {
   const every = weeks >= 3.5 ? 4 : weeks >= 1.5 ? 2 : 1
   const perMonth = Math.round((4.3 / every) * perShoot)
   return { shootsPerMonth, every, perMonth }
-}
-
-export const CADENCE_LABEL: Record<number, string> = {
-  1: 'every week',
-  2: 'every 2 weeks',
-  3: 'every 3 weeks',
-  4: 'every 4 weeks',
 }

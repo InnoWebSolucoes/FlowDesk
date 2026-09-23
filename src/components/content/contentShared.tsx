@@ -3,7 +3,8 @@ import { useLocation } from 'react-router-dom'
 import { X, ExternalLink, Loader2, AlertCircle } from 'lucide-react'
 import { useContentStore, ClientInput } from '../../store/contentStore'
 import { ContentClient, ContentRecording } from '../../types'
-import { ClientFlow, flowFor, formatDay, pieceTag, todayKey } from '../../utils/contentPipeline'
+import { ClientFlow, flowFor, pieceTag, todayKey } from '../../utils/contentPipeline'
+import { ContentStrings, useContentT } from '../../i18n/content'
 import { fileKind } from '../resources/ResourceThumbnail'
 
 // ─── Colours ────────────────────────────────────────────────────────────────
@@ -16,25 +17,6 @@ export const KIND_COLOR: Record<ContentTaskKind, string> = {
   deliver: '#1F8A4C',
   schedule: '#C23B3B',
   post: '#7A4A0A',
-}
-
-export const KIND_LABEL: Record<ContentTaskKind, string> = {
-  plan: 'Content plan',
-  record: 'Recording',
-  edit: 'Editing',
-  deliver: 'Delivery',
-  schedule: 'Scheduling',
-  post: 'Posting',
-}
-
-/** How a task starts when it is written as an instruction: "Record ESP". */
-export const KIND_VERB: Record<ContentTaskKind, string> = {
-  plan: 'Plan',
-  record: 'Record',
-  edit: 'Edit',
-  deliver: 'Deliver',
-  schedule: 'Schedule',
-  post: 'Post',
 }
 
 /** Client swatches, distinct enough side by side on a busy calendar day. */
@@ -90,9 +72,14 @@ export interface ContentTask {
   members?: ContentTask[]
 }
 
-/** Every client's flow and every task, with posting slots generated up to `until`. */
+/**
+ * Every client's flow and every task, with posting slots generated up to
+ * `until`. The tasks are written in the app's language, so switching it
+ * rewrites them.
+ */
 export function useContentTasks(until: string) {
   const { clients, recordings, edits, rules, posted } = useContentStore()
+  const { c, fmt } = useContentT()
   const flows: Record<string, ClientFlow> = {}
   const tasks: ContentTask[] = []
   const today = todayKey()
@@ -118,8 +105,8 @@ export function useContentTasks(until: string) {
           kind: 'plan',
           day: r.planOn,
           client,
-          title: `Plan ${client.name}`,
-          detail: `for the ${formatDay(r.recordedOn, { day: 'numeric', month: 'short' })} shoot${r.planPath ? ' · plan uploaded' : ''}`,
+          title: c.taskPlan(client.name),
+          detail: `${c.planFor(fmt(r.recordedOn, { day: 'numeric', month: 'short' }))}${r.planPath ? ` · ${c.planUploaded}` : ''}`,
           assigneeId: r.planAssigneeId,
           done: !!r.planDoneAt,
           warning: null,
@@ -131,15 +118,15 @@ export function useContentTasks(until: string) {
         kind: 'record',
         day: r.recordedOn,
         client,
-        title: `Record ${client.name}`,
-        detail: `${r.pieces} video${r.pieces === 1 ? '' : 's'}${range}`,
+        title: c.taskRecord(client.name),
+        detail: `${c.videos(r.pieces)}${range}`,
         assigneeId: r.assigneeId,
         done: !!r.doneAt,
         // Only once the plan was due. Every shoot booked ahead has no plan
         // yet, and saying so on all of them says nothing.
         warning:
           r.planOn && r.planOn < today && !r.doneAt && !r.planDoneAt && !r.planPath && !r.planNotes
-            ? 'No content plan yet'
+            ? c.noPlanYet
             : null,
         recording: r,
       })
@@ -152,17 +139,17 @@ export function useContentTasks(until: string) {
         kind: 'edit',
         day: f.edit.editedOn,
         client,
-        title: `Edit ${client.name}`,
+        title: c.taskEdit(client.name),
         // "3 of 4 available" only when it leaves some for a later session.
         detail:
           f.takes === 0
-            ? 'nothing recorded to edit'
+            ? c.nothingToEdit
             : f.takes === f.available
-              ? `${f.takes} video${f.takes === 1 ? '' : 's'} · ${range}`
-              : `${f.takes} of ${f.available} available · ${range}`,
+              ? `${c.videos(f.takes)} · ${range}`
+              : `${c.ofAvailable(f.takes, f.available)} · ${range}`,
         assigneeId: f.edit.assigneeId,
         done: !!f.edit.doneAt,
-        warning: f.short > 0 ? `${f.short} more than had been recorded by then` : null,
+        warning: f.short > 0 ? c.editShort(f.short) : null,
       })
 
       // Then the batch goes to the client for approval, and once approved
@@ -173,11 +160,11 @@ export function useContentTasks(until: string) {
           kind: 'deliver',
           day: f.edit.deliverOn,
           client,
-          title: `Deliver ${client.name}`,
-          detail: `${f.takes} piece${f.takes === 1 ? '' : 's'} for approval`,
+          title: c.taskDeliver(client.name),
+          detail: c.forApproval(f.takes),
           assigneeId: f.edit.deliverAssigneeId,
           done: !!f.edit.deliverDoneAt,
-          warning: f.edit.deliverOn < f.edit.editedOn ? 'Before the edit' : null,
+          warning: f.edit.deliverOn < f.edit.editedOn ? c.beforeEdit : null,
           pieces: f.takes,
         })
       }
@@ -187,12 +174,11 @@ export function useContentTasks(until: string) {
           kind: 'schedule',
           day: f.edit.scheduleOn,
           client,
-          title: `Schedule ${client.name}`,
-          detail: `${f.takes} piece${f.takes === 1 ? '' : 's'}`,
+          title: c.taskSchedule(client.name),
+          detail: c.pieces(f.takes),
           assigneeId: f.edit.scheduleAssigneeId,
           done: !!f.edit.scheduleDoneAt,
-          warning:
-            f.edit.scheduleOn < (f.edit.deliverOn ?? f.edit.editedOn) ? 'Before it has been delivered' : null,
+          warning: f.edit.scheduleOn < (f.edit.deliverOn ?? f.edit.editedOn) ? c.beforeDelivery : null,
           pieces: f.takes,
         })
       }
@@ -204,11 +190,11 @@ export function useContentTasks(until: string) {
         kind: 'post',
         day: s.day,
         client,
-        title: s.piece ? `Post ${pieceTag(client, s.piece.n)}` : `Post ${client.name}`,
-        detail: s.piece ? `${client.name}` : `${client.name} · nothing edited in time`,
+        title: c.taskPost(s.piece ? pieceTag(client, s.piece.n) : client.name),
+        detail: s.piece ? client.name : `${client.name} · ${c.nothingInTime}`,
         assigneeId: s.rule.assigneeId,
         done: !!s.done,
-        warning: s.piece ? null : 'Nothing edited in time for this slot',
+        warning: s.piece ? null : c.slotEmpty,
         tag: s.piece ? pieceTag(client, s.piece.n) : `${client.code} —`,
       })
     }
@@ -241,7 +227,7 @@ export function codesOf(clients: ContentClient[]) {
  * OKU, DER, OLU" — the way the plan is written. Everything else passes
  * through as it is.
  */
-export function groupBatches(tasks: ContentTask[]): ContentTask[] {
+export function groupBatches(tasks: ContentTask[], c: ContentStrings): ContentTask[] {
   const out: ContentTask[] = []
   const batches = new Map<string, ContentTask[]>()
   for (const t of tasks) {
@@ -269,8 +255,8 @@ export function groupBatches(tasks: ContentTask[]): ContentTask[] {
     return {
       ...members[0],
       key: t.key,
-      title: `${KIND_VERB[t.kind]} ${pieces} pieces`,
-      detail: `${codesOf(members.map((m) => m.client))}${t.kind === 'deliver' ? ' · for approval' : ''}`,
+      title: c.batchTitle(c.verb[t.kind], pieces),
+      detail: `${codesOf(members.map((m) => m.client))}${t.kind === 'deliver' ? ` · ${c.batchForApproval}` : ''}`,
       assigneeId: who.size === 1 ? members[0].assigneeId : null,
       done: members.every((m) => m.done),
       warning: members.find((m) => m.warning)?.warning ?? null,
@@ -309,14 +295,15 @@ export async function toggleTask(task: ContentTask, done: boolean): Promise<void
 
 export function usePersonName() {
   const people = useContentStore((s) => s.people)
-  return (id: string | null) => (id ? people.find((p) => p.id === id)?.name ?? 'Someone' : null)
+  const { c } = useContentT()
+  return (id: string | null) => (id ? people.find((p) => p.id === id)?.name ?? c.someone : null)
 }
 
 /** Who does it. A plain native select: these sit in dense rows. */
 export function PersonSelect({
   value,
   onChange,
-  placeholder = 'Anyone',
+  placeholder,
   className = '',
 }: {
   value: string | null
@@ -325,13 +312,14 @@ export function PersonSelect({
   className?: string
 }) {
   const people = useContentStore((s) => s.people)
+  const { c } = useContentT()
   return (
     <select
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value || null)}
       className={`text-sm bg-surface border border-border-md rounded-md px-2 py-1.5 text-text-main focus:outline-none focus:ring-2 focus:ring-primary/30 ${className}`}
     >
-      <option value="">{placeholder}</option>
+      <option value="">{placeholder ?? c.anyone}</option>
       {people.map((p) => (
         <option key={p.id} value={p.id}>
           {p.name}
@@ -346,6 +334,7 @@ export function PersonSelect({
 /** The content plan for a recording, shown in place. */
 export function PlanViewer({ recording, client, onClose }: { recording: ContentRecording; client: ContentClient; onClose: () => void }) {
   const planUrl = useContentStore((s) => s.planUrl)
+  const { c, fmt } = useContentT()
   const [url, setUrl] = useState<string | null | 'loading'>('loading')
 
   useEffect(() => {
@@ -380,28 +369,28 @@ export function PlanViewer({ recording, client, onClose }: { recording: ContentR
   } else if (kind === 'image') {
     body = (
       <div className="flex-1 overflow-auto bg-surface-2 flex items-center justify-center p-4">
-        <img src={url} alt={recording.planName ?? 'Content plan'} className="max-w-full max-h-full object-contain" />
+        <img src={url} alt={recording.planName ?? c.contentPlan} className="max-w-full max-h-full object-contain" />
       </div>
     )
   } else if (kind === 'doc' || kind === 'sheet' || kind === 'slide') {
     body = (
       <iframe
-        title="Content plan"
+        title={c.contentPlan}
         className="flex-1 w-full border-0 bg-white"
         src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`}
       />
     )
   } else if (kind === 'pdf' || kind === 'text' || kind === 'code') {
-    body = <iframe title="Content plan" className="flex-1 w-full border-0 bg-white" src={url} />
+    body = <iframe title={c.contentPlan} className="flex-1 w-full border-0 bg-white" src={url} />
   } else if (kind === 'video') {
     body = <video src={url} controls className="flex-1 w-full bg-black" />
   } else {
     body = (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-muted text-sm p-6 text-center">
         <AlertCircle size={20} />
-        This file cannot be shown here.
+        {c.cannotShow}
         <a href={url} target="_blank" rel="noreferrer" className="text-primary font-medium underline">
-          Open it in a new tab
+          {c.openItNewTab}
         </a>
       </div>
     )
@@ -416,11 +405,9 @@ export function PlanViewer({ recording, client, onClose }: { recording: ContentR
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
           <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: client.color }} />
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-text-main truncate">
-              Content plan · {client.name}
-            </p>
+            <p className="font-semibold text-text-main truncate">{c.planOf(client.name)}</p>
             <p className="text-xs text-text-muted truncate">
-              Shoot on {formatDay(recording.recordedOn)} · {recording.pieces} videos
+              {c.shootOn(fmt(recording.recordedOn), c.videos(recording.pieces))}
               {recording.planName ? ` · ${recording.planName}` : ''}
             </p>
           </div>
@@ -430,12 +417,12 @@ export function PlanViewer({ recording, client, onClose }: { recording: ContentR
               target="_blank"
               rel="noreferrer"
               className="p-1.5 rounded-md text-text-muted hover:bg-surface-2"
-              title="Open in a new tab"
+              title={c.openNewTab}
             >
               <ExternalLink size={16} />
             </a>
           )}
-          <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title="Close">
+          <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title={c.close}>
             <X size={16} />
           </button>
         </div>
@@ -446,7 +433,7 @@ export function PlanViewer({ recording, client, onClose }: { recording: ContentR
         )}
         {body}
         {!body && !recording.planNotes && (
-          <div className="flex-1 flex items-center justify-center text-sm text-text-muted">No plan has been added yet.</div>
+          <div className="flex-1 flex items-center justify-center text-sm text-text-muted">{c.noPlanAdded}</div>
         )}
       </div>
     </div>
@@ -466,6 +453,7 @@ export function ClientDialog({
   onSaved?: (c: ContentClient) => void
 }) {
   const { clients, addClient, updateClient } = useContentStore()
+  const { c } = useContentT()
   const [form, setForm] = useState<ClientInput>(() =>
     client
       ? {
@@ -498,7 +486,7 @@ export function ClientDialog({
   const set = <K extends keyof ClientInput>(k: K, v: ClientInput[K]) => setForm((f) => ({ ...f, [k]: v }))
 
   const save = async () => {
-    if (!form.name.trim()) return setError('Give the client a name.')
+    if (!form.name.trim()) return setError(c.nameRequired)
     const code = (form.code.trim() || form.name.replace(/[^A-Za-zÀ-ÿ]/g, '').slice(0, 3)).toUpperCase()
     setSaving(true)
     setError('')
@@ -526,15 +514,15 @@ export function ClientDialog({
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-surface rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="font-semibold text-text-main">{client ? 'Edit client' : 'New client'}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2">
+          <h2 className="font-semibold text-text-main">{client ? c.editClient : c.newClient}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title={c.close}>
             <X size={16} />
           </button>
         </div>
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-[1fr_90px] gap-3">
             <div>
-              <label className={label}>Name</label>
+              <label className={label}>{c.name}</label>
               <input
                 autoFocus
                 className={input}
@@ -547,7 +535,7 @@ export function ClientDialog({
               />
             </div>
             <div>
-              <label className={label}>Code</label>
+              <label className={label}>{c.code}</label>
               <input
                 className={`${input} uppercase`}
                 maxLength={4}
@@ -562,7 +550,7 @@ export function ClientDialog({
           </div>
 
           <div>
-            <label className={label}>Posts a month</label>
+            <label className={label}>{c.postsPerMonthLabel}</label>
             <div className="flex items-center gap-3">
               <input
                 type="number"
@@ -573,22 +561,22 @@ export function ClientDialog({
                 onChange={(e) => set('postsPerMonth', Math.max(0, Number(e.target.value) || 0))}
               />
               <span className="text-xs text-text-muted">
-                About {(form.postsPerMonth / 4.3).toFixed(1).replace(/\.0$/, '')} a week. Recording frequency is planned from this.
+                {c.aboutAWeek((form.postsPerMonth / 4.3).toFixed(1).replace(/\.0$/, ''))}
               </span>
             </div>
           </div>
 
           <div>
-            <label className={label}>Colour</label>
+            <label className={label}>{c.colour}</label>
             <div className="flex flex-wrap gap-2">
-              {CLIENT_COLORS.map((c) => (
+              {CLIENT_COLORS.map((col) => (
                 <button
-                  key={c}
+                  key={col}
                   type="button"
-                  onClick={() => set('color', c)}
-                  className={`w-7 h-7 rounded-md transition-transform ${form.color === c ? 'ring-2 ring-offset-2 ring-text-main scale-110' : ''}`}
-                  style={{ backgroundColor: c }}
-                  aria-label={c}
+                  onClick={() => set('color', col)}
+                  className={`w-7 h-7 rounded-md transition-transform ${form.color === col ? 'ring-2 ring-offset-2 ring-text-main scale-110' : ''}`}
+                  style={{ backgroundColor: col }}
+                  aria-label={col}
                 />
               ))}
             </div>
@@ -596,30 +584,30 @@ export function ClientDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={label}>Contact</label>
+              <label className={label}>{c.contact}</label>
               <input className={input} value={form.contactName} onChange={(e) => set('contactName', e.target.value)} />
             </div>
             <div>
-              <label className={label}>Handle</label>
+              <label className={label}>{c.handle}</label>
               <input className={input} value={form.handle} onChange={(e) => set('handle', e.target.value)} placeholder="@espacoluanda" />
             </div>
             <div>
-              <label className={label}>Email</label>
+              <label className={label}>{c.email}</label>
               <input className={input} type="email" value={form.contactEmail} onChange={(e) => set('contactEmail', e.target.value)} />
             </div>
             <div>
-              <label className={label}>Phone</label>
+              <label className={label}>{c.phone}</label>
               <input className={input} value={form.contactPhone} onChange={(e) => set('contactPhone', e.target.value)} />
             </div>
           </div>
 
           <div>
-            <label className={label}>Notes</label>
+            <label className={label}>{c.notes}</label>
             <textarea
               className={`${input} min-h-[80px]`}
               value={form.notes}
               onChange={(e) => set('notes', e.target.value)}
-              placeholder="Tone, what they like, what to avoid, where they shoot…"
+              placeholder={c.notesPlaceholder}
             />
           </div>
 
@@ -627,14 +615,14 @@ export function ClientDialog({
         </div>
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
           <button onClick={onClose} className="text-sm px-4 py-2 rounded-lg text-text-muted hover:bg-surface-2">
-            Cancel
+            {c.cancel}
           </button>
           <button
             onClick={save}
             disabled={saving}
             className="text-sm font-medium px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50"
           >
-            {saving ? 'Saving…' : client ? 'Save' : 'Add client'}
+            {saving ? c.saving : client ? c.save : c.addClient}
           </button>
         </div>
       </div>

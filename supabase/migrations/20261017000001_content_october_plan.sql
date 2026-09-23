@@ -37,7 +37,7 @@ declare
   seed jsonb := $seed$
   [
     {"name": "Espaço Luanda", "code": "ESP", "color": "#0E7A6A", "per_month": 8,
-     "notes": "Shot every four weeks together with Okulya, 8 pieces a shoot. Posts Wednesday and Saturday.",
+     "notes": "Gravado de quatro em quatro semanas, no mesmo dia que Okulya, 8 peças por gravação. Publica à quarta e ao sábado.",
      "shoots": [
        ["2026-10-05", 8, "2026-10-06", "2026-10-10", "2026-10-12"],
        ["2026-11-02", 8, "2026-11-03", "2026-11-07", "2026-11-09"],
@@ -46,7 +46,7 @@ declare
      "posting": [[[3, 6], "2026-10-12", null]]},
 
     {"name": "Okulya", "code": "OKU", "color": "#7B3D9E", "per_month": 8,
-     "notes": "Shot every four weeks together with Espaço Luanda, 8 pieces a shoot. Posts Monday and Thursday.",
+     "notes": "Gravado de quatro em quatro semanas, no mesmo dia que o Espaço Luanda, 8 peças por gravação. Publica à segunda e à quinta.",
      "shoots": [
        ["2026-10-05", 8, "2026-10-06", "2026-10-10", "2026-10-12"],
        ["2026-11-02", 8, "2026-11-03", "2026-11-07", "2026-11-09"],
@@ -55,7 +55,7 @@ declare
      "posting": [[[1, 4], "2026-10-12", null]]},
 
     {"name": "Dermevet", "code": "DER", "color": "#2360A8", "per_month": 12,
-     "notes": "Shot every two weeks, 6 pieces a shoot. Posts Monday, Wednesday and Friday.",
+     "notes": "Gravado de duas em duas semanas, 6 peças por gravação. Publica à segunda, à quarta e à sexta.",
      "shoots": [
        ["2026-10-07", 6, "2026-10-08", "2026-10-10", "2026-10-12"],
        ["2026-10-21", 6, "2026-10-22", "2026-10-24", "2026-10-26"],
@@ -67,7 +67,7 @@ declare
      "posting": [[[1, 3, 5], "2026-10-12", null]]},
 
     {"name": "Oluango", "code": "OLU", "color": "#B8700C", "per_month": 12,
-     "notes": "Shot every two weeks, 6 pieces a shoot. Posts Tuesday, Thursday and Saturday.",
+     "notes": "Gravado de duas em duas semanas, 6 peças por gravação. Publica à terça, à quinta e ao sábado.",
      "shoots": [
        ["2026-10-09", 6, "2026-10-10", "2026-10-10", "2026-10-12"],
        ["2026-10-23", 6, "2026-10-24", "2026-10-24", "2026-10-26"],
@@ -79,7 +79,7 @@ declare
      "posting": [[[2, 4, 6], "2026-10-12", null]]},
 
     {"name": "Shazia Saima", "code": "SHZ", "color": "#B8336A", "per_month": 8,
-     "notes": "Shot every four weeks, 8 pieces a shoot. Posts Monday and Thursday.",
+     "notes": "Gravado de quatro em quatro semanas, 8 peças por gravação. Publica à segunda e à quinta.",
      "shoots": [
        ["2026-10-13", 8, "2026-10-14", "2026-10-17", "2026-10-19"],
        ["2026-11-10", 8, "2026-11-11", "2026-11-14", "2026-11-16"],
@@ -88,7 +88,7 @@ declare
      "posting": [[[1, 4], "2026-10-19", null]]},
 
     {"name": "Sra Tasca", "code": "TAS", "color": "#5E7D1A", "per_month": 8,
-     "notes": "Shot every four weeks, 8 pieces a shoot. Posts Tuesday and Friday.",
+     "notes": "Gravado de quatro em quatro semanas, 8 peças por gravação. Publica à terça e à sexta.",
      "shoots": [
        ["2026-10-15", 8, "2026-10-16", "2026-10-17", "2026-10-19"],
        ["2026-11-12", 8, "2026-11-13", "2026-11-14", "2026-11-16"],
@@ -97,7 +97,7 @@ declare
      "posting": [[[2, 5], "2026-10-19", null]]},
 
     {"name": "Dialis", "code": "DIA", "color": "#8C5A2E", "per_month": 3,
-     "notes": "Shot every four weeks, 3 pieces a shoot. One post a week on Wednesdays; the week it is shot has none.",
+     "notes": "Gravado de quatro em quatro semanas, 3 peças por gravação. Uma publicação por semana, à quarta; a semana da gravação não tem publicação.",
      "shoots": [
        ["2026-10-19", 3, "2026-10-20", "2026-10-20", "2026-10-26"],
        ["2026-11-16", 3, "2026-11-17", "2026-11-17", "2026-11-23"],
