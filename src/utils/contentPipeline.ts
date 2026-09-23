@@ -47,6 +47,14 @@ export function mondayOf(day: string) {
   return addDays(day, -((weekdayOf(day) + 6) % 7))
 }
 
+/**
+ * The Monday after a day — when a delivered batch is scheduled. A Monday's
+ * own batch waits for the next one.
+ */
+export function mondayAfter(day: string) {
+  return addDays(mondayOf(day), 7)
+}
+
 export function daysBetween(from: string, to: string) {
   return Math.round((toUtc(to) - toUtc(from)) / DAY)
 }
@@ -95,12 +103,33 @@ export interface Piece {
   recordedOn: string
   editId: string | null
   editedOn: string | null
+  /** The first day it can go out: edited, delivered and scheduled. */
+  readyOn: string | null
   /** The slot it goes out in, when one has been reached. */
   postOn: string | null
 }
 
+/**
+ * When an editing session's pieces can start going out: the latest of the
+ * edit itself, its delivery for approval and its scheduling. A batch that
+ * has not been approved and scheduled is not ready, however long ago it was
+ * edited.
+ */
+export function readyOnOf(e: Pick<ContentEdit, 'editedOn' | 'deliverOn' | 'scheduleOn'>) {
+  return [e.editedOn, e.deliverOn, e.scheduleOn].filter((d): d is string => !!d).sort().pop()!
+}
+
+/** How many posts a week the rules in force on a day add up to. */
+export function postsPerWeekOn(rules: ContentPostRule[], day: string) {
+  return rules
+    .filter((r) => r.startsOn <= day && (!r.endsOn || r.endsOn >= day))
+    .reduce((n, r) => n + r.weekdays.length / Math.max(1, r.everyWeeks || 1), 0)
+}
+
 export interface EditFlow {
   edit: ContentEdit
+  /** When its pieces can start going out. See readyOnOf. */
+  readyOn: string
   /** Recorded by this session's day and not edited by an earlier session. */
   available: number
   /** How many it actually finishes: its count, capped at what is available. */
@@ -167,6 +196,7 @@ export function flowFor(
         recordedOn: r.recordedOn,
         editId: null,
         editedOn: null,
+        readyOn: null,
         postOn: null,
       })
     }
@@ -180,15 +210,17 @@ export function flowFor(
     const recordedBy = pieces.filter((p) => p.recordedOn <= e.editedOn).length
     const available = Math.max(0, recordedBy - edited)
     const takes = Math.min(e.pieces, available)
+    const readyOn = readyOnOf(e)
     for (let i = edited; i < edited + takes; i++) {
       pieces[i].editId = e.id
       pieces[i].editedOn = e.editedOn
+      pieces[i].readyOn = readyOn
     }
-    flows.push({ edit: e, available, takes, short: e.pieces - takes, from: edited + 1, to: edited + takes })
+    flows.push({ edit: e, readyOn, available, takes, short: e.pieces - takes, from: edited + 1, to: edited + takes })
     edited += takes
   }
 
-  // Each slot posts the next piece that is edited by its day. A slot with
+  // Each slot posts the next piece that is ready by its day. A slot with
   // nothing ready stays empty rather than holding a piece back, so it shows
   // up as a gap to fill.
   const doneOn = new Map(done.map((d) => [d.postedOn, d]))
@@ -196,7 +228,7 @@ export function flowFor(
   let next = 0
   for (const [day, rule] of postDays(rules, until)) {
     const p = pieces[next]
-    const ready = p && p.editedOn && p.editedOn <= day ? p : null
+    const ready = p && p.readyOn && p.readyOn <= day ? p : null
     if (ready) {
       ready.postOn = day
       next++

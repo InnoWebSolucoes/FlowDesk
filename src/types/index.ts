@@ -596,7 +596,10 @@ export interface ContentRecording {
   createdAt: string
 }
 
-/** An editing session: how many of the videos recorded so far it finishes. */
+/**
+ * An editing session: how many of the videos recorded so far it finishes,
+ * and the two steps that batch goes through before it can be posted.
+ */
 export interface ContentEdit {
   id: string
   clientId: string
@@ -605,6 +608,14 @@ export interface ContentEdit {
   assigneeId: string | null
   doneAt: string | null
   notes: string
+  /** The day the batch goes to the client for approval. Null when it does not. */
+  deliverOn: string | null
+  deliverAssigneeId: string | null
+  deliverDoneAt: string | null
+  /** The day the approved batch is loaded into the scheduler. Null when it is not. */
+  scheduleOn: string | null
+  scheduleAssigneeId: string | null
+  scheduleDoneAt: string | null
   createdAt: string
 }
 

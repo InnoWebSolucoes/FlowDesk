@@ -57,6 +57,12 @@ function toEdit(r: any): ContentEdit {
     assigneeId: r.assignee_id,
     doneAt: r.done_at,
     notes: r.notes ?? '',
+    deliverOn: r.deliver_on ?? null,
+    deliverAssigneeId: r.deliver_assignee_id ?? null,
+    deliverDoneAt: r.deliver_done_at ?? null,
+    scheduleOn: r.schedule_on ?? null,
+    scheduleAssigneeId: r.schedule_assignee_id ?? null,
+    scheduleDoneAt: r.schedule_done_at ?? null,
     createdAt: r.created_at,
   }
 }
@@ -112,6 +118,8 @@ export interface EditInput {
   editedOn: string
   pieces: number
   assigneeId: string | null
+  deliverOn: string | null
+  scheduleOn: string | null
 }
 
 export interface RuleInput {
@@ -195,6 +203,12 @@ const editCols: Record<string, string> = {
   assigneeId: 'assignee_id',
   doneAt: 'done_at',
   notes: 'notes',
+  deliverOn: 'deliver_on',
+  deliverAssigneeId: 'deliver_assignee_id',
+  deliverDoneAt: 'deliver_done_at',
+  scheduleOn: 'schedule_on',
+  scheduleAssigneeId: 'schedule_assignee_id',
+  scheduleDoneAt: 'schedule_done_at',
 }
 const ruleCols: Record<string, string> = {
   weekdays: 'weekdays',
@@ -402,6 +416,8 @@ export const useContentStore = create<ContentState>()((set, get) => ({
         edited_on: input.editedOn,
         pieces: input.pieces,
         assignee_id: input.assigneeId,
+        deliver_on: input.deliverOn,
+        schedule_on: input.scheduleOn,
         created_by: me(),
       })
       .select()

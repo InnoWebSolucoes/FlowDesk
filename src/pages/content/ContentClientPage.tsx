@@ -2,14 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ChevronLeft, Pencil, Archive, ArchiveRestore, Trash2, Plus, Upload, FileText, X, AlertTriangle, Video,
-  Scissors, Send, ClipboardList, Mail, Phone, AtSign, User,
+  Scissors, Send, ClipboardList, Mail, Phone, AtSign, User, Truck, CalendarClock,
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useContentStore } from '../../store/contentStore'
 import { ContentClient, ContentEdit, ContentPostRule, ContentRecording } from '../../types'
 import {
-  addDays, availableToEdit, CADENCE_LABEL, daysBetween, flowFor, formatDay, pieceTag, sortRecordings, suggestCadence,
-  todayKey, WEEKDAY_SHORT,
+  addDays, availableToEdit, CADENCE_LABEL, daysBetween, flowFor, formatDay, mondayAfter, pieceTag, readyOnOf,
+  sortRecordings, suggestCadence, todayKey, WEEKDAY_SHORT,
 } from '../../utils/contentPipeline'
 import {
   ClientDialog, KIND_COLOR, PersonSelect, PlanViewer, useContentBase, useContentData, usePersonName,
@@ -160,8 +160,8 @@ export function ContentClientPage() {
           {[
             ['Recorded', recorded, KIND_COLOR.record, `${recordings.length} shoot${recordings.length === 1 ? '' : 's'}`],
             ['Edited', edited, KIND_COLOR.edit, recorded - edited ? `${recorded - edited} waiting` : 'all caught up'],
-            ['Scheduled', scheduled, KIND_COLOR.post, edited - scheduled ? `${edited - scheduled} without a day` : 'all have a day'],
-            ['Posted', postedCount, '#1B4F8A', `${scheduled - postedCount} to go`],
+            ['Booked', scheduled, KIND_COLOR.schedule, edited - scheduled ? `${edited - scheduled} waiting for a day` : 'all have a day'],
+            ['Posted', postedCount, KIND_COLOR.post, `${scheduled - postedCount} to go`],
           ].map(([name, n, color, sub]) => (
             <div key={name as string} className="bg-surface border border-border-md rounded-md px-3 py-3 border-t-4" style={{ borderTopColor: color as string }}>
               <p className="text-xs font-medium text-text-muted">{name}</p>
@@ -177,8 +177,8 @@ export function ContentClientPage() {
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <span>
             {emptyAhead.length} posting day{emptyAhead.length === 1 ? '' : 's'} in the next two months {emptyAhead.length === 1 ? 'has' : 'have'} nothing
-            edited in time: {emptyAhead.slice(0, 6).map((s) => formatDay(s.day, { day: 'numeric', month: 'short' })).join(', ')}
-            {emptyAhead.length > 6 ? '…' : ''}. Add a recording or an editing session before then.
+            ready in time: {emptyAhead.slice(0, 6).map((s) => formatDay(s.day, { day: 'numeric', month: 'short' })).join(', ')}
+            {emptyAhead.length > 6 ? '…' : ''}. Book a shoot, or bring an edit, delivery or scheduling day forward.
           </span>
         </div>
       )}
@@ -201,12 +201,23 @@ export function ContentClientPage() {
       <Stage n={2} icon={<Scissors size={18} />} title="Editing" color={KIND_COLOR.edit}>
         <p className="text-sm text-text-muted mb-4 max-w-[70ch]">
           Drag the bar to choose how many of the recorded videos a session edits. It can only take what has been
-          recorded by its day and not edited yet, oldest first.
+          recorded by its day and not edited yet, oldest first. Each batch is then delivered to the client for
+          approval and scheduled, and its pieces can go out from the day it is scheduled.
         </p>
         <EditForm client={client} recordings={recordings} edits={edits} />
         <div className="mt-4 space-y-2">
           {flow.edits.map((f) => (
-            <EditRow key={f.edit.id} client={client} edit={f.edit} recordings={recordings} edits={edits} from={f.from} to={f.to} short={f.short} />
+            <EditRow
+              key={f.edit.id}
+              client={client}
+              edit={f.edit}
+              recordings={recordings}
+              edits={edits}
+              from={f.from}
+              to={f.to}
+              short={f.short}
+              readyOn={f.readyOn}
+            />
           ))}
         </div>
       </Stage>
@@ -214,7 +225,8 @@ export function ContentClientPage() {
       {/* ─── 3. Posting ─────────────────────────────────────────────────── */}
       <Stage n={3} icon={<Send size={18} />} title="Posting" color={KIND_COLOR.post}>
         <p className="text-sm text-text-muted mb-4 max-w-[70ch]">
-          Pick the days they post. Each posting day publishes the next edited piece.
+          Pick the days they post. Each posting day publishes the next piece that has been edited, delivered and
+          scheduled by then.
         </p>
         <RuleForm client={client} defaultStart={edits.map((e) => e.editedOn).sort()[0] ?? today} />
         <div className="mt-4 space-y-2">
@@ -251,6 +263,9 @@ export function ContentClientPage() {
                       <td className="px-3 py-1.5 whitespace-nowrap">{formatDay(p.recordedOn)}</td>
                       <td className="px-3 py-1.5 whitespace-nowrap">
                         {p.editedOn ? formatDay(p.editedOn) : <span className="text-text-subtle">not yet</span>}
+                        {p.readyOn && p.readyOn !== p.editedOn && (
+                          <span className="text-text-subtle"> · ready {formatDay(p.readyOn, { day: 'numeric', month: 'short' })}</span>
+                        )}
                       </td>
                       <td className="px-3 py-1.5 whitespace-nowrap">
                         {p.postOn ? formatDay(p.postOn) : <span className="text-text-subtle">{p.editedOn ? 'no posting day yet' : '—'}</span>}
@@ -647,6 +662,17 @@ function EditForm({ client, recordings, edits }: { client: ContentClient; record
   const [pieces, setPieces] = useState(available)
   const [saving, setSaving] = useState(false)
 
+  // Delivery and scheduling follow the editing day until they are set by
+  // hand: delivered the same day, scheduled the Monday after — the plan's
+  // own rule.
+  const [withDelivery, setWithDelivery] = useState(true)
+  const [withScheduling, setWithScheduling] = useState(true)
+  const [deliverSet, setDeliverSet] = useState<string | null>(null)
+  const [scheduleSet, setScheduleSet] = useState<string | null>(null)
+  const deliverOn = withDelivery ? deliverSet ?? date : null
+  const scheduleOn = withScheduling ? scheduleSet ?? mondayAfter(deliverOn ?? date) : null
+  const readyOn = readyOnOf({ editedOn: date, deliverOn, scheduleOn })
+
   // Following the day: moving it changes what there is to edit.
   useEffect(() => setPieces(available), [available])
 
@@ -667,8 +693,17 @@ function EditForm({ client, recordings, edits }: { client: ContentClient; record
     if (available < 1) return
     setSaving(true)
     try {
-      await addEdit({ clientId: client.id, editedOn: date, pieces: Math.min(pieces, available), assigneeId: who })
+      await addEdit({
+        clientId: client.id,
+        editedOn: date,
+        pieces: Math.min(pieces, available),
+        assigneeId: who,
+        deliverOn,
+        scheduleOn,
+      })
       setOpen(false)
+      setDeliverSet(null)
+      setScheduleSet(null)
     } catch (e) {
       report(e)
     } finally {
@@ -696,6 +731,29 @@ function EditForm({ client, recordings, edits }: { client: ContentClient; record
         By {formatDay(date)}: {recordedBy} recorded, {taken} already edited, so {available} available
         {available < 1 ? ' — pick a day after a shoot.' : '.'}
       </p>
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 mt-4">
+        <StepField
+          label="Deliver for approval"
+          icon={<Truck size={13} />}
+          color={KIND_COLOR.deliver}
+          enabled={withDelivery}
+          onToggle={setWithDelivery}
+          value={deliverOn ?? date}
+          min={date}
+          onChange={setDeliverSet}
+        />
+        <StepField
+          label="Schedule"
+          icon={<CalendarClock size={13} />}
+          color={KIND_COLOR.schedule}
+          enabled={withScheduling}
+          onToggle={setWithScheduling}
+          value={scheduleOn ?? mondayAfter(deliverOn ?? date)}
+          min={deliverOn ?? date}
+          onChange={setScheduleSet}
+        />
+      </div>
+      <p className="text-xs text-text-muted mt-3">These pieces can start going out from {formatDay(readyOn)}.</p>
       <div className="flex justify-end gap-2 mt-3 pt-3 border-t border-border">
         <button onClick={() => setOpen(false)} className="text-sm px-3 py-2 rounded-lg text-text-muted hover:bg-surface-2">
           Cancel
@@ -708,6 +766,94 @@ function EditForm({ client, recordings, edits }: { client: ContentClient; record
   )
 }
 
+/** One of the optional steps on a new editing session: a tick, and its day. */
+function StepField({
+  label: name,
+  icon,
+  color,
+  enabled,
+  onToggle,
+  value,
+  min,
+  onChange,
+}: {
+  label: string
+  icon: React.ReactNode
+  color: string
+  enabled: boolean
+  onToggle: (v: boolean) => void
+  value: string
+  min: string
+  onChange: (d: string) => void
+}) {
+  return (
+    <div>
+      <label className="flex items-center gap-1.5 text-xs font-medium mb-1 cursor-pointer select-none" style={{ color: enabled ? color : undefined }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => onToggle(e.target.checked)} className="accent-primary" />
+        {icon} {name}
+      </label>
+      <input
+        type="date"
+        value={value}
+        min={min}
+        disabled={!enabled}
+        onChange={(e) => e.target.value && onChange(e.target.value)}
+        className={`${input} disabled:opacity-40`}
+      />
+    </div>
+  )
+}
+
+/** Delivery or scheduling on an existing session: its day, who, and done. */
+function StepRow({
+  name,
+  icon,
+  color,
+  day,
+  min,
+  assigneeId,
+  doneAt,
+  doneLabel,
+  onAdd,
+  onChange,
+}: {
+  name: string
+  icon: React.ReactNode
+  color: string
+  day: string | null
+  min: string
+  assigneeId: string | null
+  doneAt: string | null
+  doneLabel: string
+  onAdd: () => void
+  onChange: (patch: { day?: string | null; assigneeId?: string | null; doneAt?: string | null }) => void
+}) {
+  if (!day) {
+    return (
+      <button onClick={onAdd} className="flex items-center gap-1.5 text-sm font-medium text-text-muted hover:text-text-main">
+        <Plus size={13} /> {name}
+      </button>
+    )
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <span className="text-sm font-semibold flex items-center gap-1.5" style={{ color }}>
+        {icon} {name}
+      </span>
+      <input type="date" value={day} min={min} onChange={(ev) => ev.target.value && onChange({ day: ev.target.value })} className={input} />
+      <PersonSelect value={assigneeId} onChange={(id) => onChange({ assigneeId: id })} placeholder="Anyone" />
+      <DoneBox done={!!doneAt} onChange={(v) => onChange({ doneAt: v ? new Date().toISOString() : null })} label={doneLabel} />
+      <button
+        onClick={() => onChange({ day: null, assigneeId: null, doneAt: null })}
+        className="p-1 text-text-subtle hover:text-danger"
+        title={`No ${name.toLowerCase()} for this batch`}
+      >
+        <X size={13} />
+      </button>
+    </div>
+  )
+}
+
 function EditRow({
   client,
   edit: e,
@@ -716,6 +862,7 @@ function EditRow({
   from,
   to,
   short,
+  readyOn,
 }: {
   client: ContentClient
   edit: ContentEdit
@@ -724,34 +871,88 @@ function EditRow({
   from: number
   to: number
   short: number
+  readyOn: string
 }) {
   const { updateEdit, deleteEdit } = useContentStore()
   const { available } = availableToEdit(recordings, edits, e.editedOn, e.id, e.createdAt)
   const save = (patch: Parameters<typeof updateEdit>[1]) => updateEdit(e.id, patch).catch(report)
 
+  // Delivery moves with the edit. Scheduling does too, and stays on "the
+  // Monday after delivery" if that is where it was.
+  const move = (d: string) => {
+    const shift = daysBetween(e.editedOn, d)
+    const deliverOn = e.deliverOn ? addDays(e.deliverOn, shift) : null
+    const onRule = !!e.scheduleOn && e.scheduleOn === mondayAfter(e.deliverOn ?? e.editedOn)
+    const scheduleOn = e.scheduleOn ? (onRule ? mondayAfter(deliverOn ?? d) : addDays(e.scheduleOn, shift)) : null
+    save({ editedOn: d, deliverOn, scheduleOn })
+  }
+
   return (
-    <div className="bg-surface border border-border-md rounded-md border-l-4 px-4 py-3" style={{ borderLeftColor: KIND_COLOR.edit }}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <input type="date" value={e.editedOn} onChange={(ev) => ev.target.value && save({ editedOn: ev.target.value })} className={`${input} font-semibold`} />
-        <PieceSlider value={e.pieces} max={available} onCommit={(n) => save({ pieces: n })} color={client.color} />
-        <span className="text-xs font-semibold w-24" style={{ color: client.color }}>
-          {to >= from ? `${pieceTag(client, from)}${to > from ? `–${String(to).padStart(2, '0')}` : ''}` : ''}
-        </span>
-        <PersonSelect value={e.assigneeId} onChange={(id) => save({ assigneeId: id })} placeholder="Edited by…" />
-        <DoneBox done={!!e.doneAt} onChange={(v) => save({ doneAt: v ? new Date().toISOString() : null })} label="Edited" />
-        <button
-          onClick={() => confirm('Delete this editing session?') && deleteEdit(e.id).catch(report)}
-          className="ml-auto p-1.5 rounded-md text-text-subtle hover:text-danger hover:bg-danger-bg"
-          title="Delete editing session"
-        >
-          <Trash2 size={14} />
-        </button>
+    <div className="bg-surface border border-border-md rounded-md border-l-4" style={{ borderLeftColor: KIND_COLOR.edit }}>
+      <div className="px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <input type="date" value={e.editedOn} onChange={(ev) => ev.target.value && move(ev.target.value)} className={`${input} font-semibold`} />
+          <PieceSlider value={e.pieces} max={available} onCommit={(n) => save({ pieces: n })} color={client.color} />
+          <span className="text-xs font-semibold w-24" style={{ color: client.color }}>
+            {to >= from ? `${pieceTag(client, from)}${to > from ? `–${String(to).padStart(2, '0')}` : ''}` : ''}
+          </span>
+          <PersonSelect value={e.assigneeId} onChange={(id) => save({ assigneeId: id })} placeholder="Edited by…" />
+          <DoneBox done={!!e.doneAt} onChange={(v) => save({ doneAt: v ? new Date().toISOString() : null })} label="Edited" />
+          <button
+            onClick={() => confirm('Delete this editing session?') && deleteEdit(e.id).catch(report)}
+            className="ml-auto p-1.5 rounded-md text-text-subtle hover:text-danger hover:bg-danger-bg"
+            title="Delete editing session"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+        {short > 0 && (
+          <p className="text-xs text-warning mt-2 flex items-center gap-1">
+            <AlertTriangle size={12} /> Set to {e.pieces}, but only {e.pieces - short} had been recorded and not edited by then.
+          </p>
+        )}
       </div>
-      {short > 0 && (
-        <p className="text-xs text-warning mt-2 flex items-center gap-1">
-          <AlertTriangle size={12} /> Set to {e.pieces}, but only {e.pieces - short} had been recorded and not edited by then.
-        </p>
-      )}
+
+      {/* The batch's way to the feed: approval, then the scheduler. */}
+      <div className="border-t border-border bg-surface-2/40 px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+        <StepRow
+          name="Delivery"
+          icon={<Truck size={14} />}
+          color={KIND_COLOR.deliver}
+          day={e.deliverOn}
+          min={e.editedOn}
+          assigneeId={e.deliverAssigneeId}
+          doneAt={e.deliverDoneAt}
+          doneLabel="Delivered"
+          onAdd={() => save({ deliverOn: e.editedOn })}
+          onChange={(p) =>
+            save({
+              ...(p.day !== undefined && { deliverOn: p.day }),
+              ...(p.assigneeId !== undefined && { deliverAssigneeId: p.assigneeId }),
+              ...(p.doneAt !== undefined && { deliverDoneAt: p.doneAt }),
+            })
+          }
+        />
+        <StepRow
+          name="Scheduling"
+          icon={<CalendarClock size={14} />}
+          color={KIND_COLOR.schedule}
+          day={e.scheduleOn}
+          min={e.deliverOn ?? e.editedOn}
+          assigneeId={e.scheduleAssigneeId}
+          doneAt={e.scheduleDoneAt}
+          doneLabel="Scheduled"
+          onAdd={() => save({ scheduleOn: mondayAfter(e.deliverOn ?? e.editedOn) })}
+          onChange={(p) =>
+            save({
+              ...(p.day !== undefined && { scheduleOn: p.day }),
+              ...(p.assigneeId !== undefined && { scheduleAssigneeId: p.assigneeId }),
+              ...(p.doneAt !== undefined && { scheduleDoneAt: p.doneAt }),
+            })
+          }
+        />
+        <span className="text-xs text-text-muted ml-auto">Ready to post from {formatDay(readyOn)}</span>
+      </div>
     </div>
   )
 }

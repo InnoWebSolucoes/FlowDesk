@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { X, ExternalLink, Loader2, AlertCircle } from 'lucide-react'
 import { useContentStore, ClientInput } from '../../store/contentStore'
 import { ContentClient, ContentRecording } from '../../types'
-import { ClientFlow, flowFor, formatDay, pieceTag } from '../../utils/contentPipeline'
+import { ClientFlow, flowFor, formatDay, pieceTag, todayKey } from '../../utils/contentPipeline'
 import { fileKind } from '../resources/ResourceThumbnail'
 
 // ─── Colours ────────────────────────────────────────────────────────────────
@@ -13,14 +13,28 @@ export const KIND_COLOR: Record<ContentTaskKind, string> = {
   plan: '#1B4F8A',
   record: '#18170F',
   edit: '#6B6960',
-  post: '#1A5C3A',
+  deliver: '#1F8A4C',
+  schedule: '#C23B3B',
+  post: '#7A4A0A',
 }
 
 export const KIND_LABEL: Record<ContentTaskKind, string> = {
   plan: 'Content plan',
   record: 'Recording',
   edit: 'Editing',
+  deliver: 'Delivery',
+  schedule: 'Scheduling',
   post: 'Posting',
+}
+
+/** How a task starts when it is written as an instruction: "Record ESP". */
+export const KIND_VERB: Record<ContentTaskKind, string> = {
+  plan: 'Plan',
+  record: 'Record',
+  edit: 'Edit',
+  deliver: 'Deliver',
+  schedule: 'Schedule',
+  post: 'Post',
 }
 
 /** Client swatches, distinct enough side by side on a busy calendar day. */
@@ -49,9 +63,9 @@ export function useContentBase() {
 
 // ─── Tasks ──────────────────────────────────────────────────────────────────
 
-export type ContentTaskKind = 'plan' | 'record' | 'edit' | 'post'
+export type ContentTaskKind = 'plan' | 'record' | 'edit' | 'deliver' | 'schedule' | 'post'
 
-/** One of the four tasks, on one day, for one client. */
+/** One task, on one day, for one client — or a batch of them. */
 export interface ContentTask {
   key: string
   kind: ContentTaskKind
@@ -67,6 +81,13 @@ export interface ContentTask {
   tag?: string
   /** For plans: the recording, so its file can be opened. */
   recording?: ContentRecording
+  /** For deliveries and scheduling: how many pieces the batch holds. */
+  pieces?: number
+  /**
+   * Set on a batch: several clients' deliveries, or their scheduling, done in
+   * one go on one day. Ticking the batch ticks each of them.
+   */
+  members?: ContentTask[]
 }
 
 /** Every client's flow and every task, with posting slots generated up to `until`. */
@@ -74,6 +95,7 @@ export function useContentTasks(until: string) {
   const { clients, recordings, edits, rules, posted } = useContentStore()
   const flows: Record<string, ClientFlow> = {}
   const tasks: ContentTask[] = []
+  const today = todayKey()
 
   for (const client of clients) {
     if (client.isArchived) continue
@@ -113,26 +135,67 @@ export function useContentTasks(until: string) {
         detail: `${r.pieces} video${r.pieces === 1 ? '' : 's'}${range}`,
         assigneeId: r.assigneeId,
         done: !!r.doneAt,
-        warning: r.planOn && !r.planPath && !r.planNotes ? 'No content plan yet' : null,
+        // Only once the plan was due. Every shoot booked ahead has no plan
+        // yet, and saying so on all of them says nothing.
+        warning:
+          r.planOn && r.planOn < today && !r.doneAt && !r.planDoneAt && !r.planPath && !r.planNotes
+            ? 'No content plan yet'
+            : null,
         recording: r,
       })
     }
 
     for (const f of flow.edits) {
+      const range = `${pieceTag(client, f.from)}${f.to > f.from ? `–${String(f.to).padStart(2, '0')}` : ''}`
       tasks.push({
         key: `edit:${f.edit.id}`,
         kind: 'edit',
         day: f.edit.editedOn,
         client,
         title: `Edit ${client.name}`,
+        // "3 of 4 available" only when it leaves some for a later session.
         detail:
-          f.takes > 0
-            ? `${f.takes} of ${f.available} available · ${pieceTag(client, f.from)}${f.to > f.from ? `–${String(f.to).padStart(2, '0')}` : ''}`
-            : 'nothing recorded to edit',
+          f.takes === 0
+            ? 'nothing recorded to edit'
+            : f.takes === f.available
+              ? `${f.takes} video${f.takes === 1 ? '' : 's'} · ${range}`
+              : `${f.takes} of ${f.available} available · ${range}`,
         assigneeId: f.edit.assigneeId,
         done: !!f.edit.doneAt,
         warning: f.short > 0 ? `${f.short} more than had been recorded by then` : null,
       })
+
+      // Then the batch goes to the client for approval, and once approved
+      // into the scheduler.
+      if (f.edit.deliverOn) {
+        tasks.push({
+          key: `deliver:${f.edit.id}`,
+          kind: 'deliver',
+          day: f.edit.deliverOn,
+          client,
+          title: `Deliver ${client.name}`,
+          detail: `${f.takes} piece${f.takes === 1 ? '' : 's'} for approval`,
+          assigneeId: f.edit.deliverAssigneeId,
+          done: !!f.edit.deliverDoneAt,
+          warning: f.edit.deliverOn < f.edit.editedOn ? 'Before the edit' : null,
+          pieces: f.takes,
+        })
+      }
+      if (f.edit.scheduleOn) {
+        tasks.push({
+          key: `schedule:${f.edit.id}`,
+          kind: 'schedule',
+          day: f.edit.scheduleOn,
+          client,
+          title: `Schedule ${client.name}`,
+          detail: `${f.takes} piece${f.takes === 1 ? '' : 's'}`,
+          assigneeId: f.edit.scheduleAssigneeId,
+          done: !!f.edit.scheduleDoneAt,
+          warning:
+            f.edit.scheduleOn < (f.edit.deliverOn ?? f.edit.editedOn) ? 'Before it has been delivered' : null,
+          pieces: f.takes,
+        })
+      }
     }
 
     for (const s of flow.slots) {
@@ -151,13 +214,78 @@ export function useContentTasks(until: string) {
     }
   }
 
-  const order: Record<ContentTaskKind, number> = { plan: 0, record: 1, edit: 2, post: 3 }
-  tasks.sort((a, b) => a.day.localeCompare(b.day) || order[a.kind] - order[b.kind] || a.client.name.localeCompare(b.client.name))
+  tasks.sort(byDayThenStage)
   return { flows, tasks }
 }
 
-/** Tick a task off, or back on, whichever of the four it is. */
-export function toggleTask(task: ContentTask, done: boolean) {
+/**
+ * Scheduling comes first in a day — it is done in the morning so that day's
+ * posts go out — and delivery last, once the day's editing is finished.
+ */
+const STAGE_ORDER: Record<ContentTaskKind, number> = { schedule: 0, plan: 1, record: 2, edit: 3, deliver: 4, post: 5 }
+
+function byDayThenStage(a: ContentTask, b: ContentTask) {
+  return a.day.localeCompare(b.day) || STAGE_ORDER[a.kind] - STAGE_ORDER[b.kind] || a.client.name.localeCompare(b.client.name)
+}
+
+/** Client codes as a batch is named: "SHZ + TAS", or "ESP, OKU, DER, OLU". */
+export function codesOf(clients: ContentClient[]) {
+  const codes = clients.map((c) => c.code)
+  return codes.length === 2 ? codes.join(' + ') : codes.join(', ')
+}
+
+/**
+ * Deliveries and scheduling on the same day are one job: one approval
+ * package, one session in the scheduler. They are kept per client, so each
+ * can be moved on its own, and drawn as a batch — "Schedule 28 pieces · ESP,
+ * OKU, DER, OLU" — the way the plan is written. Everything else passes
+ * through as it is.
+ */
+export function groupBatches(tasks: ContentTask[]): ContentTask[] {
+  const out: ContentTask[] = []
+  const batches = new Map<string, ContentTask[]>()
+  for (const t of tasks) {
+    if (t.kind !== 'deliver' && t.kind !== 'schedule') {
+      out.push(t)
+      continue
+    }
+    const k = `${t.kind}|${t.day}`
+    const members = batches.get(k)
+    if (members) {
+      members.push(t)
+      continue
+    }
+    batches.set(k, [t])
+    // A placeholder, swapped for the batch once all its members are known.
+    out.push({ ...t, key: `batch:${k}` })
+  }
+
+  return out.map((t) => {
+    if (!t.key.startsWith('batch:')) return t
+    const members = batches.get(t.key.slice('batch:'.length))!
+    if (members.length === 1) return members[0]
+    const pieces = members.reduce((n, m) => n + (m.pieces ?? 0), 0)
+    const who = new Set(members.map((m) => m.assigneeId))
+    return {
+      ...members[0],
+      key: t.key,
+      title: `${KIND_VERB[t.kind]} ${pieces} pieces`,
+      detail: `${codesOf(members.map((m) => m.client))}${t.kind === 'deliver' ? ' · for approval' : ''}`,
+      assigneeId: who.size === 1 ? members[0].assigneeId : null,
+      done: members.every((m) => m.done),
+      warning: members.find((m) => m.warning)?.warning ?? null,
+      pieces,
+      members,
+    }
+  })
+}
+
+/** Tick a task off, or back on, whichever kind it is. A batch ticks every member. */
+export async function toggleTask(task: ContentTask, done: boolean): Promise<void> {
+  if (task.members) {
+    await Promise.all(task.members.filter((m) => m.done !== done).map((m) => toggleTask(m, done)))
+    return
+  }
   const s = useContentStore.getState()
   const at = done ? new Date().toISOString() : null
   const id = task.key.split(':')[1]
@@ -168,6 +296,10 @@ export function toggleTask(task: ContentTask, done: boolean) {
       return s.updateRecording(id, { doneAt: at })
     case 'edit':
       return s.updateEdit(id, { doneAt: at })
+    case 'deliver':
+      return s.updateEdit(id, { deliverDoneAt: at })
+    case 'schedule':
+      return s.updateEdit(id, { scheduleDoneAt: at })
     case 'post':
       return s.setPosted(task.client.id, task.day, done)
   }
