@@ -44,6 +44,7 @@ import { MyCalendar } from './pages/employee/MyCalendar'
 import { Chat } from './pages/Chat'
 import { ContentCalendar } from './pages/content/ContentCalendar'
 import { ContentClientPage } from './pages/content/ContentClientPage'
+import { ContentRedirect } from './pages/content/ContentRedirect'
 
 function LoadingScreen() {
   return (
@@ -217,9 +218,9 @@ export default function App() {
             <Route index element={<Navigate to="projects" replace />} />
             <Route path="overview" element={<Overview />} />
             <Route path="chat" element={<Chat />} />
-            {/* The content calendar is the whole firm's, not one project's. */}
-            <Route path="content" element={<ContentCalendar />} />
-            <Route path="content/:clientId" element={<ContentClientPage />} />
+            {/* The content calendar's old address, from before it moved into
+                the project that has it. */}
+            <Route path="content/*" element={<ContentRedirect />} />
             <Route path="projects" element={<Projects />} />
             <Route path="projects/:projectId" element={<ProjectLayout />}>
               <Route index element={<Navigate to="about" replace />} />
@@ -227,6 +228,10 @@ export default function App() {
               <Route path="resources" element={<ProjectResources />} />
               <Route path="todos" element={<ProjectTodos />} />
               <Route path="calendar" element={<ProjectCalendar />} />
+              {/* Only projects with a content calendar show the tab; the page
+                  sends anyone else back to the project. */}
+              <Route path="content" element={<ContentCalendar />} />
+              <Route path="content/:clientId" element={<ContentClientPage />} />
               <Route path="notes" element={<ProjectNotes />} />
               {/* Chat inside the project, so opening it does not drop you out
                   of the one you are working in. Same component: it works out
@@ -271,13 +276,14 @@ export default function App() {
             <Route element={<EmployeeWorkspace />}>
               <Route path="todos" element={<MyTodos />} />
               <Route path="calendar" element={<MyCalendar />} />
+              {/* Their project's content calendar, when it has one. */}
+              <Route path="content" element={<ContentCalendar />} />
+              <Route path="content/:clientId" element={<ContentClientPage />} />
               <Route path="notes" element={<MyNotes />} />
               <Route path="resources" element={<MyResources />} />
             </Route>
 
             <Route path="chat" element={<Chat />} />
-            <Route path="content" element={<ContentCalendar />} />
-            <Route path="content/:clientId" element={<ContentClientPage />} />
             <Route path="toolbox" element={<Toolbox />} />
             <Route path="guidelines" element={<Guidelines />} />
           </Route>

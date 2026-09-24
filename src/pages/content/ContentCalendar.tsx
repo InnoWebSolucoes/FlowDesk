@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Check, FileText, ArrowRight, Archive } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { ContentClient, ContentPostRule, ContentRecording } from '../../types'
@@ -9,7 +9,7 @@ import {
 import { ContentStrings, endSentence, useContentT } from '../../i18n/content'
 import {
   ClientDialog, codesOf, ContentTask, ContentTaskKind, groupBatches, KIND_COLOR, PlanViewer, toggleTask,
-  useContentBase, useContentData, useContentTasks, usePersonName,
+  useContentBase, useContentData, useContentProject, useContentTasks, usePersonName,
 } from '../../components/content/contentShared'
 
 /** The stages drawn as blocks in a day, in the order a day runs. */
@@ -63,13 +63,14 @@ function dayLabel(tasks: ContentTask[], c: ContentStrings) {
 }
 
 /**
- * The content calendar: every client's plans, shoots, edits, deliveries,
- * scheduling and posts on one month. Shaped after the agency's October plan —
- * a month you can read at a glance, filtered to one client with a click, with
- * the same work as a week-by-week checklist underneath.
+ * A project's content calendar: its clients' plans, shoots, edits,
+ * deliveries, scheduling and posts on one month. Shaped after the agency's
+ * October plan — a month you can read at a glance, filtered to one client
+ * with a click, with the same work as a week-by-week checklist underneath.
  */
 export function ContentCalendar() {
   const data = useContentData()
+  const project = useContentProject()
   const base = useContentBase()
   const me = useAuthStore((s) => s.currentUser?.id ?? null)
   const nameOf = usePersonName()
@@ -91,7 +92,7 @@ export function ContentCalendar() {
 
   // Well past the month, so a batch shot this month can be followed to its
   // last post, and the rhythm table has the weeks after it.
-  const { flows, tasks } = useContentTasks(addDays(gridEnd, 120))
+  const { flows, tasks } = useContentTasks(addDays(gridEnd, 120), project?.id ?? '')
 
   const setParam = (k: string, v: string | null) => {
     const next = new URLSearchParams(params)
@@ -100,8 +101,9 @@ export function ContentCalendar() {
     setParams(next, { replace: true })
   }
 
-  const active = data.clients.filter((cl) => !cl.isArchived)
-  const archived = data.clients.filter((cl) => cl.isArchived)
+  const own = data.clients.filter((cl) => cl.projectId === project?.id)
+  const active = own.filter((cl) => !cl.isArchived)
+  const archived = own.filter((cl) => cl.isArchived)
   const current = active.find((cl) => cl.id === filter) ?? null
 
   const shown = useMemo(
@@ -125,6 +127,12 @@ export function ContentCalendar() {
     }
   }
 
+  // Only a project that has the content calendar shows it; the rest go back
+  // to the project's own start.
+  if (!project) return null
+  if (!project.hasContentCalendar) {
+    return <Navigate to={base.startsWith('/admin') ? `/admin/projects/${project.id}` : '/employee/tasks'} replace />
+  }
   if (!data.loaded) return <p className="text-text-muted text-sm py-8">{c.loading}</p>
   if (data.error) {
     return (
@@ -567,7 +575,7 @@ export function ContentCalendar() {
         </button>
       )}
 
-      {adding && <ClientDialog client={null} onClose={() => setAdding(false)} />}
+      {adding && <ClientDialog client={null} projectId={project.id} onClose={() => setAdding(false)} />}
       {viewing?.recording && <PlanViewer recording={viewing.recording} client={viewing.client} onClose={() => setViewing(null)} />}
     </div>
   )

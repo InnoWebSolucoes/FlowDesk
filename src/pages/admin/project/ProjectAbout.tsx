@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
-import { Save, Trash2, Globe, Mail, Phone, MapPin, User, MessageCircle } from 'lucide-react'
+import { Save, Trash2, Globe, Mail, Phone, MapPin, User, MessageCircle, Clapperboard } from 'lucide-react'
 import { Project } from '../../../types'
 import { useProjectStore } from '../../../store/projectStore'
 import { openWhatsapp, normalisePhoneDigits } from '../../../lib/nativeShare'
@@ -30,7 +30,13 @@ function ProjectAboutForm({ project }: { project: Project }) {
 
   const handleSave = async () => {
     setSaving(true)
-    await updateProject(project.id, form)
+    // Only what changed. Sending the whole form wrote every column each time,
+    // so one the database does not have yet failed the save for all of them.
+    const changes: Partial<Project> = {}
+    for (const key of Object.keys(form) as (keyof Project)[]) {
+      if (form[key] !== project[key]) (changes as Record<string, unknown>)[key] = form[key]
+    }
+    await updateProject(project.id, changes)
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -131,6 +137,25 @@ function ProjectAboutForm({ project }: { project: Project }) {
             {field('Address', 'address', { icon: <MapPin size={14} /> })}
           </div>
         </div>
+      </section>
+
+      {/* Content calendar: a tab in this project's sidebar, for the projects
+          that make content for clients. */}
+      <section className="bg-surface border border-border rounded-xl p-5">
+        <h2 className="text-text-main font-semibold text-sm mb-2 flex items-center gap-2">
+          <Clapperboard size={15} className="text-text-subtle" />
+          {t('proj_contentCalendar')}
+        </h2>
+        <p className="text-text-muted text-sm mb-3 max-w-prose">{t('proj_contentCalendarDesc')}</p>
+        <label className="inline-flex items-center gap-2 text-sm text-text-main cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={!!form.hasContentCalendar}
+            onChange={(e) => set('hasContentCalendar', e.target.checked)}
+            className="w-4 h-4 accent-primary"
+          />
+          {t('proj_contentCalendarShow')}
+        </label>
       </section>
 
       {/* Appearance */}

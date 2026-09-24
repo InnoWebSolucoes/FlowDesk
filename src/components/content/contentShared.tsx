@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useMatch, useOutletContext } from 'react-router-dom'
 import { X, ExternalLink, Loader2, AlertCircle } from 'lucide-react'
 import { useContentStore, ClientInput } from '../../store/contentStore'
-import { ContentClient, ContentRecording } from '../../types'
+import { ContentClient, ContentRecording, Project } from '../../types'
 import { ClientFlow, flowFor, pieceTag, todayKey } from '../../utils/contentPipeline'
 import { ContentStrings, useContentT } from '../../i18n/content'
 import { fileKind } from '../resources/ResourceThumbnail'
@@ -37,10 +37,20 @@ export function useContentData() {
   return store
 }
 
-/** Where the content pages live on this side of the app. */
+/**
+ * The project whose content calendar this is. The content pages sit inside a
+ * project — the admin's ProjectLayout, or the employee's own workspace — and
+ * both hand it down the same way.
+ */
+export function useContentProject(): Project | null {
+  return useOutletContext<{ project?: Project } | undefined>()?.project ?? null
+}
+
+/** Where the content pages live: inside the project, on either side of the app. */
 export function useContentBase() {
-  const { pathname } = useLocation()
-  return pathname.startsWith('/admin') ? '/admin/content' : '/employee/content'
+  const inProject = useMatch('/admin/projects/:projectId/*')
+  const projectId = inProject?.params.projectId
+  return projectId ? `/admin/projects/${projectId}/content` : '/employee/content'
 }
 
 // ─── Tasks ──────────────────────────────────────────────────────────────────
@@ -73,11 +83,11 @@ export interface ContentTask {
 }
 
 /**
- * Every client's flow and every task, with posting slots generated up to
- * `until`. The tasks are written in the app's language, so switching it
- * rewrites them.
+ * Every client's flow and every task in one project's content calendar, with
+ * posting slots generated up to `until`. The tasks are written in the app's
+ * language, so switching it rewrites them.
  */
-export function useContentTasks(until: string) {
+export function useContentTasks(until: string, projectId: string) {
   const { clients, recordings, edits, rules, posted } = useContentStore()
   const { c, fmt } = useContentT()
   const flows: Record<string, ClientFlow> = {}
@@ -85,7 +95,7 @@ export function useContentTasks(until: string) {
   const today = todayKey()
 
   for (const client of clients) {
-    if (client.isArchived) continue
+    if (client.isArchived || client.projectId !== projectId) continue
     const recs = recordings.filter((r) => r.clientId === client.id)
     const flow = flowFor(
       recs,
@@ -299,7 +309,11 @@ export function usePersonName() {
   return (id: string | null) => (id ? people.find((p) => p.id === id)?.name ?? c.someone : null)
 }
 
-/** Who does it. A plain native select: these sit in dense rows. */
+/**
+ * Who does it: the project's own people and the managers. A plain native
+ * select, since these sit in dense rows. Whoever is already chosen stays in
+ * the list even if they have since moved project.
+ */
 export function PersonSelect({
   value,
   onChange,
@@ -311,8 +325,12 @@ export function PersonSelect({
   placeholder?: string
   className?: string
 }) {
-  const people = useContentStore((s) => s.people)
+  const everyone = useContentStore((s) => s.people)
+  const project = useContentProject()
   const { c } = useContentT()
+  const people = everyone.filter(
+    (p) => !project || p.isAdmin || !p.projectIds || p.projectIds.includes(project.id) || p.id === value,
+  )
   return (
     <select
       value={value ?? ''}
@@ -442,17 +460,23 @@ export function PlanViewer({ recording, client, onClose }: { recording: ContentR
 
 // ─── Client form ────────────────────────────────────────────────────────────
 
-/** Adding a client, or editing one's profile. */
+/** Adding a client to a project's content calendar, or editing one's profile. */
 export function ClientDialog({
   client,
+  projectId,
   onClose,
   onSaved,
 }: {
   client: ContentClient | null
+  /** Where a new client goes. */
+  projectId: string
   onClose: () => void
   onSaved?: (c: ContentClient) => void
 }) {
-  const { clients, addClient, updateClient } = useContentStore()
+  const { clients: allClients, addClient, updateClient } = useContentStore()
+  // Filtered here rather than in the selector: zustand 5 re-renders forever on
+  // a selector that returns a new array every time.
+  const clients = allClients.filter((cl) => cl.projectId === projectId)
   const { c } = useContentT()
   const [form, setForm] = useState<ClientInput>(() =>
     client
@@ -496,7 +520,7 @@ export function ClientDialog({
         await updateClient(client.id, input)
         onSaved?.({ ...client, ...input })
       } else {
-        const created = await addClient(input)
+        const created = await addClient(input, projectId)
         onSaved?.(created)
       }
       onClose()

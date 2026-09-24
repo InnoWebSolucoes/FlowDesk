@@ -40,18 +40,25 @@ export function Sidebar() {
         { to: `/admin/projects/${activeProjectId}/todos`, label: t('nav_todos'), icon: <ListTodo size={18} /> },
         { to: `/admin/projects/${activeProjectId}/resources`, label: t('nav_resources'), icon: <FolderOpen size={18} /> },
         { to: `/admin/projects/${activeProjectId}/calendar`, label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
+        // Only in a project that has one — InnoWeb's.
+        ...(activeProject?.hasContentCalendar
+          ? [{ to: `/admin/projects/${activeProjectId}/content`, label: t('nav_content'), icon: <Clapperboard size={18} /> }]
+          : []),
         { to: `/admin/projects/${activeProjectId}/employees`, label: t('nav_employees'), icon: <Users size={18} /> },
         { to: `/admin/projects/${activeProjectId}/notes`, label: t('nav_notes'), icon: <StickyNote size={18} /> },
         // Inside the project, so opening chat does not leave it.
         { to: `/admin/projects/${activeProjectId}/chat`, label: t('nav_chat'), icon: <MessageSquare size={18} /> },
-        // The whole firm's, so it leaves the project rather than living in it.
-        { to: '/admin/content', label: t('nav_content'), icon: <Clapperboard size={18} /> },
       ]
     : [
         { to: '/admin/projects', label: t('nav_projects'), icon: <Building2 size={18} /> },
-        { to: '/admin/content', label: t('nav_content'), icon: <Clapperboard size={18} /> },
         { to: '/admin/chat', label: t('nav_chat'), icon: <MessageSquare size={18} /> },
       ]
+
+  // An employee's sidebar is their project's, so it has the content calendar
+  // when their project does.
+  const myProject = useProjectStore((s) =>
+    currentUser?.projectId ? s.projects.find((p) => p.id === currentUser.projectId) : undefined
+  )
 
   // The same tabs the managers get inside a project, plus the employee's own
   // assigned work. Todos, resources and notes are their side of the project:
@@ -62,7 +69,9 @@ export function Sidebar() {
     { to: '/employee/todos', label: t('nav_todos'), icon: <ListTodo size={18} /> },
     { to: '/employee/resources', label: t('nav_resources'), icon: <FolderOpen size={18} /> },
     { to: '/employee/calendar', label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
-    { to: '/employee/content', label: t('nav_content'), icon: <Clapperboard size={18} /> },
+    ...(myProject?.hasContentCalendar
+      ? [{ to: '/employee/content', label: t('nav_content'), icon: <Clapperboard size={18} /> }]
+      : []),
     { to: '/employee/notes', label: t('nav_notes'), icon: <StickyNote size={18} /> },
     { to: '/employee/chat', label: t('nav_chat'), icon: <MessageSquare size={18} /> },
     { to: '/employee/toolbox', label: t('nav_toolbox'), icon: <Wrench size={18} /> },

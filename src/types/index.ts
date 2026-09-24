@@ -42,6 +42,8 @@ export interface Project {
   color: string
   isArchived: boolean
   createdAt: string
+  /** Whether the project's sidebar has the content calendar. InnoWeb's does. */
+  hasContentCalendar?: boolean
 }
 
 /** A bubble on the resources canvas. Clusters nest arbitrarily deep. */
@@ -560,6 +562,8 @@ export interface AppNotification {
 /** Somebody the firm makes content for. */
 export interface ContentClient {
   id: string
+  /** The project (organisation) whose content calendar the client is in. */
+  projectId: string
   name: string
   /** Three letters on every post tag, e.g. ESP 03. */
   code: string

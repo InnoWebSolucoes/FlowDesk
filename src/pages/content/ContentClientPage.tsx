@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import {
   ChevronLeft, Pencil, Archive, ArchiveRestore, Trash2, Plus, Upload, FileText, X, AlertTriangle, Video,
   Scissors, Send, ClipboardList, Mail, Phone, AtSign, User, Truck, CalendarClock,
@@ -13,7 +13,7 @@ import {
 } from '../../utils/contentPipeline'
 import { useContentT } from '../../i18n/content'
 import {
-  ClientDialog, KIND_COLOR, PersonSelect, PlanViewer, useContentBase, useContentData,
+  ClientDialog, KIND_COLOR, PersonSelect, PlanViewer, useContentBase, useContentData, useContentProject,
 } from '../../components/content/contentShared'
 
 /** Monday first, the way the calendar is drawn. Values are still 0 = Sunday. */
@@ -38,6 +38,7 @@ function report(e: unknown) {
 export function ContentClientPage() {
   const { clientId } = useParams()
   const data = useContentData()
+  const project = useContentProject()
   const base = useContentBase()
   const navigate = useNavigate()
   const { c, fmt } = useContentT()
@@ -45,7 +46,8 @@ export function ContentClientPage() {
   const [editing, setEditing] = useState(false)
   const [viewing, setViewing] = useState<ContentRecording | null>(null)
 
-  const client = data.clients.find((cl) => cl.id === clientId)
+  // Only a client of this project: another project's is not found here.
+  const client = data.clients.find((cl) => cl.id === clientId && cl.projectId === project?.id)
   const recordings = useMemo(() => data.recordings.filter((r) => r.clientId === clientId), [data.recordings, clientId])
   const edits = useMemo(() => data.edits.filter((e) => e.clientId === clientId), [data.edits, clientId])
   const rules = useMemo(() => data.rules.filter((r) => r.clientId === clientId), [data.rules, clientId])
@@ -57,6 +59,10 @@ export function ContentClientPage() {
   const until = addDays(latest, 120)
   const flow = useMemo(() => flowFor(recordings, edits, rules, posted, until), [recordings, edits, rules, posted, until])
 
+  if (!project) return null
+  if (!project.hasContentCalendar) {
+    return <Navigate to={base.startsWith('/admin') ? `/admin/projects/${project.id}` : '/employee/tasks'} replace />
+  }
   if (!data.loaded) return <p className="text-text-muted text-sm py-8">{c.loading}</p>
   if (!client) {
     return (
@@ -308,7 +314,7 @@ export function ContentClientPage() {
         )}
       </Stage>
 
-      {editing && <ClientDialog client={client} onClose={() => setEditing(false)} />}
+      {editing && <ClientDialog client={client} projectId={client.projectId} onClose={() => setEditing(false)} />}
       {viewing && <PlanViewer recording={viewing} client={client} onClose={() => setViewing(null)} />}
     </div>
   )

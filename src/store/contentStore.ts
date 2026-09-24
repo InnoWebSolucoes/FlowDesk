@@ -14,6 +14,7 @@ const BUCKET = 'content-plans'
 function toClient(r: any): ContentClient {
   return {
     id: r.id,
+    projectId: r.project_id,
     name: r.name,
     code: r.code,
     color: r.color,
@@ -89,6 +90,13 @@ export interface ContentPerson {
   id: string
   name: string
   initials: string
+  /** Managers work in every project. */
+  isAdmin: boolean
+  /**
+   * The projects they work in, so a project's lists offer its own people.
+   * Null when that could not be read — then nobody is left out.
+   */
+  projectIds: string[] | null
 }
 
 export interface ClientInput {
@@ -161,7 +169,8 @@ interface ContentState {
   subscribe: () => void
   teardown: () => void
 
-  addClient: (input: ClientInput) => Promise<ContentClient>
+  /** A new client, in the content calendar of the given project. */
+  addClient: (input: ClientInput, projectId: string) => Promise<ContentClient>
   updateClient: (id: string, patch: Partial<ClientInput & { isArchived: boolean }>) => Promise<void>
   deleteClient: (id: string) => Promise<void>
 
@@ -256,8 +265,11 @@ export const useContentStore = create<ContentState>()((set, get) => ({
       supabase.from('content_edits').select('*'),
       supabase.from('content_post_rules').select('*'),
       supabase.from('content_posts').select('*'),
-      supabase.from('users').select('id, name, avatar_initials, role, is_active'),
+      supabase.from('users').select('id, name, avatar_initials, role, is_active, project_id, project_members(project_id)'),
     ])
+    // Who works where is a nicety for the pickers. If it cannot be read, fall
+    // back to everybody rather than to nobody.
+    const users = u.error ? await supabase.from('users').select('id, name, avatar_initials, role, is_active') : u
     const err = c.error ?? r.error ?? e.error ?? ru.error ?? p.error
     if (err) {
       console.error('[content] load failed:', err)
@@ -270,9 +282,19 @@ export const useContentStore = create<ContentState>()((set, get) => ({
       edits: (e.data ?? []).map(toEdit),
       rules: (ru.data ?? []).map(toRule),
       posted: (p.data ?? []).map(toDone),
-      people: (u.data ?? [])
+      people: (users.data ?? [])
         .filter((x: any) => x.is_active !== false)
-        .map((x: any) => ({ id: x.id, name: x.name, initials: x.avatar_initials ?? '' }))
+        .map(
+          (x: any): ContentPerson => ({
+            id: x.id,
+            name: x.name,
+            initials: x.avatar_initials ?? '',
+            isAdmin: x.role === 'admin',
+            projectIds: u.error
+              ? null
+              : [x.project_id, ...(x.project_members ?? []).map((m: any) => m.project_id)].filter(Boolean),
+          }),
+        )
         .sort((a: ContentPerson, b: ContentPerson) => a.name.localeCompare(b.name)),
       loaded: true,
       error: null,
@@ -303,10 +325,10 @@ export const useContentStore = create<ContentState>()((set, get) => ({
 
   // ─── Clients ──────────────────────────────────────────────────────────────
 
-  addClient: async (input) => {
+  addClient: async (input, projectId) => {
     const { data, error } = await supabase
       .from('content_clients')
-      .insert({ ...toRow({ ...input }, clientCols), created_by: me() })
+      .insert({ ...toRow({ ...input }, clientCols), project_id: projectId, created_by: me() })
       .select()
       .single()
     if (error || !data) fail('Adding the client', error)

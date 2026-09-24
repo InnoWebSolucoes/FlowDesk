@@ -156,6 +156,7 @@ function toProject(row: any): Project {
     color: row.color ?? '#6366f1',
     isArchived: row.is_archived ?? false,
     createdAt: row.created_at,
+    hasContentCalendar: !!row.has_content_calendar,
   }
 }
 
@@ -172,6 +173,7 @@ function projectPatch(updates: Partial<Project>): Record<string, unknown> {
   if (updates.address !== undefined) patch.address = updates.address || null
   if (updates.color !== undefined) patch.color = updates.color
   if (updates.isArchived !== undefined) patch.is_archived = updates.isArchived
+  if (updates.hasContentCalendar !== undefined) patch.has_content_calendar = updates.hasContentCalendar
   return patch
 }
 
