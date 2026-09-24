@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import {
   ChevronLeft, Pencil, Archive, ArchiveRestore, Trash2, Plus, Upload, FileText, X, AlertTriangle, Video,
-  Scissors, Send, ClipboardList, Mail, Phone, AtSign, User, Truck, CalendarClock,
+  Scissors, Send, ClipboardList, Truck, CalendarClock,
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useContentStore } from '../../store/contentStore'
@@ -13,7 +13,7 @@ import {
 } from '../../utils/contentPipeline'
 import { useContentT } from '../../i18n/content'
 import {
-  ClientDialog, KIND_COLOR, PersonSelect, PlanViewer, useContentBase, useContentData, useContentProject,
+  ClientDialog, inProject, KIND_COLOR, PersonSelect, PlanViewer, useContentBase, useContentData, useContentProject,
 } from '../../components/content/contentShared'
 
 /** Monday first, the way the calendar is drawn. Values are still 0 = Sunday. */
@@ -47,7 +47,7 @@ export function ContentClientPage() {
   const [viewing, setViewing] = useState<ContentRecording | null>(null)
 
   // Only a client of this project: another project's is not found here.
-  const client = data.clients.find((cl) => cl.id === clientId && cl.projectId === project?.id)
+  const client = data.clients.find((cl) => cl.id === clientId && inProject(cl, project))
   const recordings = useMemo(() => data.recordings.filter((r) => r.clientId === clientId), [data.recordings, clientId])
   const edits = useMemo(() => data.edits.filter((e) => e.clientId === clientId), [data.edits, clientId])
   const rules = useMemo(() => data.rules.filter((r) => r.clientId === clientId), [data.rules, clientId])
@@ -84,7 +84,7 @@ export function ContentClientPage() {
   const remove = async () => {
     if (!confirm(c.confirmDeleteClient(client.name))) return
     try {
-      await data.deleteClient(client.id)
+      if (!(await data.deleteClient(client.id))) return alert(c.cannotDeleteClient)
       navigate(base)
     } catch (e) {
       report(e)
@@ -116,8 +116,11 @@ export function ContentClientPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-border-md bg-surface hover:bg-surface-2">
+        {/* Spelled out rather than icons: editing and deleting a client are
+            things people go looking for. Deleting takes everything under the
+            client with it, so it stays the owner's. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary-dark">
             <Pencil size={14} /> {c.editProfile}
           </button>
           <button
@@ -128,41 +131,42 @@ export function ContentClientPage() {
             {client.isArchived ? c.restore : c.archive}
           </button>
           {isOwner && (
-            <button onClick={remove} className="p-2 rounded-lg border border-border-md bg-surface text-danger hover:bg-danger-bg" title={c.deleteClient}>
-              <Trash2 size={15} />
+            <button
+              onClick={remove}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-danger/30 bg-surface text-danger hover:bg-danger-bg"
+            >
+              <Trash2 size={14} /> {c.deleteClient}
             </button>
           )}
         </div>
       </header>
 
       <div className="grid gap-4 md:grid-cols-[1fr_1.4fr] mt-6">
-        <div className="bg-surface border border-border-md rounded-md p-4 text-sm space-y-2">
-          {[
-            [User, client.contactName],
-            [Mail, client.contactEmail],
-            [Phone, client.contactPhone],
-            [AtSign, client.handle],
-          ]
-            .filter(([, v]) => v)
-            .map(([Icon, v], i) => {
-              const I = Icon as typeof User
-              return (
-                <p key={i} className="flex items-center gap-2">
-                  <I size={14} className="text-text-subtle" /> {v as string}
-                </p>
-              )
-            })}
-          {client.notes ? (
-            <p className="whitespace-pre-wrap text-text-muted pt-1">{client.notes}</p>
-          ) : (
-            !client.contactName && !client.contactEmail && !client.contactPhone && !client.handle && (
-              <p className="text-text-muted">
-                {c.noContact}{' '}
-                <button onClick={() => setEditing(true)} className="text-primary font-medium hover:underline">
-                  {c.addThem}
-                </button>
-              </p>
-            )
+        {/* Every field, filled or not, so what can be changed is plain to see. */}
+        <div className="bg-surface border border-border-md rounded-md p-4 text-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold">{c.profile}</h2>
+            <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+              <Pencil size={13} /> {c.edit}
+            </button>
+          </div>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+            {[
+              [c.contact, client.contactName],
+              [c.email, client.contactEmail],
+              [c.phone, client.contactPhone],
+              [c.handle, client.handle],
+              [c.postsPerMonthLabel, String(client.postsPerMonth)],
+              [c.code, client.code],
+            ].map(([name, value]) => (
+              <React.Fragment key={name}>
+                <dt className="text-text-muted">{name}</dt>
+                <dd className="min-w-0 break-words">{value || <span className="text-text-subtle">—</span>}</dd>
+              </React.Fragment>
+            ))}
+          </dl>
+          {client.notes && (
+            <p className="whitespace-pre-wrap text-text-muted mt-3 pt-3 border-t border-border">{client.notes}</p>
           )}
         </div>
 
@@ -314,7 +318,7 @@ export function ContentClientPage() {
         )}
       </Stage>
 
-      {editing && <ClientDialog client={client} projectId={client.projectId} onClose={() => setEditing(false)} />}
+      {editing && <ClientDialog client={client} projectId={project.id} onClose={() => setEditing(false)} />}
       {viewing && <PlanViewer recording={viewing} client={client} onClose={() => setViewing(null)} />}
     </div>
   )

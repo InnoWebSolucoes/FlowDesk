@@ -172,7 +172,11 @@ interface ContentState {
   /** A new client, in the content calendar of the given project. */
   addClient: (input: ClientInput, projectId: string) => Promise<ContentClient>
   updateClient: (id: string, patch: Partial<ClientInput & { isArchived: boolean }>) => Promise<void>
-  deleteClient: (id: string) => Promise<void>
+  /**
+   * Delete a client and everything under it. False when it was not deleted —
+   * only the owner may — in which case nothing was touched.
+   */
+  deleteClient: (id: string) => Promise<boolean>
 
   addRecordings: (inputs: RecordingInput[]) => Promise<void>
   updateRecording: (id: string, patch: Partial<Omit<ContentRecording, 'id' | 'clientId' | 'createdAt'>>) => Promise<void>
@@ -344,12 +348,27 @@ export const useContentStore = create<ContentState>()((set, get) => ({
   },
 
   deleteClient: async (id) => {
+    // Asked first, because the plans' files have to go before the client does
+    // — who may touch a file follows its client, so once the client is gone
+    // nobody could — and a file removed cannot be put back if the delete is
+    // then refused. If the question itself fails, the delete below still
+    // answers it.
+    const { data: owner, error: ownerError } = await supabase.rpc('is_owner')
+    if (!ownerError && owner !== true) return false
+
     const paths = get()
       .recordings.filter((r) => r.clientId === id && r.planPath)
       .map((r) => r.planPath as string)
-    const { error } = await supabase.from('content_clients').delete().eq('id', id)
-    if (error) fail('Deleting the client', error)
     if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
+
+    // Its recordings, edits, posting days and posts go with it: every one of
+    // those tables cascades from content_clients. A delete the database
+    // refuses deletes no rows and reports no error, so the rows are asked
+    // for back to tell the two apart.
+    const { data, error } = await supabase.from('content_clients').delete().eq('id', id).select('id')
+    if (error) fail('Deleting the client', error)
+    if (!data?.length) return false
+
     set((s) => ({
       clients: s.clients.filter((c) => c.id !== id),
       recordings: s.recordings.filter((r) => r.clientId !== id),
@@ -357,6 +376,7 @@ export const useContentStore = create<ContentState>()((set, get) => ({
       rules: s.rules.filter((r) => r.clientId !== id),
       posted: s.posted.filter((p) => p.clientId !== id),
     }))
+    return true
   },
 
   // ─── Recordings and their plans ───────────────────────────────────────────

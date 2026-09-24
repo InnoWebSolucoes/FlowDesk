@@ -46,10 +46,19 @@ export function useContentProject(): Project | null {
   return useOutletContext<{ project?: Project } | undefined>()?.project ?? null
 }
 
+/**
+ * Whether a client is in this project's content calendar. A client made
+ * before clients had a project belongs to the project that has the calendar.
+ */
+export function inProject(client: ContentClient, project: Project | null) {
+  if (!project) return false
+  return client.projectId ? client.projectId === project.id : !!project.hasContentCalendar
+}
+
 /** Where the content pages live: inside the project, on either side of the app. */
 export function useContentBase() {
-  const inProject = useMatch('/admin/projects/:projectId/*')
-  const projectId = inProject?.params.projectId
+  const projectMatch = useMatch('/admin/projects/:projectId/*')
+  const projectId = projectMatch?.params.projectId
   return projectId ? `/admin/projects/${projectId}/content` : '/employee/content'
 }
 
@@ -84,10 +93,9 @@ export interface ContentTask {
 
 /**
  * Every client's flow and every task in one project's content calendar, with
- * posting slots generated up to `until`. The tasks are written in the app's
- * language, so switching it rewrites them.
+ * posting slots generated up to `until`.
  */
-export function useContentTasks(until: string, projectId: string) {
+export function useContentTasks(until: string, project: Project | null) {
   const { clients, recordings, edits, rules, posted } = useContentStore()
   const { c, fmt } = useContentT()
   const flows: Record<string, ClientFlow> = {}
@@ -95,7 +103,7 @@ export function useContentTasks(until: string, projectId: string) {
   const today = todayKey()
 
   for (const client of clients) {
-    if (client.isArchived || client.projectId !== projectId) continue
+    if (client.isArchived || !inProject(client, project)) continue
     const recs = recordings.filter((r) => r.clientId === client.id)
     const flow = flowFor(
       recs,

@@ -156,7 +156,9 @@ function toProject(row: any): Project {
     color: row.color ?? '#6366f1',
     isArchived: row.is_archived ?? false,
     createdAt: row.created_at,
-    hasContentCalendar: !!row.has_content_calendar,
+    // Until the column exists, InnoWeb's project has it by name — the same
+    // rule 20261020000000 uses to switch it on.
+    hasContentCalendar: row.has_content_calendar ?? /inno\s*web/i.test(`${row.name} ${row.company_name ?? ''}`),
   }
 }
 

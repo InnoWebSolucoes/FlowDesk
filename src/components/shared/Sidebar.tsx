@@ -11,6 +11,7 @@ import { useProjectStore } from '../../store/projectStore'
 import { useLanguageStore } from '../../store/languageStore'
 import { useChatStore } from '../../store/chatStore'
 import { useT } from '../../i18n/useT'
+import { useContentT } from '../../i18n/content'
 import { Avatar } from './Avatar'
 import { NotificationBell } from './NotificationBell'
 import {
@@ -24,6 +25,8 @@ export function Sidebar() {
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { t } = useT()
+  // The content calendar is Portuguese whatever the switch says, name and all.
+  const contentLabel = useContentT().c.title
 
   // Inside a project the sidebar mirrors its tabs; outside it just offers the
   // way back to the picker, since everything else now lives within a project.
@@ -42,7 +45,7 @@ export function Sidebar() {
         { to: `/admin/projects/${activeProjectId}/calendar`, label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
         // Only in a project that has one — InnoWeb's.
         ...(activeProject?.hasContentCalendar
-          ? [{ to: `/admin/projects/${activeProjectId}/content`, label: t('nav_content'), icon: <Clapperboard size={18} /> }]
+          ? [{ to: `/admin/projects/${activeProjectId}/content`, label: contentLabel, icon: <Clapperboard size={18} /> }]
           : []),
         { to: `/admin/projects/${activeProjectId}/employees`, label: t('nav_employees'), icon: <Users size={18} /> },
         { to: `/admin/projects/${activeProjectId}/notes`, label: t('nav_notes'), icon: <StickyNote size={18} /> },
@@ -70,7 +73,7 @@ export function Sidebar() {
     { to: '/employee/resources', label: t('nav_resources'), icon: <FolderOpen size={18} /> },
     { to: '/employee/calendar', label: t('nav_calendar'), icon: <CalendarDays size={18} /> },
     ...(myProject?.hasContentCalendar
-      ? [{ to: '/employee/content', label: t('nav_content'), icon: <Clapperboard size={18} /> }]
+      ? [{ to: '/employee/content', label: contentLabel, icon: <Clapperboard size={18} /> }]
       : []),
     { to: '/employee/notes', label: t('nav_notes'), icon: <StickyNote size={18} /> },
     { to: '/employee/chat', label: t('nav_chat'), icon: <MessageSquare size={18} /> },

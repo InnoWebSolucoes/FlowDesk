@@ -2,6 +2,7 @@ import React from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { ViewAsBanner } from './ViewAsBanner'
+import { UpdateBanner } from './UpdateBanner'
 
 export function Layout() {
   const location = useLocation()
@@ -16,6 +17,8 @@ export function Layout() {
         {/* Above everything, including the sidebar's own chrome: forgetting
             you are inside somebody else's account is the one failure mode
             this feature has. */}
+        {/* A newer version is out: this window is still on the old one. */}
+        <UpdateBanner />
         <ViewAsBanner />
         {/* Main content.
             min-h-0 lets this flex child actually shrink, which is what gives

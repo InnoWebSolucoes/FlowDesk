@@ -1,8 +1,9 @@
-import { useLanguageStore } from '../store/languageStore'
 import { formatDay } from '../utils/contentPipeline'
 
 /**
- * The content calendar's words, in English and Portuguese.
+ * The content calendar's words. The tab is always in Portuguese — the team
+ * plans content in Portuguese, whatever language the rest of the app is set
+ * to. The English is kept as the shape the Portuguese is checked against.
  *
  * Kept apart from translations.ts because most of them carry a number or a
  * date, and a flat list of strings with "{n}" in them cannot say "1 vídeo"
@@ -44,9 +45,6 @@ const en = {
   /** The calendar's columns, Monday first. */
   dow: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
   cadence: (weeks: number) => (weeks === 1 ? 'every week' : `every ${weeks} weeks`),
-  /** "5 Oct", "7 Oct and 21 Oct", "2, 16 and 30 Oct". */
-  list: (items: string[]) =>
-    items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`,
 
   // ─── Shared ───────────────────────────────────────────────────────────────
   loading: 'Loading…',
@@ -60,7 +58,6 @@ const en = {
   pieces: (n: number) => `${n} ${plural(n, 'piece', 'pieces')}`,
   perMonth: (n: number) => `${n}/month`,
   postsAMonth: (n: number) => `${n} ${plural(n, 'post', 'posts')} a month`,
-  weeksWord: (n: number) => plural(n, 'week', 'weeks'),
   newClient: 'New client',
   contentPlan: 'Content plan',
   viewPlan: 'View plan',
@@ -99,7 +96,6 @@ const en = {
   showingOnly: (name: string) => `Showing ${name} only.`,
   openProfile: 'Open their profile →',
   showingAll: 'Showing all clients. Click a client to see only their schedule.',
-  onlyMine: 'Only my tasks',
   noClients: 'No clients yet',
   noClientsBody:
     'Add a client, then in their profile add recordings, editing sessions and posting days. They show up here.',
@@ -112,19 +108,6 @@ const en = {
   postEmpty: (client: string) => `${client}: nothing edited, delivered and scheduled in time for this day`,
   postPosted: 'posted, click to undo',
   postWhenPosted: 'click when posted',
-
-  // Why the batches line up
-  batches: 'Why the batches line up',
-  noShootsYet: 'No shoots yet',
-  aShoot: (n: number) => `${n} a shoot`,
-  shot: (dates: string) => `shot ${dates}`,
-  noShootIn: (month: string) => `no shoot in ${month}`,
-  postsRange: (from: string, to: string) => `posts ${from} – ${to}`,
-  nextShoot: (date: string) => endSentence(`Next shoot ${date}`),
-  postsInMonth: (filled: number, target: number, month: string) => `${filled} of ${target} posts in ${month}.`,
-  shortOf: (n: number, month: string) => `${n} short of what ${month} should carry.`,
-  recordEvery: (pieces: number, cadence: string) => `At ${pieces} videos a shoot, record ${cadence}.`,
-  emptyDays: (n: number) => `${n} posting ${plural(n, 'day', 'days')} with nothing ready.`,
 
   // Week by week
   weekByWeek: 'Week by week',
@@ -196,13 +179,14 @@ const en = {
   clientGone: 'This client does not exist any more.',
   archived: 'Archived',
   editProfile: 'Edit profile',
+  profile: 'Profile',
+  edit: 'Edit',
   restore: 'Restore',
   archive: 'Archive',
   deleteClient: 'Delete client',
+  cannotDeleteClient: 'This client was not deleted: only the account owner can delete clients.',
   confirmDeleteClient: (name: string) =>
     `Delete ${name} and all their recordings, edits, posting days and plans? This cannot be undone.`,
-  noContact: 'No contact details yet.',
-  addThem: 'Add them',
   tileRecorded: 'Recorded',
   shoots: (n: number) => `${n} ${plural(n, 'shoot', 'shoots')}`,
   tileEdited: 'Edited',
@@ -345,8 +329,6 @@ const pt: typeof en = {
   weekday: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'],
   dow: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
   cadence: (weeks: number) => (weeks === 1 ? 'todas as semanas' : `a cada ${weeks} semanas`),
-  list: (items: string[]) =>
-    items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`,
 
   // ─── Comum ────────────────────────────────────────────────────────────────
   loading: 'A carregar…',
@@ -360,7 +342,6 @@ const pt: typeof en = {
   pieces: (n: number) => `${n} ${plural(n, 'peça', 'peças')}`,
   perMonth: (n: number) => `${n}/mês`,
   postsAMonth: (n: number) => `${n} ${plural(n, 'publicação', 'publicações')} por mês`,
-  weeksWord: (n: number) => plural(n, 'semana', 'semanas'),
   newClient: 'Novo cliente',
   contentPlan: 'Plano de conteúdo',
   viewPlan: 'Ver plano',
@@ -399,7 +380,6 @@ const pt: typeof en = {
   showingOnly: (name: string) => `A mostrar só ${name}.`,
   openProfile: 'Abrir o perfil →',
   showingAll: 'A mostrar todos os clientes. Clique num cliente para ver só o calendário dele.',
-  onlyMine: 'Só as minhas tarefas',
   noClients: 'Ainda não há clientes',
   noClientsBody:
     'Adicione um cliente e, no perfil dele, adicione gravações, sessões de edição e dias de publicação. Aparecem aqui.',
@@ -413,19 +393,6 @@ const pt: typeof en = {
   postEmpty: (client: string) => `${client}: nada editado, entregue e agendado a tempo para este dia`,
   postPosted: 'publicado, clique para desfazer',
   postWhenPosted: 'clique quando for publicado',
-
-  batches: 'Porque é que os lotes batem certo',
-  noShootsYet: 'Ainda sem gravações',
-  aShoot: (n: number) => `${n} por gravação`,
-  shot: (dates: string) => `gravado a ${dates}`,
-  noShootIn: (month: string) => `sem gravação em ${month}`,
-  postsRange: (from: string, to: string) => `publica de ${from} a ${to}`,
-  nextShoot: (date: string) => endSentence(`Próxima gravação: ${date}`),
-  postsInMonth: (filled: number, target: number, month: string) =>
-    `${filled} de ${target} publicações em ${month}.`,
-  shortOf: (n: number, month: string) => `${plural(n, 'Falta', 'Faltam')} ${n} para a meta de ${month}.`,
-  recordEvery: (pieces: number, cadence: string) => `Com ${pieces} vídeos por gravação, grave ${cadence}.`,
-  emptyDays: (n: number) => `${n} ${plural(n, 'dia', 'dias')} de publicação sem nada pronto.`,
 
   weekByWeek: 'Semana a semana',
   week: (n: number) => `Semana ${n}`,
@@ -496,13 +463,14 @@ const pt: typeof en = {
   clientGone: 'Este cliente já não existe.',
   archived: 'Arquivado',
   editProfile: 'Editar perfil',
+  profile: 'Perfil',
+  edit: 'Editar',
   restore: 'Restaurar',
   archive: 'Arquivar',
   deleteClient: 'Eliminar cliente',
+  cannotDeleteClient: 'Este cliente não foi eliminado: só o dono da conta pode eliminar clientes.',
   confirmDeleteClient: (name: string) =>
     `Eliminar ${name} e todas as gravações, edições, dias de publicação e planos? Isto não pode ser desfeito.`,
-  noContact: 'Ainda sem contactos.',
-  addThem: 'Adicionar',
   tileRecorded: 'Gravadas',
   shoots: (n: number) => `${n} ${plural(n, 'gravação', 'gravações')}`,
   tileEdited: 'Editadas',
@@ -624,20 +592,18 @@ const pt: typeof en = {
 
 export type ContentStrings = typeof en
 
-const STRINGS = { en, pt }
-
 /**
- * The content calendar's words in the language the app is set to, and dates
- * written the same way. Dates use the Brazilian style ("seg., 5 de out."),
- * as the rest of the app's Portuguese dates do: the European one writes
- * "segunda, 5/10", which reads worse in a calendar cell.
+ * The content calendar's words, and its dates written the same way. Always
+ * Portuguese rather than the language switch's choice: following the switch
+ * left the tab in English for anyone with the app on English, and the team it
+ * is for works in Portuguese. Dates use the Brazilian style ("seg., 5 de out."), as the rest of the app's
+ * Portuguese dates do: the European one writes "segunda, 5/10", which reads
+ * worse in a calendar cell.
  */
 export function useContentT() {
-  const lang = useLanguageStore((s) => s.lang)
-  const locale = lang === 'pt' ? 'pt-BR' : 'en-GB'
   return {
-    c: STRINGS[lang],
-    lang,
-    fmt: (day: string, opts?: Intl.DateTimeFormatOptions) => formatDay(day, opts, locale),
+    c: pt,
+    lang: 'pt' as const,
+    fmt: (day: string, opts?: Intl.DateTimeFormatOptions) => formatDay(day, opts, 'pt-BR'),
   }
 }

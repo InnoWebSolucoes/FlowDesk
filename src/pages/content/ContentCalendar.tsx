@@ -1,23 +1,16 @@
 import React, { useMemo, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Check, FileText, ArrowRight, Archive } from 'lucide-react'
-import { useAuthStore } from '../../store/authStore'
-import { ContentClient, ContentPostRule, ContentRecording } from '../../types'
-import {
-  addDays, ClientFlow, mondayOf, monthBounds, postsPerWeekOn, shiftMonth, sortRecordings, suggestCadence, todayKey,
-} from '../../utils/contentPipeline'
-import { ContentStrings, endSentence, useContentT } from '../../i18n/content'
+import { ContentClient } from '../../types'
+import { addDays, mondayOf, monthBounds, shiftMonth, todayKey } from '../../utils/contentPipeline'
+import { ContentStrings, useContentT } from '../../i18n/content'
 import {
   ClientDialog, codesOf, ContentTask, ContentTaskKind, groupBatches, KIND_COLOR, PlanViewer, toggleTask,
-  useContentBase, useContentData, useContentProject, useContentTasks, usePersonName,
+  inProject, useContentBase, useContentData, useContentProject, useContentTasks, usePersonName,
 } from '../../components/content/contentShared'
 
 /** The stages drawn as blocks in a day, in the order a day runs. */
 const WORK_KINDS: ContentTaskKind[] = ['schedule', 'plan', 'record', 'edit', 'deliver']
-
-function num(n: number) {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
 
 /** Each client once, in the order they first appear. */
 function clientsOf(tasks: ContentTask[]) {
@@ -72,7 +65,6 @@ export function ContentCalendar() {
   const data = useContentData()
   const project = useContentProject()
   const base = useContentBase()
-  const me = useAuthStore((s) => s.currentUser?.id ?? null)
   const nameOf = usePersonName()
   const { c, fmt } = useContentT()
   const [params, setParams] = useSearchParams()
@@ -80,7 +72,6 @@ export function ContentCalendar() {
   const today = todayKey()
   const month = params.get('m') ? `${params.get('m')}-01` : monthBounds(today).first
   const filter = params.get('c') ?? 'all'
-  const mine = params.get('mine') === '1'
   const { first, last } = monthBounds(month)
   const gridStart = mondayOf(first)
   const gridEnd = addDays(mondayOf(last), 6)
@@ -92,7 +83,7 @@ export function ContentCalendar() {
 
   // Well past the month, so a batch shot this month can be followed to its
   // last post, and the rhythm table has the weeks after it.
-  const { flows, tasks } = useContentTasks(addDays(gridEnd, 120), project?.id ?? '')
+  const { flows, tasks } = useContentTasks(addDays(gridEnd, 120), project)
 
   const setParam = (k: string, v: string | null) => {
     const next = new URLSearchParams(params)
@@ -101,14 +92,14 @@ export function ContentCalendar() {
     setParams(next, { replace: true })
   }
 
-  const own = data.clients.filter((cl) => cl.projectId === project?.id)
+  const own = data.clients.filter((cl) => inProject(cl, project))
   const active = own.filter((cl) => !cl.isArchived)
   const archived = own.filter((cl) => cl.isArchived)
   const current = active.find((cl) => cl.id === filter) ?? null
 
   const shown = useMemo(
-    () => tasks.filter((t) => (filter === 'all' || t.client.id === filter) && (!mine || t.assigneeId === me)),
-    [tasks, filter, mine, me],
+    () => tasks.filter((t) => filter === 'all' || t.client.id === filter),
+    [tasks, filter],
   )
   const byDay = useMemo(() => {
     const m = new Map<string, ContentTask[]>()
@@ -233,15 +224,6 @@ export function ContentCalendar() {
               c.showingAll
             )}
           </p>
-          <label className="flex items-center gap-2 text-sm text-text-muted cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={mine}
-              onChange={(e) => setParam('mine', e.target.checked ? '1' : null)}
-              className="accent-primary"
-            />
-            {c.onlyMine}
-          </label>
         </div>
       </header>
 
@@ -317,30 +299,6 @@ export function ContentCalendar() {
           {c.legendEmpty}
         </span>
       </div>
-
-      {/* ─── Why the batches line up ────────────────────────────────────── */}
-      {visibleClients.length > 0 && (
-        <>
-          <h2 className="text-2xl font-extrabold tracking-tight mt-12 mb-3">{c.batches}</h2>
-          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
-            {visibleClients.map((cl) =>
-              flows[cl.id] ? (
-                <PaceCard
-                  key={cl.id}
-                  client={cl}
-                  base={base}
-                  flow={flows[cl.id]}
-                  rules={data.rules.filter((r) => r.clientId === cl.id)}
-                  recordings={data.recordings.filter((r) => r.clientId === cl.id)}
-                  first={first}
-                  last={last}
-                  monthName={monthName}
-                />
-              ) : null,
-            )}
-          </div>
-        </>
-      )}
 
       {/* ─── Week by week ───────────────────────────────────────────────── */}
       <h2 className="text-2xl font-extrabold tracking-tight mt-12 mb-3">{c.weekByWeek}</h2>
@@ -717,90 +675,5 @@ function PostTag({
       {t.done && <Check size={10} strokeWidth={3} />}
       {t.tag}
     </button>
-  )
-}
-
-/**
- * How one client's batches fit their posting days: a shoot of 8 at 2 posts a
- * week lasts 4 weeks, so the next shoot is due 4 weeks after. The headline
- * is that sum, the way the plan sets it out.
- */
-function PaceCard({
-  client: cl,
-  base,
-  flow,
-  rules,
-  recordings,
-  first,
-  last,
-  monthName,
-}: {
-  client: ContentClient
-  base: string
-  flow: ClientFlow
-  rules: ContentPostRule[]
-  recordings: ContentRecording[]
-  first: string
-  last: string
-  monthName: string
-}) {
-  const { c, fmt } = useContentT()
-  const dayMonth = (d: string) => fmt(d, { day: 'numeric', month: 'short' })
-  const recs = sortRecordings(recordings)
-  const shot = recs.filter((r) => r.recordedOn >= first && r.recordedOn <= last)
-  // The shoot the month's posts are paced by: this month's, else the last one before.
-  const ref = shot[0] ?? [...recs].reverse().find((r) => r.recordedOn < first) ?? recs[0]
-  const slots = flow.slots.filter((s) => s.day >= first && s.day <= last)
-  const paceDay = slots[0]?.day ?? rules.map((r) => r.startsOn).sort().find((d) => d >= first) ?? first
-  const perWeek = postsPerWeekOn(rules, paceDay)
-
-  let headline: string
-  if (!ref) headline = c.noShootsYet
-  else if (perWeek === 0) headline = c.aShoot(ref.pieces)
-  else {
-    const weeks = ref.pieces / perWeek
-    headline = `${ref.pieces} ÷ ${num(perWeek)} = ${num(weeks)} ${c.weeksWord(weeks)}`
-  }
-
-  const shotIds = new Set(shot.map((r) => r.id))
-  const goes = flow.pieces.filter((p) => shotIds.has(p.recordingId) && p.postOn).map((p) => p.postOn!)
-  const lastShot = shot[shot.length - 1]?.recordedOn
-  const next = recs.find((r) => r.recordedOn > (lastShot ?? last))
-  const parts = [shot.length ? c.shot(c.list(shot.map((r) => dayMonth(r.recordedOn)))) : c.noShootIn(monthName)]
-  if (goes.length) parts.push(c.postsRange(dayMonth(goes[0]), dayMonth(goes[goes.length - 1])))
-
-  // What this month should carry. A client that only starts posting half-way
-  // through is not short for posting half as much.
-  let covered = 0
-  let total = 0
-  for (let d = first; d <= last; d = addDays(d, 1)) {
-    total++
-    if (rules.some((r) => r.startsOn <= d && (!r.endsOn || r.endsOn >= d))) covered++
-  }
-  const due = Math.round((cl.postsPerMonth * covered) / total)
-  const filled = slots.filter((s) => s.piece).length
-  const empty = slots.length - filled
-  const cadence = ref ? suggestCadence(cl.postsPerMonth, ref.pieces) : null
-
-  return (
-    <Link
-      to={`${base}/${cl.id}`}
-      className="block bg-surface border border-border-md border-t-4 rounded-b-md px-4 py-3.5 hover:shadow-sm"
-      style={{ borderTopColor: cl.color }}
-    >
-      <strong className="block text-[1.6rem] font-extrabold leading-tight">{headline}</strong>
-      <p className="text-[0.85rem] text-text-muted mt-1">
-        <b className="text-text-main font-semibold">{cl.name}</b>: {endSentence(parts.join(', '))}
-        {next && ` ${c.nextShoot(dayMonth(next.recordedOn))}`}
-      </p>
-      <p className="text-[0.8rem] text-text-muted mt-1.5">{c.postsInMonth(filled, cl.postsPerMonth, monthName)}</p>
-      {filled < due && (
-        <p className="text-[0.8rem] text-warning mt-1">
-          {c.shortOf(due - filled, monthName)}
-          {cadence && ` ${c.recordEvery(ref!.pieces, c.cadence(cadence.every))}`}
-        </p>
-      )}
-      {empty > 0 && <p className="text-[0.8rem] text-warning mt-1">{c.emptyDays(empty)}</p>}
-    </Link>
   )
 }
