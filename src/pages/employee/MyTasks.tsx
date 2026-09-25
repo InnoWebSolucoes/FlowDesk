@@ -38,26 +38,16 @@ function OccurrenceCard({
   showTiming?: boolean
 }) {
   const {
-    completionLogs, completeTask, uncompleteTask, setInProgress, clearInProgress,
+    completeTask, uncompleteTask, setInProgress, clearInProgress,
     markMissed, clearMissed,
   } = useTaskStore()
   const { task, date } = occ
 
+  // A one-off's ticks under older days are cleared along with this one by the
+  // store itself, the same for every screen that un-ticks it.
   const undo = () => {
     if (readOnly) return
-    if (task.frequency.type === 'one-off') {
-      // Any tick finishes a one-off, whatever day it was logged under, so
-      // taking it back has to clear all of them — clearing only this day's
-      // would leave an older tick still holding it done.
-      const days = new Set(
-        completionLogs
-          .filter((l) => l.taskId === task.id && l.employeeId === empId)
-          .map((l) => l.dueDate),
-      )
-      days.forEach((d) => uncompleteTask(task.id, empId, d))
-    } else {
-      uncompleteTask(task.id, empId, date)
-    }
+    uncompleteTask(task.id, empId, date)
   }
 
   return (

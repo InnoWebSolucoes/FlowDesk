@@ -179,6 +179,62 @@ function applyTasks(scopedProjectId: string | null, all: Task[]) {
 }
 
 /**
+ * A one-off happens once, so whatever this person recorded for it counts,
+ * whichever day it was recorded under: the day it was ticked, in older
+ * versions, or its date before somebody dragged it to another one.
+ * taskOccurrences places it by that rule, and so must everything that reads
+ * or clears its status here — or the task shows one state and acts on another.
+ */
+function isOneOff(tasks: Task[], taskId: string) {
+  return tasks.find((t) => t.id === taskId)?.frequency.type === 'one-off'
+}
+
+/**
+ * The status an occurrence shows, and the key it is kept under. A recurring
+ * task's is its own day's. A one-off's is its own day's when it has one, and
+ * otherwise the latest recorded under any day — exactly what taskOccurrences
+ * draws. Reading only the one day while the calendar drew another is what made
+ * a long-started task take two presses to finish and a third to come back as
+ * started.
+ */
+function statusOf(
+  s: Pick<TaskState, 'allTasks' | 'taskStatuses' | 'taskStartedAt'>,
+  taskId: string,
+  empId: string,
+  date: string,
+): { key: string; status: 'in_progress' | 'missed' } | null {
+  const own = `${taskId}:${empId}:${date}`
+  if (s.taskStatuses[own]) return { key: own, status: s.taskStatuses[own] }
+  if (!isOneOff(s.allTasks, taskId)) return null
+
+  let found: { key: string; status: 'in_progress' | 'missed' } | null = null
+  let foundAt = ''
+  const prefix = `${taskId}:${empId}:`
+  for (const [key, status] of Object.entries(s.taskStatuses)) {
+    if (!key.startsWith(prefix)) continue
+    const at = s.taskStartedAt[key] ?? ''
+    if (!found || at > foundAt) {
+      found = { key, status }
+      foundAt = at
+    }
+  }
+  return found
+}
+
+/** Every status key this person has for a one-off, of one kind. */
+function oneOffKeys(statuses: Record<string, 'in_progress' | 'missed'>, taskId: string, empId: string, status: 'in_progress' | 'missed') {
+  const prefix = `${taskId}:${empId}:`
+  return Object.keys(statuses).filter((key) => key.startsWith(prefix) && statuses[key] === status)
+}
+
+/** A copy of a status map without the given keys. */
+function without<T>(map: Record<string, T>, keys: string[]) {
+  const next = { ...map }
+  for (const key of keys) delete next[key]
+  return next
+}
+
+/**
  * Live subscription. Kept outside the store because it is a connection, not
  * state, and must survive re-renders.
  */
@@ -520,16 +576,21 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   },
 
   uncompleteTask: async (taskId, employeeId, dueDate) => {
-    await supabase
+    // A one-off's tick counts under any day, so taking it back takes back all
+    // of them — one left under an older day would still hold it done.
+    const anyDay = isOneOff(get().allTasks, taskId)
+    let query = supabase
       .from('completion_logs')
       .delete()
       .eq('task_id', taskId)
       .eq('employee_id', employeeId)
-      .eq('due_date', dueDate)
+    if (!anyDay) query = query.eq('due_date', dueDate)
+    await query
 
     set((s) => ({
       completionLogs: s.completionLogs.filter(
-        (log) => !(log.taskId === taskId && log.employeeId === employeeId && log.dueDate === dueDate)
+        (log) =>
+          !(log.taskId === taskId && log.employeeId === employeeId && (anyDay || log.dueDate === dueDate))
       ),
     }))
 
@@ -544,8 +605,10 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
 
   isTaskCompleted: (taskId, employeeId, date) => {
     const dateStr = date.length === 10 ? date : format(new Date(date), 'yyyy-MM-dd')
+    // A one-off is done if it was ticked under any day, as taskOccurrences shows it.
+    const anyDay = isOneOff(get().allTasks, taskId)
     return get().completionLogs.some(
-      (log) => log.taskId === taskId && log.employeeId === employeeId && log.dueDate === dateStr
+      (log) => log.taskId === taskId && log.employeeId === employeeId && (anyDay || log.dueDate === dateStr)
     )
   },
 
@@ -578,24 +641,32 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   },
 
   clearInProgress: async (taskId, empId, date) => {
+    if (isOneOff(get().allTasks, taskId)) {
+      // Started under any day shows it as started, so stopping it has to clear
+      // every one — otherwise an older start brings it straight back.
+      await supabase
+        .from('task_statuses')
+        .delete()
+        .eq('task_id', taskId)
+        .eq('employee_id', empId)
+        .eq('status', 'in_progress')
+      set((s) => {
+        const keys = oneOffKeys(s.taskStatuses, taskId, empId, 'in_progress')
+        return { taskStatuses: without(s.taskStatuses, keys), taskStartedAt: without(s.taskStartedAt, keys) }
+      })
+      return
+    }
     const key = `${taskId}:${empId}:${date}`
     await supabase.from('task_statuses').delete().eq('task_id', taskId).eq('employee_id', empId).eq('due_date', date)
-    set((s) => {
-      const next = { ...s.taskStatuses }
-      delete next[key]
-      const nextStarted = { ...s.taskStartedAt }
-      delete nextStarted[key]
-      return { taskStatuses: next, taskStartedAt: nextStarted }
-    })
+    set((s) => ({ taskStatuses: without(s.taskStatuses, [key]), taskStartedAt: without(s.taskStartedAt, [key]) }))
   },
 
-  isInProgress: (taskId, empId, date) => {
-    const key = `${taskId}:${empId}:${date}`
-    return get().taskStatuses[key] === 'in_progress'
-  },
+  isInProgress: (taskId, empId, date) => statusOf(get(), taskId, empId, date)?.status === 'in_progress',
 
-  inProgressSince: (taskId, empId, date) =>
-    get().taskStartedAt[`${taskId}:${empId}:${date}`] ?? null,
+  inProgressSince: (taskId, empId, date) => {
+    const found = statusOf(get(), taskId, empId, date)
+    return found?.status === 'in_progress' ? get().taskStartedAt[found.key] ?? null : null
+  },
 
   moveTaskOccurrence: async (taskId, empId, date, to) => {
     const hasMove = get().taskMoves.some((m) => m.taskId === taskId && m.employeeId === empId && m.date === date)
@@ -729,28 +800,27 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
   },
 
   clearMissed: async (taskId, empId, date) => {
-    const key = `${taskId}:${empId}:${date}`
-    const { error } = await supabase
+    // As with starting: a one-off marked missed under any day shows as missed,
+    // so reopening it clears every such mark.
+    const anyDay = isOneOff(get().allTasks, taskId)
+    let query = supabase
       .from('task_statuses')
       .delete()
       .eq('task_id', taskId)
       .eq('employee_id', empId)
-      .eq('due_date', date)
+    query = anyDay ? query.eq('status', 'missed') : query.eq('due_date', date)
+    const { error } = await query
     if (error) {
       console.error('[clearMissed] failed:', error)
       return
     }
     set((s) => {
-      const next = { ...s.taskStatuses }
-      delete next[key]
-      const nextAt = { ...s.taskStartedAt }
-      delete nextAt[key]
-      return { taskStatuses: next, taskStartedAt: nextAt }
+      const keys = anyDay ? oneOffKeys(s.taskStatuses, taskId, empId, 'missed') : [`${taskId}:${empId}:${date}`]
+      return { taskStatuses: without(s.taskStatuses, keys), taskStartedAt: without(s.taskStartedAt, keys) }
     })
   },
 
-  isMissed: (taskId, empId, date) =>
-    get().taskStatuses[`${taskId}:${empId}:${date}`] === 'missed',
+  isMissed: (taskId, empId, date) => statusOf(get(), taskId, empId, date)?.status === 'missed',
 
   addComment: async (comment) => {
     const { data, error } = await supabase
