@@ -235,6 +235,51 @@ function without<T>(map: Record<string, T>, keys: string[]) {
 }
 
 /**
+ * Every row of a table, not the first thousand. Supabase stops a select at
+ * max_rows without saying so, and ticks and statuses pass a thousand in a few
+ * months of daily work. Past that, which rows came back was whichever the
+ * table happened to hold first: a task could be started or done in the
+ * database and blank here, and pressing it ran into the row this screen
+ * could not see. Ordered by the key, so no page repeats or skips a row.
+ */
+async function selectAll(table: string, columns: string, orderBy: string[]) {
+  const page = 1000
+  const rows: any[] = []
+  for (let from = 0; ; from += page) {
+    let query = supabase.from(table).select(columns)
+    for (const col of orderBy) query = query.order(col)
+    const { data, error } = await query.range(from, from + page - 1)
+    if (error) return { data: null, error }
+    rows.push(...(data ?? []))
+    if (!data || data.length < page) return { data: rows, error: null }
+  }
+}
+
+/**
+ * Give one occurrence a status, replacing whatever it had. task_statuses has
+ * no update policy, so an upsert that lands on a row already there is
+ * refused — and a row this screen had not loaded made the press do nothing
+ * at all. Replacing it is a delete and an insert, both of which are allowed.
+ */
+async function writeStatus(row: {
+  task_id: string; employee_id: string; due_date: string; status: 'in_progress' | 'missed'; started_at: string
+}) {
+  const { error } = await supabase.from('task_statuses').upsert(row)
+  if (!error) return
+  await supabase
+    .from('task_statuses')
+    .delete()
+    .eq('task_id', row.task_id)
+    .eq('employee_id', row.employee_id)
+    .eq('due_date', row.due_date)
+  const { error: again } = await supabase.from('task_statuses').insert(row)
+  if (again) {
+    console.error('[task_statuses] write failed:', again)
+    throw new Error(again.message)
+  }
+}
+
+/**
  * Live subscription. Kept outside the store because it is a connection, not
  * state, and must survive re-renders.
  */
@@ -292,20 +337,21 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
 
     // Only who a task is assigned to. The day it happens comes from the task's
     // own frequency, so the assignment carries no date any more.
-    const fetchTasks = () => supabase.from('tasks').select('*, task_assignments(employee_id)')
+    const fetchTasks = () => selectAll('tasks', '*, task_assignments(employee_id)', ['id'])
+    const occurrenceKey = ['task_id', 'employee_id', 'due_date']
 
     const [tasksRes, categoriesRes, logsRes, statusesRes, commentsRes, activityRes, movesRes, skipsRes] = await Promise.all([
       fetchTasks(),
       supabase.from('categories').select('*'),
-      supabase.from('completion_logs').select('*'),
-      supabase.from('task_statuses').select('*'),
-      supabase.from('task_comments').select('*, task_attachments(*)'),
-      supabase.from('activity_logs').select('*'),
+      selectAll('completion_logs', '*', ['id']),
+      selectAll('task_statuses', '*', occurrenceKey),
+      selectAll('task_comments', '*, task_attachments(*)', ['id']),
+      selectAll('activity_logs', '*', ['id']),
       // Absent until the task_moves migration has run: nothing is moved, and
       // the rest still loads.
-      supabase.from('task_moves').select('*'),
+      selectAll('task_moves', '*', occurrenceKey),
       // Likewise absent until task_skips has run.
-      supabase.from('task_skips').select('*'),
+      selectAll('task_skips', '*', occurrenceKey),
     ])
 
     const taskSkips: TaskSkipRow[] = (skipsRes.data ?? []).map((row: any) => ({
@@ -564,15 +610,39 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       .select()
       .single()
 
-    if (!error && data) {
-      set((s) => ({ completionLogs: [...s.completionLogs, toCompletionLog(data)] }))
-      await get().addActivityLog({ taskId, actorId: employeeId, action: 'completed' })
-      recordUndo({
-        label: 'ticked a task off',
-        undo: () => get().uncompleteTask(taskId, employeeId, dueDate),
-        redo: () => get().completeTask(taskId, employeeId, dueDate),
-      })
+    // Already ticked under this day — on another screen, or before this one
+    // loaded it. It is done, so read that tick back rather than failing to add
+    // a second one, which left the task looking untouched however often it
+    // was pressed.
+    if (error?.code === '23505') {
+      const { data: existing } = await supabase
+        .from('completion_logs')
+        .select()
+        .eq('task_id', taskId)
+        .eq('employee_id', employeeId)
+        .eq('due_date', dueDate)
+        .maybeSingle()
+      if (existing) {
+        set((s) => ({
+          completionLogs: s.completionLogs.some((l) => l.id === existing.id)
+            ? s.completionLogs
+            : [...s.completionLogs, toCompletionLog(existing)],
+        }))
+      }
+      return
     }
+    if (error || !data) {
+      console.error('[completeTask] failed:', error)
+      throw new Error(error?.message ?? 'The task could not be ticked off.')
+    }
+
+    set((s) => ({ completionLogs: [...s.completionLogs, toCompletionLog(data)] }))
+    await get().addActivityLog({ taskId, actorId: employeeId, action: 'completed' })
+    recordUndo({
+      label: 'ticked a task off',
+      undo: () => get().uncompleteTask(taskId, employeeId, dueDate),
+      redo: () => get().completeTask(taskId, employeeId, dueDate),
+    })
   },
 
   uncompleteTask: async (taskId, employeeId, dueDate) => {
@@ -617,22 +687,12 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     // Stamped here rather than left to the column default, so re-starting
     // something restarts the clock instead of keeping the first attempt's.
     const startedAt = new Date().toISOString()
-    const row: Record<string, unknown> = {
+    // Throws when refused, so the screen that was pressed can say why rather
+    // than leave the task looking untouched.
+    await writeStatus({
       task_id: taskId, employee_id: empId, due_date: date, status: 'in_progress',
       started_at: startedAt,
-    }
-    let { error } = await supabase.from('task_statuses').upsert(row)
-    if (error) {
-      // started_at arrives with its own migration; without it, still record
-      // that the work has begun rather than refusing the press.
-      console.warn('[setInProgress] retrying without started_at:', error.message)
-      const { started_at: _drop, ...legacy } = row
-      ;({ error } = await supabase.from('task_statuses').upsert(legacy))
-    }
-    if (error) {
-      console.error('[setInProgress] failed:', error)
-      return
-    }
+    })
     set((s) => ({
       taskStatuses: { ...s.taskStatuses, [key]: 'in_progress' },
       taskStartedAt: { ...s.taskStartedAt, [key]: startedAt },
@@ -783,15 +843,11 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
     const key = `${taskId}:${empId}:${date}`
     // When it was marked, which is the day it stops on.
     const at = new Date().toISOString()
-    const { error } = await supabase.from('task_statuses').upsert({
+    // Usually over a started row, which is exactly the case the upsert alone
+    // was refused on.
+    await writeStatus({
       task_id: taskId, employee_id: empId, due_date: date, status: 'missed', started_at: at,
     })
-    if (error) {
-      // Refused until the missed-status migration has run: the column's check
-      // only allowed 'in_progress'.
-      console.error('[markMissed] failed:', error)
-      return
-    }
     set((s) => ({
       taskStatuses: { ...s.taskStatuses, [key]: 'missed' as const },
       taskStartedAt: { ...s.taskStartedAt, [key]: at },
