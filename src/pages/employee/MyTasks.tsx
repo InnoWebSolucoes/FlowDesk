@@ -11,6 +11,7 @@ import { Select } from '../../components/shared/Select'
 import { useT } from '../../i18n/useT'
 import { useHighlight } from '../../hooks/useHighlight'
 import { TaskEditDialog } from '../../components/shared/TaskEditDialog'
+import { TaskPeekPanel } from '../../components/calendar/TaskPeekPanel'
 import { useDayOrderStore, DayBoard } from '../../store/dayOrderStore'
 
 const TABS = ['today', 'week', 'month'] as const
@@ -27,14 +28,16 @@ export type TaskPeriod = typeof TABS[number]
  * different day. One component, one day: the occurrence's own.
  */
 function OccurrenceCard({
-  occ, empId, categories, highlight, readOnly, onEditTask, showTiming,
+  occ, empId, categories, highlight, readOnly, onOpenTask, openHint, showTiming,
 }: {
   occ: TaskOccurrence
   empId: string
   categories: any[]
   highlight: ReturnType<typeof useHighlight>
   readOnly?: boolean
-  onEditTask?: (task: Task, date: string) => void
+  /** Clicking the card. The editor for a manager, the detail panel otherwise. */
+  onOpenTask?: (task: Task, occ: TaskOccurrence) => void
+  openHint?: string
   showTiming?: boolean
 }) {
   const {
@@ -68,7 +71,8 @@ function OccurrenceCard({
       currentUserId={empId}
       dueDate={date}
       completedAtOverride={occ.completedAt}
-      onEdit={onEditTask ? () => onEditTask(task, occ.date) : undefined}
+      onOpen={onOpenTask ? () => onOpenTask(task, occ) : undefined}
+      openHint={openHint}
       carried={occ.carried}
       showTiming={showTiming}
       highlighted={highlight.isHighlighted(task.id)}
@@ -267,12 +271,23 @@ export function MyTasks({
   // The task open in the editor, if any.
   const [editingTask, setEditingTask] = useState<{ task: Task; date: string } | null>(null)
   /**
+   * The task open for reading, if any. The employee's way into the whole of a
+   * task: the card clamps the description to two lines, and before this there
+   * was nowhere on their side of the app to read the rest of it.
+   */
+  const [peekingTask, setPeekingTask] = useState<{ task: Task; occ: TaskOccurrence } | null>(null)
+  /**
    * How far back or forward from today the view is looking, in whole periods:
    * days on the Today tab, weeks on the week tab, four-week blocks on the month
    * tab. Zero is now, and "Today" puts it back.
    */
   const [offset, setOffset] = useState(0)
-  const onEditTask = manage ? (task: Task, date: string) => setEditingTask({ task, date }) : undefined
+  // Whoever may change the task gets the editor; everybody else gets the
+  // read-only panel. Either way the card opens something, which it did not
+  // before: on their own list it was inert.
+  const onOpenTask = manage
+    ? (task: Task, occ: TaskOccurrence) => setEditingTask({ task, date: occ.date })
+    : (task: Task, occ: TaskOccurrence) => setPeekingTask({ task, occ })
 
   // Filters (today tab only)
   const [searchQuery, setSearchQuery] = useState('')
@@ -459,7 +474,8 @@ export function MyTasks({
     categories,
     highlight,
     readOnly,
-    onEditTask,
+    onOpenTask,
+    openHint: manage ? undefined : t('taskcard_openDetails'),
     showTiming: manage,
   }
 
@@ -820,6 +836,26 @@ export function MyTasks({
         <TaskEditDialog
           task={editingTask.task}
           onClose={() => setEditingTask(null)}
+        />
+      )}
+
+      {peekingTask && (
+        <TaskPeekPanel
+          task={peekingTask.task}
+          occurrenceDate={peekingTask.occ.date}
+          status={
+            peekingTask.occ.completed
+              ? 'completed'
+              : peekingTask.occ.status === 'in_progress'
+                ? 'in_progress'
+                : peekingTask.occ.status === 'missed'
+                  ? 'missed'
+                  : 'pending'
+          }
+          carried={peekingTask.occ.carried}
+          // Already on the task list: the way out would only reload it.
+          showTasksLink={false}
+          onClose={() => setPeekingTask(null)}
         />
       )}
     </div>

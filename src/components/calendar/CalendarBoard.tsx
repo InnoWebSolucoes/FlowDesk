@@ -16,7 +16,7 @@ import { useDayOrderStore, DayItemKind, DayBoard } from '../../store/dayOrderSto
 import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/taskScheduler'
 import { personColor, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
-import { TaskPeekPanel } from './TaskPeekPanel'
+import { TaskPeekPanel, PeekStatus } from './TaskPeekPanel'
 import { TaskEditDialog, NewTaskDialog } from '../shared/TaskEditDialog'
 import { useTodoTick } from '../../hooks/useTodoTick'
 import {
@@ -84,6 +84,8 @@ interface Block {
   started?: boolean
   /** Marked as missed: it stopped here and will not move on. */
   missed?: boolean
+  /** For a task block: carried forward from an earlier day it was not done on. */
+  carried?: boolean
   /**
    * Something the person put on their own todo list, rather than work
    * assigned to them. Outlined in their colour on white, so at a glance a
@@ -187,8 +189,12 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   const [newTask, setNewTask] = useState<{ employeeId: string; date: string } | null>(null)
   const [openEntry, setOpenEntry] = useState<string | null>(null)
   // A task block used to open nothing: the handler only knew todos and
-  // entries, so clicking assigned work silently did nothing at all.
-  const [openTask, setOpenTask] = useState<string | null>(null)
+  // entries, so clicking assigned work silently did nothing at all. The day
+  // and state come with it, so the panel says the same thing as the block that
+  // was clicked rather than describing the task in the abstract.
+  const [openTask, setOpenTask] = useState<
+    { id: string; date?: string; status?: PeekStatus; carried?: boolean } | null
+  >(null)
   const [error, setError] = useState('')
   const [drag, setDrag] = useState<DragState | null>(null)
   const [hoverSlot, setHoverSlot] = useState<string | null>(null)
@@ -209,6 +215,22 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   // An assigned task being edited from its right-click menu.
   const [editTask, setEditTask] = useState<string | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * Clicking assigned work. The owner gets the editor, because for them the
+   * point of opening a task is to change it; everybody else gets the read-only
+   * panel, which is the only place the full description can be read.
+   */
+  const openTaskBlock = (block: Block) => {
+    if (!block.task) return
+    if (canMoveTasks) { setEditTask(block.task.id); return }
+    setOpenTask({
+      id: block.task.id,
+      date: block.occDate,
+      status: block.done ? 'completed' : block.missed ? 'missed' : block.started ? 'in_progress' : 'pending',
+      carried: block.carried,
+    })
+  }
 
   /**
    * Which board's order this calendar reads and writes: the person's own day
@@ -364,6 +386,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
             done: occ.completed,
             started: occ.status === 'in_progress',
             missed: occ.status === 'missed',
+            carried: occ.carried,
             urgent: occ.task.isUrgent,
             ownerName: canOverlay ? who?.name : undefined,
           })
@@ -798,7 +821,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               dragging={!!drag}
               onOpenTodo={setOpenTodo}
               onOpenEntry={setOpenEntry}
-              onOpenTask={canMoveTasks ? setEditTask : setOpenTask}
+              onOpenTask={openTaskBlock}
               onCreate={createAt}
               onOpenDay={openDay}
               onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
@@ -825,7 +848,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
               dragging={!!drag}
               onOpenTodo={setOpenTodo}
               onOpenEntry={setOpenEntry}
-              onOpenTask={canMoveTasks ? setEditTask : setOpenTask}
+              onOpenTask={openTaskBlock}
               onCreate={createAt}
               onOpenDay={openDay}
               onDayContext={(x, y, day) => setDayMenu({ x, y, day })}
@@ -1047,9 +1070,16 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       )}
 
       {openTask && (() => {
-        const t = tasks.find((x) => x.id === openTask)
+        const t = tasks.find((x) => x.id === openTask.id)
         return t ? (
-          <TaskPeekPanel task={t} basePath={basePath} onClose={() => setOpenTask(null)} />
+          <TaskPeekPanel
+            task={t}
+            basePath={basePath}
+            occurrenceDate={openTask.date}
+            status={openTask.status}
+            carried={openTask.carried}
+            onClose={() => setOpenTask(null)}
+          />
         ) : null
       })()}
 
@@ -1107,7 +1137,7 @@ function DayGrid({
   dragging: boolean
   onOpenTodo: (id: string) => void
   onOpenEntry: (id: string) => void
-  onOpenTask: (id: string) => void
+  onOpenTask: (block: Block) => void
   onCreate: (day: string) => void
   onOpenDay: (day: Date) => void
   onDayContext: (x: number, y: number, day: string) => void
@@ -1188,7 +1218,7 @@ function DayGrid({
                     b.todo
                       ? onOpenTodo(b.todo.id)
                       : b.task
-                        ? onOpenTask(b.task.id)
+                        ? onOpenTask(b)
                         : onOpenEntry(b.entry!.id)
                   }
                   onDragStart={
@@ -1270,7 +1300,7 @@ function MonthGrid({
   dragging: boolean
   onOpenTodo: (id: string) => void
   onOpenEntry: (id: string) => void
-  onOpenTask: (id: string) => void
+  onOpenTask: (block: Block) => void
   onCreate: (day: string) => void
   onOpenDay: (day: Date) => void
   onDayContext: (x: number, y: number, day: string) => void
@@ -1347,7 +1377,7 @@ function MonthGrid({
                     b.todo
                       ? onOpenTodo(b.todo.id)
                       : b.task
-                        ? onOpenTask(b.task.id)
+                        ? onOpenTask(b)
                         : onOpenEntry(b.entry!.id)
                   }
                   onDragStart={

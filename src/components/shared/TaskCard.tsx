@@ -27,11 +27,18 @@ interface TaskCardProps {
   currentUserId?: string
   dueDate?: string
   /**
-   * Manager actions. Present only where somebody may actually change the
-   * task — the employee's own list gets neither, and RLS would refuse them
-   * anyway. Editing is a click on the card itself, not a button.
+   * Opening the task: a click on the card itself, not a button. What it opens
+   * is the caller's business — the editor for whoever may change the task, and
+   * the read-only detail panel for everybody else, which is how an employee
+   * reads a description that the card clamps to two lines.
    */
-  onEdit?: () => void
+  onOpen?: () => void
+  /** What the click does, for the tooltip. Defaults to "edit". */
+  openHint?: string
+  /**
+   * Deleting the task. Present only where somebody may actually change it —
+   * the employee's own list never does, and RLS would refuse it anyway.
+   */
   onDelete?: () => void
   /** Carried forward from an earlier day it was not done on. */
   carried?: boolean
@@ -106,7 +113,8 @@ export function TaskCard({
   employeeName,
   currentUserId,
   dueDate,
-  onEdit,
+  onOpen,
+  openHint,
   onDelete,
   carried,
   showTiming,
@@ -246,10 +254,10 @@ export function TaskCard({
   return (
     <div
       ref={highlighted ? highlightRef : undefined}
-      onClick={onEdit}
-      role={onEdit ? 'button' : undefined}
-      title={onEdit ? t('taskcard_edit') : undefined}
-      className={`p-3 rounded-lg border transition-all duration-200 ${onEdit ? 'cursor-pointer' : ''} ${
+      onClick={onOpen}
+      role={onOpen ? 'button' : undefined}
+      title={onOpen ? openHint ?? t('taskcard_edit') : undefined}
+      className={`p-3 rounded-lg border transition-all duration-200 ${onOpen ? 'cursor-pointer' : ''} ${
         isCompleted
           ? 'bg-surface-2/50 border-border opacity-70'
           : task.isUrgent
@@ -377,7 +385,7 @@ export function TaskCard({
       </div>
 
       {/* Rendered inside the card, so its clicks would bubble up and open
-          the editor behind it. */}
+          the task behind it. */}
       {showFiles && (
         <div onClick={(e) => e.stopPropagation()}>
           <TaskFiles taskId={task.id} dueDate={dueDate ?? null} onClose={() => setShowFiles(false)} />
