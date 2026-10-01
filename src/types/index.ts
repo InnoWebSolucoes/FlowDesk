@@ -26,6 +26,15 @@ export interface Employee extends User {
   department: string
   managerId: string | null
   projectId: string | null
+  /**
+   * What their work is painted on the calendar of tasks, set on their
+   * profile. Null means nobody has chosen one.
+   *
+   * It decides nothing else. Avatars colour themselves, and no other part of
+   * the app reads this — a manager laying three people's weeks over each other
+   * needs to tell whose block is whose, and that is the whole of it.
+   */
+  calendarColor?: string | null
 }
 
 export interface Project {
@@ -643,4 +652,40 @@ export interface ContentPostDone {
   postedOn: string
   doneBy: string | null
   doneAt: string
+}
+
+/**
+ * One posting slot dragged to another day, leaving its rule alone.
+ *
+ * Slots are worked out from a client's posting rules, so the only way to move
+ * one used to be to change the rule — which moved every week's. This is the
+ * single day's exception, keyed by where the rule put it.
+ */
+export interface ContentPostMove {
+  clientId: string
+  /** Where the posting rule put it: a generated slot's only stable name. */
+  fromDay: string
+  /** Where it actually goes. */
+  toDay: string
+}
+
+/**
+ * Something on the content calendar that belongs to no pipeline: a reshoot, a
+ * call, a studio booking. It has a day, a title and a tick, and it drags like
+ * everything else.
+ *
+ * Never counted, numbered, edited or posted — it does not enter flowFor. That
+ * is what makes it free-form.
+ */
+export interface ContentOneOff {
+  id: string
+  projectId: string
+  /** Only to colour it and file it under somebody; a one-off need not have one. */
+  clientId: string | null
+  day: string
+  title: string
+  detail: string
+  assigneeId: string | null
+  doneAt: string | null
+  createdAt: string
 }

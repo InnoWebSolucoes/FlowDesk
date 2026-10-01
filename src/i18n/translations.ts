@@ -381,6 +381,14 @@ const en = {
   notif_inactivityAlert: 'Inactivity Alert',
   notif_chatMessage: 'New message',
 
+  // A person's colour on the calendar of tasks
+  color_calendarColour: 'Calendar colour',
+  color_calendarColourHint: 'What their work is painted on the calendar of tasks, so several people on one day can be told apart. It changes nothing else.',
+  color_reset: 'Reset',
+  color_inUse: 'Their work shows in this colour.',
+  color_usingDefault: 'No colour chosen — using the default.',
+  color_couldNotSave: 'Could not save that colour.',
+
   // Task status
   status_pending: 'Pending',
   status_inProgress: 'In Progress',
@@ -1166,6 +1174,14 @@ const pt: typeof en = {
   notif_workloadAlert: 'Alerta de Sobrecarga',
   notif_inactivityAlert: 'Alerta de Inatividade',
   notif_chatMessage: 'Nova mensagem',
+
+  // A person's colour on the calendar of tasks
+  color_calendarColour: 'Cor no calendário',
+  color_calendarColourHint: 'A cor do trabalho desta pessoa no calendário de tarefas, para distinguir várias pessoas no mesmo dia. Não muda mais nada.',
+  color_reset: 'Repor',
+  color_inUse: 'O trabalho desta pessoa aparece nesta cor.',
+  color_usingDefault: 'Sem cor escolhida — a usar a predefinida.',
+  color_couldNotSave: 'Não foi possível guardar essa cor.',
 
   // Task status
   status_pending: 'Pendente',

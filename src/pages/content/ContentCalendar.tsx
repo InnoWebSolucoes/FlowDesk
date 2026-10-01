@@ -1,21 +1,31 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Check, FileText, ArrowRight, Archive } from 'lucide-react'
-import { ContentClient } from '../../types'
+import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Check, FileText, ArrowRight, Archive, GripVertical, X } from 'lucide-react'
+import { ContentClient, ContentOneOff } from '../../types'
 import { addDays, mondayOf, monthBounds, shiftMonth, todayKey } from '../../utils/contentPipeline'
 import { ContentStrings, useContentT } from '../../i18n/content'
 import {
-  ClientDialog, codesOf, ContentTask, ContentTaskKind, groupBatches, KIND_COLOR, PlanViewer, toggleTask,
+  ClientDialog, codesOf, ContentTask, ContentTaskKind, groupBatches, KIND_COLOR, moveTask, OneOffDialog,
+  PlanViewer, toggleTask,
   inProject, useContentBase, useContentData, useContentProject, useContentTasks, usePersonName,
 } from '../../components/content/contentShared'
 
 /** The stages drawn as blocks in a day, in the order a day runs. */
 const WORK_KINDS: ContentTaskKind[] = ['schedule', 'plan', 'record', 'edit', 'deliver']
 
-/** Each client once, in the order they first appear. */
+/**
+ * Each client once, in the order they first appear.
+ *
+ * A one-off task that is about nobody carries a stand-in client with an empty
+ * id, which is skipped here: it has no name to put in a week's title and no
+ * profile to link to, and letting it through produced stray separators in
+ * "SHZ + TAS" and a link to nowhere.
+ */
 function clientsOf(tasks: ContentTask[]) {
   const seen = new Map<string, ContentClient>()
-  for (const t of tasks) for (const m of t.members ?? [t]) if (!seen.has(m.client.id)) seen.set(m.client.id, m.client)
+  for (const t of tasks) {
+    for (const m of t.members ?? [t]) if (m.client.id && !seen.has(m.client.id)) seen.set(m.client.id, m.client)
+  }
   return [...seen.values()]
 }
 
@@ -71,7 +81,18 @@ export function ContentCalendar() {
 
   const today = todayKey()
   const month = params.get('m') ? `${params.get('m')}-01` : monthBounds(today).first
-  const filter = params.get('c') ?? 'all'
+  /**
+   * Which clients are on screen. A comma-separated list in the address, empty
+   * meaning all of them.
+   *
+   * It used to be one id or the word "all", so the calendar could show one
+   * client or the whole agency and nothing in between — and three clients at
+   * once is exactly the question a month is read to answer.
+   */
+  const selected = useMemo(() => {
+    const raw = params.get('c')
+    return new Set((raw && raw !== 'all' ? raw.split(',') : []).filter(Boolean))
+  }, [params])
   const { first, last } = monthBounds(month)
   const gridStart = mondayOf(first)
   const gridEnd = addDays(mondayOf(last), 6)
@@ -80,6 +101,9 @@ export function ContentCalendar() {
   const [viewing, setViewing] = useState<ContentTask | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  /** A one-off being added on a day, or an existing one being changed. */
+  const [oneOff, setOneOff] = useState<{ day: string; task: ContentOneOff | null } | null>(null)
+  const [moveError, setMoveError] = useState('')
 
   // Well past the month, so a batch shot this month can be followed to its
   // last post, and the rhythm table has the weeks after it.
@@ -92,20 +116,103 @@ export function ContentCalendar() {
     setParams(next, { replace: true })
   }
 
+  /** Add or remove one client from the view, leaving the others as they are. */
+  const toggleClient = (id: string) => {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setParam('c', next.size ? [...next].join(',') : null)
+  }
+
   const own = data.clients.filter((cl) => inProject(cl, project))
   const active = own.filter((cl) => !cl.isArchived)
   const archived = own.filter((cl) => cl.isArchived)
-  const current = active.find((cl) => cl.id === filter) ?? null
+  // The "showing only X, open their profile" line still makes sense with one
+  // client picked, and stops making sense with three.
+  const current = selected.size === 1 ? active.find((cl) => selected.has(cl.id)) ?? null : null
 
   const shown = useMemo(
-    () => tasks.filter((t) => filter === 'all' || t.client.id === filter),
-    [tasks, filter],
+    () =>
+      tasks.filter((t) => {
+        if (selected.size === 0) return true
+        // A one-off about nobody belongs to the calendar rather than to any
+        // client, so it stays visible while the view is narrowed: hiding it
+        // would be hiding work that no filter could ever bring back.
+        if (t.kind === 'oneoff' && !t.client.id) return true
+        return selected.has(t.client.id)
+      }),
+    [tasks, selected],
   )
   const byDay = useMemo(() => {
     const m = new Map<string, ContentTask[]>()
     for (const t of shown) (m.get(t.day) ?? m.set(t.day, []).get(t.day)!).push(t)
     return m
   }, [shown])
+
+  // ─── Dragging one day of work to another ─────────────────────────────────
+  // Pointer events rather than HTML5 drag-and-drop, matching the task
+  // calendar: the same gesture works with a finger, and a drag that has not
+  // passed the threshold yet is still a click on the block.
+  const [drag, setDrag] = useState<{ task: ContentTask; label: string } | null>(null)
+  const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null)
+  const [hoverDay, setHoverDay] = useState<string | null>(null)
+  // Set when a drag ends, so the click that follows the pointerup does not
+  // also fire "add a one-off here" on the day it was dropped on.
+  const justDragged = useRef(false)
+
+  /** The day under a point, from the cells' own data-day. */
+  const dayUnder = (x: number, y: number) =>
+    (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('[data-day]')?.dataset.day ?? null
+
+  /**
+   * Begin a drag, but only once the pointer has actually travelled: a block is
+   * a thing to tick off and open as well as a thing to move, and a drag that
+   * started on pointerdown would eat every one of those clicks.
+   */
+  const startDrag = (task: ContentTask, label: string) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    const { clientX: sx, clientY: sy } = e
+    const onMove = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) <= 4) return
+      window.removeEventListener('pointermove', onMove)
+      setDrag({ task, label })
+      setDragPoint({ x: ev.clientX, y: ev.clientY })
+      setHoverDay(dayUnder(ev.clientX, ev.clientY))
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', () => window.removeEventListener('pointermove', onMove), { once: true })
+  }
+
+  useEffect(() => {
+    if (!drag) return
+    const move = (e: PointerEvent) => {
+      setDragPoint({ x: e.clientX, y: e.clientY })
+      setHoverDay(dayUnder(e.clientX, e.clientY))
+    }
+    const up = (e: PointerEvent) => {
+      const day = dayUnder(e.clientX, e.clientY)
+      const task = drag.task
+      setDrag(null)
+      setDragPoint(null)
+      setHoverDay(null)
+      justDragged.current = true
+      // Cleared on the next frame, once the click that follows this pointerup
+      // has been and gone.
+      requestAnimationFrame(() => { justDragged.current = false })
+      if (!day || day === task.day) return
+      setBusy(task.key)
+      setMoveError('')
+      moveTask(task, day)
+        .catch(() => setMoveError(c.couldNotMove))
+        .finally(() => setBusy(null))
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+  }, [drag, c])
 
   const tick = async (t: ContentTask, done: boolean) => {
     setBusy(t.key)
@@ -151,7 +258,7 @@ export function ContentCalendar() {
   for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) days.push(d)
   const rhythm = Array.from({ length: 8 }, (_, i) => addDays(gridEnd, 1 + i * 7))
 
-  const visibleClients = filter === 'all' ? active : active.filter((cl) => cl.id === filter)
+  const visibleClients = selected.size === 0 ? active : active.filter((cl) => selected.has(cl.id))
 
   return (
     <div className="text-text-main">
@@ -187,18 +294,22 @@ export function ContentCalendar() {
         </div>
         <p className="max-w-[62ch] text-text-muted mt-4 text-[1.05rem]">{c.lede(active.length)}</p>
 
+        {/* Each client is its own switch, so any set of them can be on at once.
+            "All clients" is not one of the switches — it is the way back to
+            none of them being on. */}
         <ul className="flex flex-wrap gap-2 mt-6">
           <li>
-            <ChipButton pressed={filter === 'all'} onClick={() => setParam('c', null)}>
+            <ChipButton pressed={selected.size === 0} onClick={() => setParam('c', null)}>
               {c.allClients}
             </ChipButton>
           </li>
           {active.map((cl) => (
             <li key={cl.id}>
-              <ChipButton pressed={filter === cl.id} color={cl.color} onClick={() => setParam('c', filter === cl.id ? null : cl.id)}>
+              <ChipButton pressed={selected.has(cl.id)} color={cl.color} onClick={() => toggleClient(cl.id)}>
                 <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: cl.color }} />
                 {cl.name}
                 <small className="font-normal text-text-muted">{c.perMonth(cl.postsPerMonth)}</small>
+                {selected.has(cl.id) && <Check size={13} style={{ color: cl.color }} />}
               </ChipButton>
             </li>
           ))}
@@ -220,10 +331,18 @@ export function ContentCalendar() {
                   {c.openProfile}
                 </Link>
               </>
+            ) : selected.size > 0 ? (
+              <>
+                {c.showingClients(selected.size, active.length)}{' '}
+                <button onClick={() => setParam('c', null)} className="font-semibold text-primary hover:underline">
+                  {c.clearFilter}
+                </button>
+              </>
             ) : (
               c.showingAll
             )}
           </p>
+          <p className="text-xs text-text-subtle">{c.dragHint}</p>
         </div>
       </header>
 
@@ -257,9 +376,17 @@ export function ContentCalendar() {
             return (
               <div
                 key={d}
-                className={`min-h-[130px] p-2 pb-2.5 flex flex-col gap-1.5 border-b border-border-md ${
+                // What a drop lands on, and what a click adds a one-off to.
+                data-day={d}
+                onClick={() => { if (!justDragged.current) setOneOff({ day: d, task: null }) }}
+                title={c.addOneOffHere}
+                className={`group/day relative min-h-[130px] p-2 pb-2.5 flex flex-col gap-1.5 border-b border-border-md cursor-pointer ${
                   (i + 1) % 7 ? 'border-r' : ''
-                } ${out ? 'bg-surface-2/50' : ''}`}
+                } ${out ? 'bg-surface-2/50' : ''} ${
+                  // The day a drop would land on. Ringed inside, so the grid's
+                  // own lines do not move while something is being dragged.
+                  hoverDay === d && drag ? 'ring-2 ring-inset ring-primary bg-primary-light/40' : ''
+                }`}
               >
                 <div className="flex justify-between items-baseline">
                   <span
@@ -272,15 +399,41 @@ export function ContentCalendar() {
                   {out && <span className="text-[10px] font-medium text-text-subtle">{fmt(d, { month: 'short' })}</span>}
                 </div>
                 {work.map((t) => (
-                  <TaskBlock key={t.key} task={t} busy={busy === t.key} onTick={tick} onView={setViewing} base={base} nameOf={nameOf} />
+                  <TaskBlock
+                    key={t.key}
+                    task={t}
+                    busy={busy === t.key}
+                    onTick={tick}
+                    onView={setViewing}
+                    onEditOneOff={(o) => setOneOff({ day: o.day, task: o })}
+                    onDragStart={startDrag(t, t.title)}
+                    dragging={drag?.task.key === t.key}
+                    base={base}
+                    nameOf={nameOf}
+                  />
                 ))}
                 {posts.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-auto">
                     {posts.map((t) => (
-                      <PostTag key={t.key} task={t} busy={busy === t.key} onTick={tick} nameOf={nameOf} />
+                      <PostTag
+                        key={t.key}
+                        task={t}
+                        busy={busy === t.key}
+                        onTick={tick}
+                        onDragStart={startDrag(t, t.tag ?? t.title)}
+                        dragging={drag?.task.key === t.key}
+                        nameOf={nameOf}
+                      />
                     ))}
                   </div>
                 )}
+
+                {/* The way in is the whole cell; this is what says so. It only
+                    appears on hover, so an empty month is not a grid of
+                    plus signs. */}
+                <span className="absolute top-1.5 right-1.5 opacity-0 group-hover/day:opacity-100 text-text-subtle transition-opacity">
+                  <Plus size={13} />
+                </span>
               </div>
             )
           })}
@@ -535,6 +688,34 @@ export function ContentCalendar() {
 
       {adding && <ClientDialog client={null} projectId={project.id} onClose={() => setAdding(false)} />}
       {viewing?.recording && <PlanViewer recording={viewing.recording} client={viewing.client} onClose={() => setViewing(null)} />}
+      {oneOff && (
+        <OneOffDialog
+          task={oneOff.task}
+          day={oneOff.day}
+          projectId={project.id}
+          onClose={() => setOneOff(null)}
+        />
+      )}
+
+      {/* What is being dragged, following the pointer. Nothing is listening on
+          it — it is there so the hand has something to carry. */}
+      {drag && dragPoint && (
+        <div
+          className="fixed z-[60] pointer-events-none px-2 py-1 rounded-md bg-surface border border-primary shadow-lg text-xs font-semibold text-text-main max-w-[220px] truncate"
+          style={{ left: dragPoint.x + 10, top: dragPoint.y + 10 }}
+        >
+          {drag.label}
+        </div>
+      )}
+
+      {moveError && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 px-3 py-2 rounded-lg bg-danger-bg border border-danger/30 text-danger text-xs shadow-lg">
+          {moveError}
+          <button onClick={() => setMoveError('')} className="hover:opacity-70">
+            <X size={12} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -575,6 +756,9 @@ function TaskBlock({
   busy,
   onTick,
   onView,
+  onEditOneOff,
+  onDragStart,
+  dragging,
   base,
   nameOf,
 }: {
@@ -582,6 +766,11 @@ function TaskBlock({
   busy: boolean
   onTick: (t: ContentTask, done: boolean) => void
   onView: (t: ContentTask) => void
+  /** A one-off opens its own dialog; a pipeline task has a client page instead. */
+  onEditOneOff?: (o: ContentOneOff) => void
+  /** Absent where the block cannot be moved, e.g. in the week-by-week list. */
+  onDragStart?: (e: React.PointerEvent) => void
+  dragging?: boolean
   base: string
   nameOf: (id: string | null) => string | null
 }) {
@@ -603,12 +792,20 @@ function TaskBlock({
   )
   return (
     <div
-      className={`group relative text-[0.78rem] leading-tight px-1.5 py-1 rounded-[3px] border-l-[3px] ${t.done ? 'opacity-55' : ''}`}
+      // The block is its own thing: a click on it ticks, opens or edits, and
+      // must not also count as a click on the day behind it.
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={onDragStart}
+      className={`group relative text-[0.78rem] leading-tight px-1.5 py-1 rounded-[3px] border-l-[3px] ${
+        t.done ? 'opacity-55' : ''
+      } ${onDragStart ? 'cursor-grab active:cursor-grabbing select-none' : ''} ${dragging ? 'opacity-40' : ''}`}
       style={{ borderLeftColor: k, backgroundColor: `color-mix(in srgb, ${k} 9%, transparent)` }}
       title={[t.title, t.detail, who, t.warning].filter(Boolean).join(' · ')}
     >
       <div className="flex items-start gap-1">
         <button
+          // A tick is not a drag, and must not become one on the way down.
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={() => onTick(t, !t.done)}
           disabled={busy}
           className={`mt-[1px] w-3.5 h-3.5 rounded-[3px] border flex-shrink-0 flex items-center justify-center ${
@@ -618,17 +815,33 @@ function TaskBlock({
         >
           {t.done && <Check size={10} strokeWidth={3} />}
         </button>
-        {/* A batch spans clients, so it has no one profile to open. */}
-        {clients.length === 1 ? (
-          <Link to={`${base}/${clients[0].id}`} className="min-w-0 flex-1">
+        {/* A one-off has no pipeline to open, so it opens itself. A batch
+            spans clients, so it has no one profile to open. */}
+        {t.oneOff && onEditOneOff ? (
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => onEditOneOff(t.oneOff!)}
+            className="min-w-0 flex-1 text-left"
+          >
+            {body}
+          </button>
+        ) : clients.length === 1 ? (
+          <Link to={`${base}/${clients[0].id}`} className="min-w-0 flex-1" onPointerDown={(e) => e.stopPropagation()}>
             {body}
           </Link>
         ) : (
           <div className="min-w-0 flex-1">{body}</div>
         )}
+        {onDragStart && (
+          <GripVertical
+            size={11}
+            className="flex-shrink-0 mt-[2px] text-text-subtle opacity-0 group-hover:opacity-100 transition-opacity"
+          />
+        )}
       </div>
       {(t.kind === 'plan' || t.kind === 'record') && t.recording && (t.recording.planPath || t.recording.planNotes) && (
         <button
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={() => onView(t)}
           className="mt-1 ml-[18px] inline-flex items-center gap-1 text-[0.7rem] font-semibold text-blue-accent hover:underline"
         >
@@ -648,28 +861,44 @@ function PostTag({
   task: t,
   busy,
   onTick,
+  onDragStart,
+  dragging,
   nameOf,
 }: {
   task: ContentTask
   busy: boolean
   onTick: (t: ContentTask, done: boolean) => void
+  /** Absent where the tag cannot be moved, e.g. in the week-by-week list. */
+  onDragStart?: (e: React.PointerEvent) => void
+  dragging?: boolean
   nameOf: (id: string | null) => string | null
 }) {
-  const { c } = useContentT()
+  const { c, fmt } = useContentT()
   const empty = !!t.warning
   const who = nameOf(t.assigneeId)
+  // A slot dragged off the day its rule puts it on. Worth saying on the tag
+  // itself: otherwise a Tuesday post sitting on a Thursday looks like the
+  // rule says Thursday.
+  const moved = t.ruleDay && t.ruleDay !== t.day
   return (
     <button
-      onClick={() => !empty && onTick(t, !t.done)}
-      disabled={busy || empty}
-      title={
+      onClick={(e) => { e.stopPropagation(); if (!empty) onTick(t, !t.done) }}
+      onPointerDown={onDragStart}
+      // An empty slot still moves: it is the day that is being planned, and
+      // the piece that fills it is worked out from the day afterwards. Only
+      // ticking it off is meaningless.
+      disabled={busy}
+      title={[
         empty
           ? c.postEmpty(t.client.name)
-          : `${t.client.name} · ${t.tag}${who ? ` · ${who}` : ''} — ${t.done ? c.postPosted : c.postWhenPosted}`
-      }
+          : `${t.client.name} · ${t.tag}${who ? ` · ${who}` : ''} — ${t.done ? c.postPosted : c.postWhenPosted}`,
+        moved ? c.movedFromRule(fmt(t.ruleDay!, { day: 'numeric', month: 'short' })) : '',
+      ].filter(Boolean).join('\n')}
       className={`text-[0.7rem] font-semibold px-1.5 py-[1px] rounded-sm inline-flex items-center gap-0.5 ${
-        empty ? 'border border-dashed cursor-default bg-transparent' : 'text-white'
-      } ${t.done ? 'opacity-60' : ''}`}
+        empty ? 'border border-dashed bg-transparent' : 'text-white'
+      } ${t.done ? 'opacity-60' : ''} ${dragging ? 'opacity-40' : ''} ${
+        onDragStart ? 'cursor-grab active:cursor-grabbing select-none' : ''
+      } ${moved ? 'ring-1 ring-offset-1 ring-text-subtle/50' : ''}`}
       style={empty ? { borderColor: t.client.color, color: t.client.color } : { backgroundColor: t.client.color }}
     >
       {t.done && <Check size={10} strokeWidth={3} />}

@@ -14,7 +14,7 @@ import { useEmployeeStore } from '../../store/employeeStore'
 import { useAuthStore } from '../../store/authStore'
 import { useDayOrderStore, DayItemKind, DayBoard } from '../../store/dayOrderStore'
 import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/taskScheduler'
-import { personColor, todoOwner } from '../../lib/personColor'
+import { calendarColorOf, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel, PeekStatus } from './TaskPeekPanel'
 import { TaskEditDialog, NewTaskDialog } from '../shared/TaskEditDialog'
@@ -152,8 +152,15 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
 
   // One click: waiting. Two: done. The same rule as the todo board.
   const tickTodo = useTodoTick()
-  const { employees } = useEmployeeStore()
+  const { employees, allEmployees } = useEmployeeStore()
   const currentUserId = useAuthStore((s) => s.currentUser?.id)
+  /**
+   * What to paint each person's work. Read from the unscoped list: the board
+   * draws whoever owns the work, and on a project page `employees` is narrowed
+   * to that project, so a colour looked up there would be missed for anybody
+   * outside it and the block would fall back to the old purple.
+   */
+  const colorOf = (id: string | null | undefined) => calendarColorOf(id, allEmployees)
   // Only the owner moves assigned work between days. An employee's own
   // board still lets them tick it, not postpone it.
   const canMoveTasks = !readOnly && !!useAuthStore((s) => s.realUser?.isOwner)
@@ -343,7 +350,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
           blocks.push({
             key: `todo-${t.id}`,
             label: t.title,
-            color: personColor(todoOwner(t) ?? ownerId),
+            color: colorOf(todoOwner(t) ?? ownerId),
             ownWork: true,
             todo: t,
             urgent: t.isUrgent,
@@ -359,7 +366,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
           blocks.push({
             key: `overlay-todo-${t.id}`,
             label: t.title,
-            color: personColor(todoOwner(t)),
+            color: colorOf(todoOwner(t)),
             ownWork: true,
             todo: t,
             urgent: t.isUrgent,
@@ -379,7 +386,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
             key: `task-${occ.task.id}-${empIdForCal}-${occ.date}${ghost ? '-ghost' : ''}`,
             ghost,
             label: occ.task.title,
-            color: personColor(empIdForCal),
+            color: colorOf(empIdForCal),
             task: occ.task,
             employeeId: empIdForCal,
             occDate: occ.date,
@@ -783,7 +790,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
                               }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-main hover:bg-surface-2"
                             >
-                              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: personColor(emp.id) }} />
+                              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: colorOf(emp.id) }} />
                               <span className="flex-1 text-left truncate">{emp.name}{isMe ? ` (${t('chat_you').toLowerCase()})` : ''}</span>
                               {on && <Check size={13} className="text-primary" />}
                             </button>
@@ -1640,6 +1647,9 @@ function Unscheduled({
 }) {
   // `t` is the todo inside the list below, so the translator is `tr` here.
   const { t: tr } = useT()
+  // The same colours the board itself paints, so a todo looks the same either
+  // side of being dragged onto a day.
+  const allEmployees = useEmployeeStore((s) => s.allEmployees)
   // Everything on this board that has no day yet.
   //
   // This used to show only lists[0], which meant a todo added to any other
@@ -1688,7 +1698,7 @@ function Unscheduled({
               // Their colour, outlined, exactly as the same todo looks once
               // it has a day — so dragging it onto the calendar changes where
               // it is and nothing else about it.
-              style={{ borderColor: personColor(todoOwner(t)) }}
+              style={{ borderColor: calendarColorOf(todoOwner(t), allEmployees) }}
             >
               {!readOnly && (
                 <GripVertical size={12} className="text-text-subtle mt-0.5 flex-shrink-0" />

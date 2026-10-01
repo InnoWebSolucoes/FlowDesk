@@ -52,12 +52,18 @@ export function ContentClientPage() {
   const edits = useMemo(() => data.edits.filter((e) => e.clientId === clientId), [data.edits, clientId])
   const rules = useMemo(() => data.rules.filter((r) => r.clientId === clientId), [data.rules, clientId])
   const posted = useMemo(() => data.posted.filter((p) => p.clientId === clientId), [data.posted, clientId])
+  // Slots this client has had dragged off the day their rule puts them on, so
+  // this page agrees with the calendar about when a piece goes out.
+  const postMoves = useMemo(() => data.postMoves.filter((m) => m.clientId === clientId), [data.postMoves, clientId])
 
   const today = todayKey()
   // Far enough ahead that every piece recorded so far has reached a slot.
   const latest = [...recordings.map((r) => r.recordedOn), ...edits.map((e) => e.editedOn), today].sort().pop()!
   const until = addDays(latest, 120)
-  const flow = useMemo(() => flowFor(recordings, edits, rules, posted, until), [recordings, edits, rules, posted, until])
+  const flow = useMemo(
+    () => flowFor(recordings, edits, rules, posted, until, postMoves),
+    [recordings, edits, rules, posted, until, postMoves],
+  )
 
   if (!project) return null
   if (!project.hasContentCalendar) {
@@ -304,7 +310,9 @@ export function ContentClientPage() {
                           <input
                             type="checkbox"
                             checked={!!slot.done}
-                            onChange={(e) => data.setPosted(client.id, slot.day, e.target.checked).catch(report)}
+                            // Keyed by the rule's day, not where the slot sits:
+                            // a slot dragged to another day keeps its tick.
+                            onChange={(e) => data.setPosted(client.id, slot.ruleDay, e.target.checked).catch(report)}
                             className="w-4 h-4 accent-primary cursor-pointer"
                           />
                         )}

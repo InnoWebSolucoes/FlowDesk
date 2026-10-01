@@ -36,6 +36,46 @@ export function personColor(id: string | null | undefined): string {
   return id === INNOWEB_ID ? INNOWEB : EMPLOYEE
 }
 
+/**
+ * The colours offered for a person's calendar colour.
+ *
+ * Chosen to be told apart from each other when three of them sit in one day
+ * of a week view, and to carry white text: a block on the calendar is filled
+ * with the person's colour and labelled in white, so a pale swatch would be a
+ * block you cannot read. The first is the employee purple the calendar used
+ * for everybody, so "what it was before" is a choice like any other.
+ */
+export const CALENDAR_COLORS = [
+  '#6B21A8', '#1D4ED8', '#0E7A6A', '#15803D', '#A16207', '#B45309',
+  '#B91C1C', '#BE185D', '#7E22CE', '#0F766E', '#334155', '#6B7280',
+] as const
+
+/**
+ * Whether a string is one of our hex colours. The column is checked in the
+ * database too; this stops a bad value reaching the stylesheet from a stale
+ * row that predates the check.
+ */
+export function isHexColor(v: string | null | undefined): v is string {
+  return !!v && /^#[0-9A-Fa-f]{6}$/.test(v)
+}
+
+/**
+ * What to paint one person's work on the calendar of tasks: the colour chosen
+ * on their profile, or the old two-colour answer when nobody has chosen one.
+ *
+ * Deliberately separate from personColor, which Avatars use. A colour set here
+ * is about reading a calendar with several people's weeks on it, and spreading
+ * it to avatars would change how people are drawn all over the app — which is
+ * not what was asked for and not what it means.
+ */
+export function calendarColorOf(
+  id: string | null | undefined,
+  people: { id: string; calendarColor?: string | null }[],
+): string {
+  const chosen = people.find((p) => p.id === id)?.calendarColor
+  return isHexColor(chosen) ? chosen : personColor(id)
+}
+
 /** Is this InnoWeb's own work rather than an employee's? */
 export function isInnoweb(id: string | null | undefined): boolean {
   return id === INNOWEB_ID

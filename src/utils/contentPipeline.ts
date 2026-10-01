@@ -2,6 +2,7 @@ import {
   ContentClient,
   ContentEdit,
   ContentPostDone,
+  ContentPostMove,
   ContentPostRule,
   ContentRecording,
 } from '../types'
@@ -148,7 +149,14 @@ export interface EditFlow {
 }
 
 export interface PostSlot {
+  /** The day it goes out on: where it was moved to, else where its rule put it. */
   day: string
+  /**
+   * The day its rule put it on. The slot's name: a tick and a move are both
+   * keyed by this, so moving a slot does not lose the tick on it and moving it
+   * twice rewrites one row rather than chaining.
+   */
+  ruleDay: string
   /** The piece it publishes, or null when nothing edited is ready by then. */
   piece: Piece | null
   done: ContentPostDone | null
@@ -192,6 +200,8 @@ export function flowFor(
   rules: ContentPostRule[],
   done: ContentPostDone[],
   until: string,
+  /** Single slots dragged off the day their rule put them on. */
+  moves: ContentPostMove[] = [],
 ): ClientFlow {
   const pieces: Piece[] = []
   for (const r of sortRecordings(recordings)) {
@@ -234,16 +244,25 @@ export function flowFor(
   // nothing ready stays empty rather than holding a piece back, so it shows
   // up as a gap to fill.
   const doneOn = new Map(done.map((d) => [d.postedOn, d]))
+  const movedTo = new Map(moves.map((m) => [m.fromDay, m.toDay]))
   const slots: PostSlot[] = []
   let next = 0
-  for (const [day, rule] of postDays(rules, until)) {
+  // Where each slot actually goes, back in day order: a slot moved into next
+  // week takes a later piece than one left where it was, so the pieces have to
+  // be handed out against the days the posts really go out on.
+  const placed = postDays(rules, until)
+    .map(([ruleDay, rule]) => ({ ruleDay, rule, day: movedTo.get(ruleDay) ?? ruleDay }))
+    .sort((a, b) => a.day.localeCompare(b.day) || a.ruleDay.localeCompare(b.ruleDay))
+  for (const { day, ruleDay, rule } of placed) {
     const p = pieces[next]
     const ready = p && p.readyOn && p.readyOn <= day ? p : null
     if (ready) {
       ready.postOn = day
       next++
     }
-    slots.push({ day, piece: ready, done: doneOn.get(day) ?? null, rule })
+    // The tick stays keyed to the rule's day, so a slot that is dragged about
+    // keeps whatever was recorded against it.
+    slots.push({ day, ruleDay, piece: ready, done: doneOn.get(ruleDay) ?? null, rule })
   }
 
   return { pieces, edits: flows, slots }

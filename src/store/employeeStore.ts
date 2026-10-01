@@ -51,6 +51,9 @@ function toEmployee(row: any): Employee {
     isActive: row.is_active ?? true,
     projectId: row.project_id ?? null,
     projectIds: (row.project_members ?? []).map((m: any) => m.project_id),
+    // Null until somebody picks one, which is what keeps the calendar looking
+    // as it did for anyone nobody has chosen a colour for.
+    calendarColor: row.calendar_color ?? null,
   }
 }
 
@@ -78,7 +81,7 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     set({ loading: true })
     const { data, error } = await supabase
       .from('users')
-      .select('id, email, name, role, avatar_initials, join_date, job_title, department, manager_id, project_id, is_active, project_members(project_id)')
+      .select('id, email, name, role, avatar_initials, join_date, job_title, department, manager_id, project_id, is_active, calendar_color, project_members(project_id)')
       .order('name')
 
     if (!error && data) {
@@ -156,8 +159,13 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     if (updates.department !== undefined) patch.department = updates.department
     if (updates.avatarInitials !== undefined) patch.avatar_initials = updates.avatarInitials
     if (updates.projectId !== undefined) patch.project_id = updates.projectId
+    if (updates.calendarColor !== undefined) patch.calendar_color = updates.calendarColor
 
-    await supabase.from('users').update(patch).eq('id', id)
+    // Surfaced rather than swallowed: a write that RLS or a missing column
+    // refuses used to leave the screen showing the new value and the database
+    // holding the old one, which reads as "saved" and is not.
+    const { error } = await supabase.from('users').update(patch).eq('id', id)
+    if (error) throw new Error(error.message)
     set((s) => {
       // Re-derive the scoped list: a project change can move someone in or out.
       const all = s.allEmployees.map((e) => (e.id === id ? { ...e, ...updates } : e))

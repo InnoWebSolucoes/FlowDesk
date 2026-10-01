@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useMatch, useOutletContext } from 'react-router-dom'
 import { X, ExternalLink, Loader2, AlertCircle } from 'lucide-react'
 import { useContentStore, ClientInput } from '../../store/contentStore'
-import { ContentClient, ContentRecording, Project } from '../../types'
+import { ContentClient, ContentOneOff, ContentRecording, Project } from '../../types'
 import { ClientFlow, flowFor, pieceTag, todayKey } from '../../utils/contentPipeline'
 import { ContentStrings, useContentT } from '../../i18n/content'
 import { fileKind } from '../resources/ResourceThumbnail'
@@ -17,6 +17,9 @@ export const KIND_COLOR: Record<ContentTaskKind, string> = {
   deliver: '#1F8A4C',
   schedule: '#C23B3B',
   post: '#7A4A0A',
+  // Nothing to do with the pipeline, and drawn so: a one-off is not a stage
+  // anything flows through, so it takes a colour none of the stages uses.
+  oneoff: '#6D28D9',
 }
 
 /** Client swatches, distinct enough side by side on a busy calendar day. */
@@ -64,7 +67,7 @@ export function useContentBase() {
 
 // ─── Tasks ──────────────────────────────────────────────────────────────────
 
-export type ContentTaskKind = 'plan' | 'record' | 'edit' | 'deliver' | 'schedule' | 'post'
+export type ContentTaskKind = 'plan' | 'record' | 'edit' | 'deliver' | 'schedule' | 'post' | 'oneoff'
 
 /** One task, on one day, for one client — or a batch of them. */
 export interface ContentTask {
@@ -89,6 +92,15 @@ export interface ContentTask {
    * one go on one day. Ticking the batch ticks each of them.
    */
   members?: ContentTask[]
+  /**
+   * The day this task's identity is keyed by, where that differs from the day
+   * it is drawn on. Only posts have one: a slot is generated from a rule, so
+   * the day the rule put it on is its only stable name, and both its tick and
+   * its move are recorded against that.
+   */
+  ruleDay?: string
+  /** For a one-off: the row itself, so it can be edited and deleted. */
+  oneOff?: ContentOneOff
 }
 
 /**
@@ -96,7 +108,7 @@ export interface ContentTask {
  * posting slots generated up to `until`.
  */
 export function useContentTasks(until: string, project: Project | null) {
-  const { clients, recordings, edits, rules, posted } = useContentStore()
+  const { clients, recordings, edits, rules, posted, postMoves, oneOffs } = useContentStore()
   const { c, fmt } = useContentT()
   const flows: Record<string, ClientFlow> = {}
   const tasks: ContentTask[] = []
@@ -111,6 +123,7 @@ export function useContentTasks(until: string, project: Project | null) {
       rules.filter((r) => r.clientId === client.id),
       posted.filter((p) => p.clientId === client.id),
       until,
+      postMoves.filter((m) => m.clientId === client.id),
     )
     flows[client.id] = flow
 
@@ -204,9 +217,13 @@ export function useContentTasks(until: string, project: Project | null) {
 
     for (const s of flow.slots) {
       tasks.push({
-        key: `post:${client.id}:${s.day}`,
+        // Named after the rule's day, not where it sits: the key has to hold
+        // still while the slot is dragged about, or React rebuilds the block
+        // mid-drag and the drag is dropped.
+        key: `post:${client.id}:${s.ruleDay}`,
         kind: 'post',
         day: s.day,
+        ruleDay: s.ruleDay,
         client,
         title: c.taskPost(s.piece ? pieceTag(client, s.piece.n) : client.name),
         detail: s.piece ? client.name : `${client.name} · ${c.nothingInTime}`,
@@ -218,15 +235,63 @@ export function useContentTasks(until: string, project: Project | null) {
     }
   }
 
+  // Put on the calendar by hand, so outside the per-client loop: a one-off
+  // need not belong to a client at all, and the ones that do are not part of
+  // that client's pipeline.
+  for (const o of oneOffs) {
+    if (!project || o.projectId !== project.id) continue
+    const client = o.clientId ? clients.find((cl) => cl.id === o.clientId) : undefined
+    tasks.push({
+      key: `oneoff:${o.id}`,
+      kind: 'oneoff',
+      day: o.day,
+      // A one-off with no client still needs something to colour and sort it
+      // by. A stand-in rather than a null client keeps every reader of a task
+      // — the day block, the week list, the sorting — from needing a special
+      // case for the one kind that may not have one.
+      client: client ?? NO_CLIENT,
+      title: o.title,
+      detail: o.detail,
+      assigneeId: o.assigneeId,
+      done: !!o.doneAt,
+      warning: null,
+      oneOff: o,
+    })
+  }
+
   tasks.sort(byDayThenStage)
   return { flows, tasks }
+}
+
+/**
+ * Stands in for the client a one-off task has not got. Its colour is the
+ * one-off colour, so an unattached task is drawn in the colour its kind is
+ * drawn in everywhere else, and its code is empty so it adds nothing to a
+ * batch's "SHZ + TAS".
+ */
+export const NO_CLIENT: ContentClient = {
+  id: '',
+  projectId: '',
+  name: '',
+  code: '',
+  color: KIND_COLOR.oneoff,
+  postsPerMonth: 0,
+  contactName: '',
+  contactEmail: '',
+  contactPhone: '',
+  handle: '',
+  notes: '',
+  isArchived: false,
+  createdAt: '',
 }
 
 /**
  * Scheduling comes first in a day — it is done in the morning so that day's
  * posts go out — and delivery last, once the day's editing is finished.
  */
-const STAGE_ORDER: Record<ContentTaskKind, number> = { schedule: 0, plan: 1, record: 2, edit: 3, deliver: 4, post: 5 }
+const STAGE_ORDER: Record<ContentTaskKind, number> = {
+  schedule: 0, plan: 1, record: 2, edit: 3, deliver: 4, oneoff: 5, post: 6,
+}
 
 function byDayThenStage(a: ContentTask, b: ContentTask) {
   return a.day.localeCompare(b.day) || STAGE_ORDER[a.kind] - STAGE_ORDER[b.kind] || a.client.name.localeCompare(b.client.name)
@@ -305,7 +370,49 @@ export async function toggleTask(task: ContentTask, done: boolean): Promise<void
     case 'schedule':
       return s.updateEdit(id, { scheduleDoneAt: at })
     case 'post':
-      return s.setPosted(task.client.id, task.day, done)
+      // Against the rule's day, which is the slot's name — so a slot that has
+      // been dragged to another day keeps the tick on it.
+      return s.setPosted(task.client.id, task.ruleDay ?? task.day, done)
+    case 'oneoff':
+      return s.updateOneOff(id, { doneAt: at })
+  }
+}
+
+/**
+ * Move one task to another day. One task: the recurring thing behind it, where
+ * there is one, is left exactly as it was.
+ *
+ * A session has its own date column, so moving it is writing that column. A
+ * posting slot has no row of its own — it is worked out from a rule — so it
+ * gets an exception recorded against the day the rule put it on, rather than
+ * the rule being edited and every week moving with it.
+ *
+ * A batch moves each of its members, since a batch is a drawing of several
+ * tasks on one day and not a thing in itself.
+ */
+export async function moveTask(task: ContentTask, day: string): Promise<void> {
+  if (task.members) {
+    await Promise.all(task.members.map((m) => moveTask(m, day)))
+    return
+  }
+  if (task.day === day) return
+  const s = useContentStore.getState()
+  const id = task.key.split(':')[1]
+  switch (task.kind) {
+    case 'plan':
+      return s.updateRecording(id, { planOn: day })
+    case 'record':
+      return s.updateRecording(id, { recordedOn: day })
+    case 'edit':
+      return s.updateEdit(id, { editedOn: day })
+    case 'deliver':
+      return s.updateEdit(id, { deliverOn: day })
+    case 'schedule':
+      return s.updateEdit(id, { scheduleOn: day })
+    case 'post':
+      return s.movePost(task.client.id, task.ruleDay ?? task.day, day)
+    case 'oneoff':
+      return s.updateOneOff(id, { day })
   }
 }
 
@@ -352,6 +459,204 @@ export function PersonSelect({
         </option>
       ))}
     </select>
+  )
+}
+
+// ─── One-off tasks ──────────────────────────────────────────────────────────
+
+/**
+ * Put something on the calendar by hand, or change what is there.
+ *
+ * Everything else on this calendar is worked out from a client's sessions and
+ * posting rules, which is right for content and no use at all for the rest of
+ * a week — a reshoot, a studio booking, a call. This writes a row that belongs
+ * to no pipeline: a day, a title, who does it, and a tick.
+ */
+export function OneOffDialog({
+  task,
+  day,
+  projectId,
+  onClose,
+}: {
+  /** The one-off being changed, or null when adding. */
+  task: ContentOneOff | null
+  /** The day clicked, for a new one. */
+  day: string
+  projectId: string
+  onClose: () => void
+}) {
+  const { clients: allClients, addOneOff, updateOneOff, deleteOneOff } = useContentStore()
+  const { c } = useContentT()
+  // Filtered here rather than in the selector: zustand 5 re-renders forever on
+  // a selector that returns a new array every time.
+  const clients = allClients.filter((cl) => cl.projectId === projectId && !cl.isArchived)
+
+  const [form, setForm] = useState({
+    day: task?.day ?? day,
+    title: task?.title ?? '',
+    detail: task?.detail ?? '',
+    clientId: task?.clientId ?? null as string | null,
+    assigneeId: task?.assigneeId ?? null as string | null,
+    done: !!task?.doneAt,
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }))
+
+  const save = async () => {
+    if (!form.title.trim()) return setError(c.oneOffNeedsTitle)
+    setSaving(true)
+    setError('')
+    try {
+      if (task) {
+        await updateOneOff(task.id, {
+          day: form.day,
+          title: form.title.trim(),
+          detail: form.detail,
+          clientId: form.clientId,
+          assigneeId: form.assigneeId,
+          // Only when it actually changed, so saving an edit does not restamp
+          // when it was finished.
+          ...(form.done !== !!task.doneAt && { doneAt: form.done ? new Date().toISOString() : null }),
+        })
+      } else {
+        await addOneOff({
+          projectId,
+          clientId: form.clientId,
+          day: form.day,
+          title: form.title.trim(),
+          detail: form.detail,
+          assigneeId: form.assigneeId,
+        })
+      }
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const remove = async () => {
+    if (!task) return
+    setSaving(true)
+    try {
+      await deleteOneOff(task.id)
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+      setSaving(false)
+    }
+  }
+
+  const input = 'w-full text-sm bg-surface border border-border-md rounded-md px-3 py-2 text-text-main focus:outline-none focus:ring-2 focus:ring-primary/30'
+  const label = 'block text-xs font-medium text-text-muted mb-1'
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="font-semibold text-text-main">{task ? c.oneOffEdit : c.oneOffNew}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:bg-surface-2" title={c.close}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div>
+            <label className={label}>{c.oneOffTitleLabel}</label>
+            <input
+              autoFocus
+              className={input}
+              value={form.title}
+              onChange={(e) => set('title', e.target.value)}
+              placeholder={c.oneOffTitlePlaceholder}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={label}>{c.oneOffDay}</label>
+              <input className={input} type="date" value={form.day} onChange={(e) => set('day', e.target.value || form.day)} />
+            </div>
+            <div>
+              <label className={label}>{c.oneOffWho}</label>
+              <PersonSelect value={form.assigneeId} onChange={(id) => set('assigneeId', id)} className="w-full" />
+            </div>
+          </div>
+
+          <div>
+            <label className={label}>{c.oneOffClient}</label>
+            <select
+              value={form.clientId ?? ''}
+              onChange={(e) => set('clientId', e.target.value || null)}
+              className={input}
+            >
+              <option value="">{c.oneOffNoClient}</option>
+              {clients.map((cl) => (
+                <option key={cl.id} value={cl.id}>
+                  {cl.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className={label}>{c.oneOffDetail}</label>
+            <textarea
+              className={`${input} min-h-[72px]`}
+              value={form.detail}
+              onChange={(e) => set('detail', e.target.value)}
+              placeholder={c.oneOffDetailPlaceholder}
+            />
+          </div>
+
+          {/* It is free-form, but it is still work on a calendar of work: it
+              ticks off like everything beside it. */}
+          {task && (
+            <label className="flex items-center gap-2 text-sm text-text-main cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.done}
+                onChange={(e) => set('done', e.target.checked)}
+                className="w-4 h-4 accent-primary cursor-pointer"
+              />
+              {c.oneOffDone}
+            </label>
+          )}
+
+          {error && <p className="text-sm text-danger">{error}</p>}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-border">
+          {task ? (
+            <button
+              onClick={remove}
+              disabled={saving}
+              className="text-sm px-3 py-2 rounded-lg text-danger hover:bg-danger/10 disabled:opacity-50"
+            >
+              {c.oneOffDelete}
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <button onClick={onClose} className="text-sm px-4 py-2 rounded-lg text-text-muted hover:bg-surface-2">
+              {c.cancel}
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="text-sm font-medium px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-60 inline-flex items-center gap-1.5"
+            >
+              {saving && <Loader2 size={14} className="animate-spin" />}
+              {c.save}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

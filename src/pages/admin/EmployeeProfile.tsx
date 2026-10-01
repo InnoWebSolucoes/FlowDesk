@@ -17,6 +17,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { Bold, Italic, List, ListOrdered, Heading2 } from 'lucide-react'
 import { useT } from '../../i18n/useT'
 import { Avatar } from '../../components/shared/Avatar'
+import { CalendarColorPicker } from '../../components/shared/CalendarColorPicker'
 import { WorkLog } from '../../components/worklog/WorkLog'
 
 // Analytics last: the rest are their work, analytics is the reading of it.
@@ -132,6 +133,12 @@ export function EmployeeProfile() {
             <p className="text-text-muted text-sm">{emp.jobTitle} · {emp.department}</p>
             <p className="text-text-subtle text-xs mt-1">{emp.email}</p>
             <p className="text-text-subtle text-xs">{t('profile_joined')} {format(parseISO(emp.joinDate), 'EEE d MMM yyyy', dateLocale)}</p>
+
+            {/* What their work is painted on the calendar of tasks. It is on
+                the profile and not in a settings page because the question it
+                answers — which of these three blocks is theirs — is asked
+                while looking at a person. */}
+            <CalendarColorPicker employee={emp} className="mt-3" />
           </div>
 
           {/* Their whole side of FlowDesk, exactly as they see it — not a

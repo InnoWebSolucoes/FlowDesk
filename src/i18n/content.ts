@@ -11,7 +11,12 @@ import { formatDay } from '../utils/contentPipeline'
  * typed against the English, so a missing or mis-shaped one does not compile.
  */
 
-type Stage = 'plan' | 'record' | 'edit' | 'deliver' | 'schedule' | 'post'
+/**
+ * The stages a piece of content goes through, plus 'oneoff' — which is not a
+ * stage at all but something put on the calendar by hand. It is in here
+ * because everything that draws a task on a day needs a word for it.
+ */
+type Stage = 'plan' | 'record' | 'edit' | 'deliver' | 'schedule' | 'post' | 'oneoff'
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
 
@@ -30,6 +35,7 @@ const en = {
     deliver: 'Delivery',
     schedule: 'Scheduling',
     post: 'Posting',
+    oneoff: 'One-off',
   } as Record<Stage, string>,
   /** How a task starts when it is written as an instruction: "Record ESP". */
   verb: {
@@ -39,6 +45,7 @@ const en = {
     deliver: 'Deliver',
     schedule: 'Schedule',
     post: 'Post',
+    oneoff: 'Do',
   } as Record<Stage, string>,
   /** 0 = Sunday … 6 = Saturday. */
   weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
@@ -174,6 +181,27 @@ const en = {
   saving: 'Saving…',
   save: 'Save',
   addClient: 'Add client',
+
+  // ─── One-off tasks, and moving things about ───────────────────────────────
+  oneOffNew: 'Add a one-off',
+  oneOffEdit: 'One-off task',
+  oneOffTitleLabel: 'What is it',
+  oneOffTitlePlaceholder: 'Reshoot the intro, studio booking, call with the client…',
+  oneOffDay: 'Day',
+  oneOffWho: 'Who does it',
+  oneOffClient: 'Client',
+  oneOffNoClient: 'Not about a client',
+  oneOffDetail: 'Anything else',
+  oneOffDetailPlaceholder: 'Where, how long, what to bring…',
+  oneOffDone: 'Done',
+  oneOffDelete: 'Delete',
+  oneOffNeedsTitle: 'Say what it is first.',
+  addOneOffHere: 'Add a one-off on this day',
+  dragHint: 'Drag anything to another day. It moves that one day only — a repeating post keeps repeating.',
+  movedFromRule: (day: string) => `Moved from ${day}`,
+  couldNotMove: 'That could not be moved.',
+  showingClients: (n: number, total: number) => `Showing ${n} of ${total} clients.`,
+  clearFilter: 'Show all',
 
   // ─── Client profile ───────────────────────────────────────────────────────
   clientGone: 'This client does not exist any more.',
@@ -317,6 +345,7 @@ const pt: typeof en = {
     deliver: 'Entrega',
     schedule: 'Agendamento',
     post: 'Publicação',
+    oneoff: 'Pontual',
   },
   verb: {
     plan: 'Planear',
@@ -325,6 +354,7 @@ const pt: typeof en = {
     deliver: 'Entregar',
     schedule: 'Agendar',
     post: 'Publicar',
+    oneoff: 'Fazer',
   },
   weekday: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'],
   dow: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
@@ -458,6 +488,27 @@ const pt: typeof en = {
   saving: 'A guardar…',
   save: 'Guardar',
   addClient: 'Adicionar cliente',
+
+  // ─── Tarefas pontuais, e mover coisas ─────────────────────────────────────
+  oneOffNew: 'Adicionar pontual',
+  oneOffEdit: 'Tarefa pontual',
+  oneOffTitleLabel: 'O que é',
+  oneOffTitlePlaceholder: 'Regravar a introdução, reservar estúdio, chamada com o cliente…',
+  oneOffDay: 'Dia',
+  oneOffWho: 'Quem faz',
+  oneOffClient: 'Cliente',
+  oneOffNoClient: 'Não é de um cliente',
+  oneOffDetail: 'Mais alguma coisa',
+  oneOffDetailPlaceholder: 'Onde, quanto tempo, o que levar…',
+  oneOffDone: 'Feito',
+  oneOffDelete: 'Eliminar',
+  oneOffNeedsTitle: 'Diga primeiro o que é.',
+  addOneOffHere: 'Adicionar uma tarefa pontual neste dia',
+  dragHint: 'Arraste qualquer coisa para outro dia. Move só esse dia — uma publicação que se repete continua a repetir-se.',
+  movedFromRule: (day: string) => `Movido de ${day}`,
+  couldNotMove: 'Não foi possível mover.',
+  showingClients: (n: number, total: number) => `A mostrar ${n} de ${total} clientes.`,
+  clearFilter: 'Mostrar todos',
 
   // ─── Perfil do cliente ────────────────────────────────────────────────────
   clientGone: 'Este cliente já não existe.',

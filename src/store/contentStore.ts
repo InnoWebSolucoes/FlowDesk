@@ -3,7 +3,9 @@ import { supabase } from '../lib/supabaseClient'
 import {
   ContentClient,
   ContentEdit,
+  ContentOneOff,
   ContentPostDone,
+  ContentPostMove,
   ContentPostRule,
   ContentRecording,
 } from '../types'
@@ -85,6 +87,24 @@ function toDone(r: any): ContentPostDone {
   return { clientId: r.client_id, postedOn: r.posted_on, doneBy: r.done_by, doneAt: r.done_at }
 }
 
+function toMove(r: any): ContentPostMove {
+  return { clientId: r.client_id, fromDay: r.from_day, toDay: r.to_day }
+}
+
+function toOneOff(r: any): ContentOneOff {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    clientId: r.client_id ?? null,
+    day: r.day,
+    title: r.title,
+    detail: r.detail ?? '',
+    assigneeId: r.assignee_id ?? null,
+    doneAt: r.done_at ?? null,
+    createdAt: r.created_at,
+  }
+}
+
 /** Anyone who can be given a content task: the owner and the employees. */
 export interface ContentPerson {
   id: string
@@ -130,6 +150,15 @@ export interface EditInput {
   scheduleOn: string | null
 }
 
+export interface OneOffInput {
+  projectId: string
+  clientId: string | null
+  day: string
+  title: string
+  detail: string
+  assigneeId: string | null
+}
+
 export interface RuleInput {
   clientId: string
   weekdays: number[]
@@ -160,6 +189,10 @@ interface ContentState {
   edits: ContentEdit[]
   rules: ContentPostRule[]
   posted: ContentPostDone[]
+  /** Single posting slots dragged off the day their rule put them on. */
+  postMoves: ContentPostMove[]
+  /** Work put on the calendar by hand, belonging to no pipeline. */
+  oneOffs: ContentOneOff[]
   people: ContentPerson[]
   loaded: boolean
   /** Set when the tables are missing — the migration has not been run. */
@@ -194,6 +227,17 @@ interface ContentState {
   deleteRule: (id: string) => Promise<void>
 
   setPosted: (clientId: string, day: string, posted: boolean) => Promise<void>
+
+  /**
+   * Move one posting slot to another day, or put it back. `fromDay` is always
+   * the day its rule put it on, so moving a slot twice rewrites one row
+   * instead of chaining moves that nothing could later undo.
+   */
+  movePost: (clientId: string, fromDay: string, toDay: string) => Promise<void>
+
+  addOneOff: (input: OneOffInput) => Promise<void>
+  updateOneOff: (id: string, patch: Partial<Omit<ContentOneOff, 'id' | 'projectId' | 'createdAt'>>) => Promise<void>
+  deleteOneOff: (id: string) => Promise<void>
 }
 
 const recordingCols: Record<string, string> = {
@@ -230,6 +274,14 @@ const ruleCols: Record<string, string> = {
   endsOn: 'ends_on',
   assigneeId: 'assignee_id',
 }
+const oneOffCols: Record<string, string> = {
+  clientId: 'client_id',
+  day: 'day',
+  title: 'title',
+  detail: 'detail',
+  assigneeId: 'assignee_id',
+  doneAt: 'done_at',
+}
 const clientCols: Record<string, string> = {
   name: 'name',
   code: 'code',
@@ -250,6 +302,13 @@ function toRow(patch: Record<string, unknown>, cols: Record<string, string>) {
 }
 
 let channel: ReturnType<typeof supabase.channel> | null = null
+/**
+ * The tables added for dragging and for one-off tasks, on a channel of their
+ * own. A postgres_changes subscription naming a table that does not exist
+ * fails the whole channel, so putting these in with the rest would mean that
+ * until their migration has been run, nothing on the calendar updated live.
+ */
+let newTablesChannel: ReturnType<typeof supabase.channel> | null = null
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useContentStore = create<ContentState>()((set, get) => ({
@@ -258,22 +317,31 @@ export const useContentStore = create<ContentState>()((set, get) => ({
   edits: [],
   rules: [],
   posted: [],
+  postMoves: [],
+  oneOffs: [],
   people: [],
   loaded: false,
   error: null,
 
   load: async () => {
-    const [c, r, e, ru, p, u] = await Promise.all([
+    const [c, r, e, ru, p, mv, oo, u] = await Promise.all([
       supabase.from('content_clients').select('*').order('name'),
       supabase.from('content_recordings').select('*'),
       supabase.from('content_edits').select('*'),
       supabase.from('content_post_rules').select('*'),
       supabase.from('content_posts').select('*'),
+      supabase.from('content_post_moves').select('*'),
+      supabase.from('content_one_off_tasks').select('*'),
       supabase.from('users').select('id, name, avatar_initials, role, is_active, project_id, project_members(project_id)'),
     ])
     // Who works where is a nicety for the pickers. If it cannot be read, fall
     // back to everybody rather than to nobody.
     const users = u.error ? await supabase.from('users').select('id, name, avatar_initials, role, is_active') : u
+    // The two newest tables are left out of this check on purpose: before
+    // their migration has been run the calendar should still open and work,
+    // minus dragging a post and minus one-off tasks.
+    if (mv.error) console.error('[content] post moves unavailable:', mv.error)
+    if (oo.error) console.error('[content] one-off tasks unavailable:', oo.error)
     const err = c.error ?? r.error ?? e.error ?? ru.error ?? p.error
     if (err) {
       console.error('[content] load failed:', err)
@@ -286,6 +354,8 @@ export const useContentStore = create<ContentState>()((set, get) => ({
       edits: (e.data ?? []).map(toEdit),
       rules: (ru.data ?? []).map(toRule),
       posted: (p.data ?? []).map(toDone),
+      postMoves: (mv.data ?? []).map(toMove),
+      oneOffs: (oo.data ?? []).map(toOneOff),
       people: (users.data ?? [])
         .filter((x: any) => x.is_active !== false)
         .map(
@@ -317,6 +387,12 @@ export const useContentStore = create<ContentState>()((set, get) => ({
       channel.on('postgres_changes', { event: '*', schema: 'public', table }, reload)
     }
     channel.subscribe()
+
+    newTablesChannel = supabase.channel('content-calendar-live-moves')
+    for (const table of ['content_post_moves', 'content_one_off_tasks']) {
+      newTablesChannel.on('postgres_changes', { event: '*', schema: 'public', table }, reload)
+    }
+    newTablesChannel.subscribe()
   },
 
   teardown: () => {
@@ -324,7 +400,14 @@ export const useContentStore = create<ContentState>()((set, get) => ({
       supabase.removeChannel(channel)
       channel = null
     }
-    set({ clients: [], recordings: [], edits: [], rules: [], posted: [], people: [], loaded: false, error: null })
+    if (newTablesChannel) {
+      supabase.removeChannel(newTablesChannel)
+      newTablesChannel = null
+    }
+    set({
+      clients: [], recordings: [], edits: [], rules: [], posted: [],
+      postMoves: [], oneOffs: [], people: [], loaded: false, error: null,
+    })
   },
 
   // ─── Clients ──────────────────────────────────────────────────────────────
@@ -535,6 +618,88 @@ export const useContentStore = create<ContentState>()((set, get) => ({
         set({ posted: before })
         fail('Unticking the post', error)
       }
+    }
+  },
+
+  // ─── Moving one posting slot ──────────────────────────────────────────────
+
+  movePost: async (clientId, fromDay, toDay) => {
+    const before = get().postMoves
+    const rest = before.filter((m) => !(m.clientId === clientId && m.fromDay === fromDay))
+
+    // Dragged back to where its rule puts it: that is not a move, it is the
+    // absence of one, and leaving a row saying "Tuesday → Tuesday" would
+    // quietly pin the slot against a later change to the rule.
+    if (fromDay === toDay) {
+      if (rest.length === before.length) return
+      set({ postMoves: rest })
+      const { error } = await supabase
+        .from('content_post_moves')
+        .delete()
+        .eq('client_id', clientId)
+        .eq('from_day', fromDay)
+      if (error) {
+        set({ postMoves: before })
+        fail('Putting the post back', error)
+      }
+      return
+    }
+
+    set({ postMoves: [...rest, { clientId, fromDay, toDay }] })
+    const { error } = await supabase
+      .from('content_post_moves')
+      .upsert(
+        { client_id: clientId, from_day: fromDay, to_day: toDay, moved_by: me(), moved_at: new Date().toISOString() },
+        { onConflict: 'client_id,from_day' },
+      )
+    if (error) {
+      set({ postMoves: before })
+      fail('Moving the post', error)
+    }
+  },
+
+  // ─── One-off tasks ────────────────────────────────────────────────────────
+
+  addOneOff: async (input) => {
+    const { data, error } = await supabase
+      .from('content_one_off_tasks')
+      .insert({
+        project_id: input.projectId,
+        client_id: input.clientId,
+        day: input.day,
+        title: input.title.trim(),
+        detail: input.detail,
+        assignee_id: input.assigneeId,
+        created_by: me(),
+      })
+      .select()
+      .single()
+    if (error || !data) fail('Adding the task', error)
+    set((s) => ({ oneOffs: [...s.oneOffs, toOneOff(data)] }))
+  },
+
+  updateOneOff: async (id, patch) => {
+    const before = get().oneOffs
+    set((s) => ({ oneOffs: s.oneOffs.map((o) => (o.id === id ? { ...o, ...patch } : o)) }))
+    const row = toRow(patch as Record<string, unknown>, oneOffCols)
+    // Who ticked it, which is not part of the task and so not in the patch.
+    // Cleared along with the tick, so an unticked task does not keep the name
+    // of whoever last finished it.
+    if (patch.doneAt !== undefined) row.done_by = patch.doneAt ? me() : null
+    const { error } = await supabase.from('content_one_off_tasks').update(row).eq('id', id)
+    if (error) {
+      set({ oneOffs: before })
+      fail('Saving the task', error)
+    }
+  },
+
+  deleteOneOff: async (id) => {
+    const before = get().oneOffs
+    set((s) => ({ oneOffs: s.oneOffs.filter((o) => o.id !== id) }))
+    const { error } = await supabase.from('content_one_off_tasks').delete().eq('id', id)
+    if (error) {
+      set({ oneOffs: before })
+      fail('Deleting the task', error)
     }
   },
 }))
