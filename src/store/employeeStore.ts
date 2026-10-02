@@ -79,10 +79,27 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
 
   initialize: async () => {
     set({ loading: true })
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, email, name, role, avatar_initials, join_date, job_title, department, manager_id, project_id, is_active, calendar_color, project_members(project_id)')
-      .order('name')
+    /**
+     * Asked for twice: once with the calendar colour, and again without it if
+     * that column is not there yet.
+     *
+     * Postgres rejects the whole select over one unknown column, so naming a
+     * column before its migration has run does not return the other fields
+     * with a gap — it returns nothing at all, and every screen that reads the
+     * team then shows an empty team and no work. The column is newer than the
+     * database it has to run against, so it is asked for as an extra and
+     * never as a requirement.
+     */
+    const COLS =
+      'id, email, name, role, avatar_initials, join_date, job_title, department, manager_id, project_id, is_active, project_members(project_id)'
+    const withColour = await supabase.from('users').select(`${COLS}, calendar_color`).order('name')
+    const res = withColour.error
+      ? await supabase.from('users').select(COLS).order('name')
+      : withColour
+    const error = res.error
+    // The two selects differ by one column, so their row types differ; the
+    // mapper reads whatever is there and defaults the rest.
+    const data = res.data as Record<string, unknown>[] | null
 
     if (!error && data) {
       const all = data.map(toEmployee)

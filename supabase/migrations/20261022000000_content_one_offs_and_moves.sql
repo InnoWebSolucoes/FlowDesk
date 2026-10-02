@@ -19,6 +19,17 @@
 --
 -- A one-off task is not a piece of content. It is never counted, numbered,
 -- edited or posted; it does not enter flowFor. That is the point of it.
+--
+-- ─── What this file does to existing data: nothing ──────────────────────────
+--
+-- It creates two new tables and governs access to those two tables. It
+-- contains no delete, no update, no truncate, no drop of any table or column,
+-- and touches no table that existed before it: not users, not tasks, not
+-- content_clients, content_recordings, content_edits, content_post_rules or
+-- content_posts. The `on delete cascade` below points the only way it can —
+-- from an existing row to the new rows hanging off it — so deleting a client
+-- would take that client's moves with it, and nothing in this file can delete
+-- a client. Running it twice is the same as running it once.
 -- ============================================================================
 
 -- ─── One posting slot, moved ────────────────────────────────────────────────
@@ -73,16 +84,23 @@ create index if not exists content_one_off_tasks_day_idx
 alter table public.content_post_moves enable row level security;
 alter table public.content_one_off_tasks enable row level security;
 
+-- The policy is created only when it is not already there, rather than dropped
+-- and recreated. Nothing here is ever dropped, including on the two tables this
+-- same file creates.
 do $$
 declare t text;
 begin
   foreach t in array array['content_post_moves', 'content_one_off_tasks']
   loop
-    execute format('drop policy if exists %I on public.%I', t || '_all', t);
-    execute format(
-      'create policy %I on public.%I for all to authenticated using (true) with check (true)',
-      t || '_all', t
-    );
+    if not exists (
+      select 1 from pg_policies
+      where schemaname = 'public' and tablename = t and policyname = t || '_all'
+    ) then
+      execute format(
+        'create policy %I on public.%I for all to authenticated using (true) with check (true)',
+        t || '_all', t
+      );
+    end if;
   end loop;
 end $$;
 
