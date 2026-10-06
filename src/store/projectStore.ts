@@ -32,7 +32,11 @@ interface ProjectState {
 
   createProject: (input: Partial<Project> & { name: string }) => Promise<Project | null>
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>
-  deleteProject: (id: string) => Promise<void>
+  /**
+   * Delete a project and everything under it. Takes the name as typed by the
+   * person deleting it, which the database checks; throws on any refusal.
+   */
+  deleteProject: (id: string, typedName: string) => Promise<void>
   getProject: (id: string) => Project | undefined
 
   // Resources
@@ -456,8 +460,23 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, ...updates } : p)) }))
   },
 
-  deleteProject: async (id) => {
-    await supabase.from('projects').delete().eq('id', id)
+  deleteProject: async (id, typedName) => {
+    // The database refuses a project delete that has not been confirmed by
+    // name in the last few minutes (guard_project_delete). Confirm, then
+    // delete — and stop at the first refusal. Before that migration has run
+    // the confirmation does not exist, so this fails and nothing is deleted.
+    const { error: confirmErr } = await supabase.rpc('request_project_deletion', {
+      p_project: id,
+      p_name: typedName,
+    })
+    if (confirmErr) throw new Error(confirmErr.message)
+
+    // Rows asked for back: a delete the database refuses can also come back
+    // as no error and no rows, and that must not read as done.
+    const { data, error } = await supabase.from('projects').delete().eq('id', id).select('id')
+    if (error) throw new Error(error.message)
+    if (!data?.length) throw new Error('The project was not deleted.')
+
     set((s) => ({
       projects: s.projects.filter((p) => p.id !== id),
       clusters: s.clusters.filter((c) => c.projectId !== id),

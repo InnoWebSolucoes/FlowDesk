@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Building2, Plus, Users, ListTodo, FolderOpen, X, Pencil, Trash2 } from 'lucide-react'
+import { Building2, Plus, Users, ListTodo, FolderOpen, X, Pencil } from 'lucide-react'
 import { useProjectStore } from '../../store/projectStore'
 import { useEmployeeStore } from '../../store/employeeStore'
 import { useTaskStore } from '../../store/taskStore'
@@ -12,7 +12,7 @@ const PROJECT_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '
 
 export function Projects() {
   const { t } = useT()
-  const { projects, createProject, updateProject, deleteProject } = useProjectStore()
+  const { projects, createProject, updateProject } = useProjectStore()
   const { employees } = useEmployeeStore()
   const { tasks } = useTaskStore()
 
@@ -135,15 +135,9 @@ export function Projects() {
                 className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-text-main hover:bg-surface-2 transition-colors"
               >
                 <Pencil size={12} />{t('ui_edit')}</button>
-              <div className="h-px bg-border my-1" />
-              <button
-                onClick={async () => {
-                  setMenu(null)
-                  await deleteProject(target.id)
-                }}
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-danger hover:bg-surface-2 transition-colors"
-              >
-                <Trash2 size={12} />{t('ui_delete')}</button>
+              {/* No delete here. It was one click, with no question asked,
+                  for the whole of a project; it lives on the project's About
+                  page now, behind three steps. */}
             </div>
           </>
         )

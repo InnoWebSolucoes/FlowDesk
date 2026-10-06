@@ -5,6 +5,7 @@ import { Project } from '../../../types'
 import { useProjectStore } from '../../../store/projectStore'
 import { openWhatsapp, normalisePhoneDigits } from '../../../lib/nativeShare'
 import { useT } from '../../../i18n/useT'
+import { DeleteProjectDialog } from '../../../components/shared/DeleteProjectDialog'
 
 interface Ctx { project: Project }
 
@@ -16,12 +17,13 @@ export function ProjectAbout() {
 
 function ProjectAboutForm({ project }: { project: Project }) {
   const { t } = useT()
-  const { updateProject, deleteProject } = useProjectStore()
+  const { updateProject } = useProjectStore()
   const navigate = useNavigate()
 
   const [form, setForm] = useState(project)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const dirty = JSON.stringify(form) !== JSON.stringify(project)
 
@@ -42,10 +44,6 @@ function ProjectAboutForm({ project }: { project: Project }) {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const handleDelete = async () => {
-    await deleteProject(project.id)
-    navigate('/admin/projects')
-  }
 
   const field = (
     label: string,
@@ -182,12 +180,22 @@ function ProjectAboutForm({ project }: { project: Project }) {
           <Save size={15} />
           {saving ? 'Saving…' : saved ? 'Saved' : 'Save changes'}
         </button>
+        {/* Opens three steps — what goes, the name typed, the password —
+            and the database refuses a delete that skipped them. */}
         <button
-          onClick={handleDelete}
+          onClick={() => setDeleting(true)}
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border text-text-muted text-sm hover:text-danger hover:border-danger transition-colors ml-auto"
         >
           <Trash2 size={15} />{t('proj_deleteProject')}</button>
       </div>
+
+      {deleting && (
+        <DeleteProjectDialog
+          project={project}
+          onClose={() => setDeleting(false)}
+          onDeleted={() => navigate('/admin/projects')}
+        />
+      )}
     </div>
   )
 }
