@@ -12,6 +12,11 @@ export function Layout() {
   // Chat is full-bleed: capping it would leave gutters either side of a page
   // that is meant to fill the frame.
   const isChat = location.pathname.endsWith('/chat')
+  // The calendar sizes itself to end at the bottom of the window, so it wants
+  // the same margin under it as beside it, not a long list's extra room.
+  // Its own page, or the calendar tab of somebody's profile.
+  const isCalendar =
+    location.pathname.endsWith('/calendar') || new URLSearchParams(location.search).get('tab') === 'calendar'
 
   // An employee's side of the app is drawn in their own colour — the logo,
   // the selected page, every button and accent. Whoever the app is behaving
@@ -59,7 +64,7 @@ export function Layout() {
           {/* pt-20 on a phone, where the floating menu button now has no top
               bar to sit in and would otherwise land on the first line of the
               page. */}
-          <div className={`w-full ${isChat ? 'h-full' : 'min-h-full p-6 pt-20 md:pt-6 pb-16 max-w-[1600px] mx-auto'}`}>
+          <div className={`w-full ${isChat ? 'h-full' : `min-h-full p-6 pt-20 md:pt-6 ${isCalendar ? 'pb-6' : 'pb-16'} max-w-[1600px] mx-auto`}`}>
             <Outlet />
           </div>
         </main>

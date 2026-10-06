@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, GripVertical, CalendarClock, Check,
   Circle, CheckCircle2, Timer, Users, X, Ban, Clock, Flame,
@@ -222,6 +222,8 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   // An assigned task being edited from its right-click menu.
   const [editTask, setEditTask] = useState<string | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const fillHeight = useFillToBottom(rootRef)
 
   /**
    * Clicking assigned work. The owner gets the editor, because for them the
@@ -709,10 +711,16 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
         : format(cursor, 'MMMM yyyy')
 
   return (
-    // Fills the window less the chrome above it and a margin below, so the
-    // grid reaches down the page without running into the bottom edge.
+    // Reaches down to the bottom of the window, less the page's own margin.
+    // Measured rather than guessed: it was 100vh less a fixed 11rem, sized for
+    // a project banner that has since gone, which left a band of nothing
+    // under the grid on every screen.
     // min-h-0 on the row below is what lets a flex child shrink and scroll.
-    <div className="animate-fade-in flex flex-col h-[calc(100vh-11rem)] min-h-[30rem] mb-6">
+    <div
+      ref={rootRef}
+      className="animate-fade-in flex flex-col min-h-[30rem]"
+      style={fillHeight ? { height: fillHeight } : undefined}
+    >
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
         <div className="flex items-center gap-1">
@@ -1626,6 +1634,48 @@ function BlockChip({
 }
 
 /** Todos with no do date — draggable straight onto the calendar. */
+/**
+ * How tall an element has to be for its bottom to land on the bottom of the
+ * page's scrolling area, less that area's bottom padding — so it fills the
+ * window wherever it starts: under the toolbar on the calendar page, under
+ * the header on an employee's workspace, under the tabs on their profile.
+ *
+ * Positions come from offsetTop, not getBoundingClientRect: the page fades
+ * in sliding up a few pixels, and a measurement taken mid-slide would include
+ * that and come out short.
+ */
+function useFillToBottom(ref: React.RefObject<HTMLElement | null>): number | null {
+  const [height, setHeight] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    const scroller = el?.closest('main')
+    if (!el || !scroller) return
+
+    const pageTop = (n: HTMLElement) => {
+      let y = 0
+      for (let e: HTMLElement | null = n; e; e = e.offsetParent as HTMLElement | null) y += e.offsetTop
+      return y
+    }
+
+    const measure = () => {
+      const top = pageTop(el) - pageTop(scroller) + scroller.scrollTop
+      const content = scroller.firstElementChild
+      const pad = content ? parseFloat(getComputedStyle(content).paddingBottom) || 0 : 0
+      setHeight(Math.floor(scroller.clientHeight - top - pad))
+    }
+
+    measure()
+    // The window resizing, or a banner appearing above the page and taking
+    // height from the scrolling area.
+    const ro = new ResizeObserver(measure)
+    ro.observe(scroller)
+    return () => ro.disconnect()
+  }, [ref])
+
+  return height
+}
+
 function Unscheduled({
   todos,
   lists,
