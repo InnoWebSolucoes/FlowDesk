@@ -321,6 +321,16 @@ export interface Task {
    */
   createdBy: string | null
   isActive: boolean
+  /**
+   * The step on the content calendar this task is, when it is one. Made and
+   * kept in step by the database (20261024000000_content_steps_are_tasks):
+   * dates, who does it and the tick are the same thing on both sides.
+   */
+  content?: {
+    kind: 'plan' | 'record' | 'edit' | 'deliver' | 'schedule' | 'oneoff'
+    id: string
+    clientId: string | null
+  }
 }
 
 export interface CompletionLog {

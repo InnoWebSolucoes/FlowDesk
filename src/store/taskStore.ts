@@ -111,6 +111,10 @@ function toTask(row: any): Task {
     createdAt: row.created_at,
     createdBy: row.created_by,
     isActive: row.is_active,
+    // Read from '*', so it is simply absent until its migration has run.
+    content: row.content_kind
+      ? { kind: row.content_kind, id: row.content_id, clientId: row.content_client_id ?? null }
+      : undefined,
   }
 }
 

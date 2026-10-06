@@ -1,11 +1,12 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { X, Clock, Users, Tag, Repeat, CheckCircle2, ExternalLink, CalendarDays, Circle, Timer, Ban } from 'lucide-react'
+import { X, Clock, Users, Tag, Repeat, CheckCircle2, ExternalLink, CalendarDays, Circle, Timer, Ban, Clapperboard, Upload } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { Task } from '../../types'
 import type { TranslationKey } from '../../i18n/translations'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
+import { useAuthStore } from '../../store/authStore'
 import { useT } from '../../i18n/useT'
 import { UrgentBadge } from '../shared/Urgent'
 import { Linkify } from '../shared/Linkify'
@@ -96,6 +97,26 @@ export function TaskPeekPanel({
    * catch-all and back to the login screen.
    */
   const tasksPath = basePath === '/employee' ? '/employee/tasks' : `${basePath ?? ''}/employees/tasks`
+
+  /**
+   * Back to the content calendar, for a task that is a step on it. A content
+   * plan goes to the client's page, which is where the plan is uploaded; the
+   * rest go to the calendar, on the month of the day and filtered to the
+   * client. The employee has the content calendar at /employee/content.
+   */
+  const asEmployee = useAuthStore((s) => s.currentUser?.role === 'employee')
+  const contentLink = (() => {
+    if (!task.content) return null
+    const base = asEmployee ? '/employee/content' : `/admin/projects/${task.projectId}/content`
+    const { kind, clientId } = task.content
+    if (kind === 'plan' && clientId) return { to: `${base}/${clientId}`, plan: true }
+    const day = occurrenceDate ?? task.frequency.date
+    const params = new URLSearchParams()
+    if (day) params.set('m', day.slice(0, 7))
+    if (clientId) params.set('c', clientId)
+    const qs = params.toString()
+    return { to: qs ? `${base}?${qs}` : base, plan: false }
+  })()
 
   const category = categories.find((c) => c.id === task.categoryId)
   const people = task.assignedTo
@@ -201,6 +222,16 @@ export function TaskPeekPanel({
                 )
               })}
             </div>)}
+
+          {contentLink && (
+            <button
+              onClick={() => navigate(contentLink.to)}
+              className="mt-4 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary-dark transition-colors"
+            >
+              {contentLink.plan ? <Upload size={13} /> : <Clapperboard size={13} />}
+              {contentLink.plan ? t('taskpeek_uploadPlan') : t('taskpeek_openContentCalendar')}
+            </button>
+          )}
 
           {showTasksLink && (
             <button
