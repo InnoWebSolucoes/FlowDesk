@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The accent, as RGB channels so Tailwind's opacity modifiers work on it
+   (bg-primary/10 and so on). FlowDesk green by default; an employee's side of
+   the app overrides all three with their own colour. */
+:root {
+  --primary: 26 92 58;
+  --primary-light: 227 240 233;
+  --primary-dark: 19 68 48;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -75,8 +84,8 @@ video {
 .tiptap-content li { margin: 0.25rem 0; line-height: 1.6; }
 .tiptap-content strong { font-weight: 600; }
 .tiptap-content em { font-style: italic; }
-.tiptap-content blockquote { border-left: 3px solid #1A5C3A; padding-left: 1rem; margin: 0.5rem 0; color: #6B6960; }
-.tiptap-content a { color: #1A5C3A; text-decoration: underline; }
+.tiptap-content blockquote { border-left: 3px solid rgb(var(--primary)); padding-left: 1rem; margin: 0.5rem 0; color: #6B6960; }
+.tiptap-content a { color: rgb(var(--primary)); text-decoration: underline; }
 .tiptap-content hr { border: none; border-top: 1px solid rgba(0,0,0,0.08); margin: 1rem 0; }
 
 .ProseMirror {
@@ -92,7 +101,7 @@ video {
 .ProseMirror ol { list-style: decimal; padding-left: 1.5rem; }
 .ProseMirror li { margin: 0.25rem 0; }
 .ProseMirror strong { font-weight: 600; }
-.ProseMirror blockquote { border-left: 3px solid #1A5C3A; padding-left: 1rem; color: #6B6960; }
+.ProseMirror blockquote { border-left: 3px solid rgb(var(--primary)); padding-left: 1rem; color: #6B6960; }
 
 /* Animations */
 @keyframes fadeIn {
@@ -120,8 +129,8 @@ video {
    still settling) or staying lit for good (indistinguishable from selection). */
 @keyframes highlightPulse {
   0%, 100% { outline-color: transparent; background-color: transparent; }
-  25%, 75% { outline-color: #1A5C3A; background-color: rgba(26, 92, 58, 0.07); }
-  50% { outline-color: #1A5C3A; background-color: rgba(26, 92, 58, 0.12); }
+  25%, 75% { outline-color: rgb(var(--primary)); background-color: rgb(var(--primary) / 0.07); }
+  50% { outline-color: rgb(var(--primary)); background-color: rgb(var(--primary) / 0.12); }
 }
 
 .animate-highlight-pulse {

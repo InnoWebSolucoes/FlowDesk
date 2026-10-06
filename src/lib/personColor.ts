@@ -1,21 +1,22 @@
+import type { CSSProperties } from 'react'
+
 /**
- * What colour a piece of work is drawn in.
+ * What colour a person is drawn in.
  *
- * This used to be a colour per person, so a week with several people's work
- * on it could be read at a glance. There is one manager now and the people
- * whose work appears on a calendar are the employees, so the useful question
- * is no longer "whose is this" but "is this ours or theirs" — two colours
- * rather than eight, and no hashing to decide which.
+ * Each employee has one colour, picked when they are added. It is theirs
+ * everywhere: the circle with their initials, the logo and accents of their
+ * side of the app, the profile a manager opens on them, and their work on
+ * every calendar — including the team calendar, where it is what tells three
+ * people's blocks on one day apart.
+ *
+ * Anybody nobody has picked a colour for falls back to the old pair:
+ * employees purple, InnoWeb grey.
  */
 
 /** The one account that manages everything. */
 const INNOWEB_ID = '1e2001c5-72b2-44a6-9605-9954db51908e'
 
-/**
- * Employees' work. One purple for all of them: any given calendar shows a
- * single employee's week, so a colour each distinguished nothing the board
- * was not already saying.
- */
+/** An employee nobody has picked a colour for. */
 const EMPLOYEE = '#6B21A8'
 
 /**
@@ -24,31 +25,32 @@ const EMPLOYEE = '#6B21A8'
  */
 const INNOWEB = '#6B7280'
 
-/**
- * The colour for whoever this work belongs to.
- *
- * Everything belongs to somebody — an employee, or InnoWeb. A missing id
- * falls to the employee colour rather than a third "nobody" colour: work
- * owned by no one is a bug to fix where it is created, not a state to give
- * a swatch to.
- */
-export function personColor(id: string | null | undefined): string {
+/** The colour somebody has when nobody has chosen one for them. */
+export function defaultColor(id: string | null | undefined): string {
   return id === INNOWEB_ID ? INNOWEB : EMPLOYEE
 }
 
 /**
- * The colours offered for a person's calendar colour.
- *
- * Chosen to be told apart from each other when three of them sit in one day
- * of a week view, and to carry white text: a block on the calendar is filled
- * with the person's colour and labelled in white, so a pale swatch would be a
- * block you cannot read. The first is the employee purple the calendar used
- * for everybody, so "what it was before" is a choice like any other.
+ * The colours offered. Ten, spread round the wheel so that any two read as
+ * different people when they sit in one day of a week view, and every one
+ * dark enough to carry white text — avatars, buttons and calendar blocks are
+ * all filled with it and labelled in white. The first is the purple everyone
+ * had before, so "what it was" is a choice like any other.
  */
-export const CALENDAR_COLORS = [
-  '#6B21A8', '#1D4ED8', '#0E7A6A', '#15803D', '#A16207', '#B45309',
-  '#B91C1C', '#BE185D', '#7E22CE', '#0F766E', '#334155', '#6B7280',
+export const PERSON_COLORS = [
+  { hex: '#6B21A8', name: 'purple' },
+  { hex: '#4F46E5', name: 'indigo' },
+  { hex: '#1D4ED8', name: 'blue' },
+  { hex: '#0F766E', name: 'teal' },
+  { hex: '#15803D', name: 'green' },
+  { hex: '#A16207', name: 'ochre' },
+  { hex: '#C2410C', name: 'orange' },
+  { hex: '#B91C1C', name: 'red' },
+  { hex: '#BE185D', name: 'pink' },
+  { hex: '#334155', name: 'slate' },
 ] as const
+
+export type PersonColorName = typeof PERSON_COLORS[number]['name']
 
 /**
  * Whether a string is one of our hex colours. The column is checked in the
@@ -60,20 +62,87 @@ export function isHexColor(v: string | null | undefined): v is string {
 }
 
 /**
- * What to paint one person's work on the calendar of tasks: the colour chosen
- * on their profile, or the old two-colour answer when nobody has chosen one.
+ * Somebody's colour: the one chosen for them, else the default.
  *
- * Deliberately separate from personColor, which Avatars use. A colour set here
- * is about reading a calendar with several people's weeks on it, and spreading
- * it to avatars would change how people are drawn all over the app — which is
- * not what was asked for and not what it means.
+ * Read from the unscoped list of people. A screen narrowed to one project
+ * still draws work belonging to people outside it, and a colour looked up in
+ * the narrowed list would be missed for them.
  */
-export function calendarColorOf(
+export function personColor(
   id: string | null | undefined,
   people: { id: string; calendarColor?: string | null }[],
 ): string {
   const chosen = people.find((p) => p.id === id)?.calendarColor
-  return isHexColor(chosen) ? chosen : personColor(id)
+  return isHexColor(chosen) ? chosen : defaultColor(id)
+}
+
+// ─── Remembered between loads ───────────────────────────────────────────────
+// The team arrives a moment after the page does. Without a copy from last
+// time, an employee's whole side of the app would open green and turn their
+// colour a beat later, on every load. This is only a first guess: the store
+// overwrites it as soon as the real list is in.
+
+const CACHE_KEY = 'flowdesk.personColors'
+
+function readCache(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CACHE_KEY) ?? '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+let cache: Record<string, string> = readCache()
+
+/** Last load's colour for this person, if they had one. */
+export function cachedColor(id: string | null | undefined): string | undefined {
+  const hit = id ? cache[id] : undefined
+  return isHexColor(hit) ? hit : undefined
+}
+
+/** Keep everybody's chosen colour for the next load's first paint. */
+export function rememberColors(people: { id: string; calendarColor?: string | null }[]) {
+  cache = Object.fromEntries(
+    people.filter((p) => isHexColor(p.calendarColor)).map((p) => [p.id, p.calendarColor as string]),
+  )
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache))
+  } catch {
+    // Private window or storage full: the next load just opens on the default.
+  }
+}
+
+// ─── A side of the app in somebody's colour ─────────────────────────────────
+
+function channels(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+/**
+ * The style that redraws everything inside an element in this colour: every
+ * bg-primary, text-primary, ring-primary/30 and so on, read from the three
+ * variables Tailwind's primary is built on. The light shade is the colour
+ * washed nearly to white, for selected rows and soft fills; the dark one is
+ * for hover on a filled button.
+ */
+export function themeVars(hex: string): CSSProperties {
+  if (!isHexColor(hex)) return {}
+  const [r, g, b] = channels(hex)
+  const toward = (c: number, target: number, by: number) => Math.round(c + (target - c) * by)
+  const light = [r, g, b].map((c) => toward(c, 255, 0.88)).join(' ')
+  const dark = [r, g, b].map((c) => toward(c, 0, 0.22)).join(' ')
+  return {
+    '--primary': `${r} ${g} ${b}`,
+    '--primary-light': light,
+    '--primary-dark': dark,
+  } as CSSProperties
+}
+
+/** Initials from a name: the first letters of its first two words. */
+export function initialsOf(name: string): string {
+  return name.trim().split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
 }
 
 /** Is this InnoWeb's own work rather than an employee's? */

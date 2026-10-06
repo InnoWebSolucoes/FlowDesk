@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
-import { Users, Plus, Trash2, X, UserPlus, LogOut, UserX, UserCheck } from 'lucide-react'
+import { Users, Plus, Trash2, X, UserPlus, LogOut, UserX, UserCheck, Pencil } from 'lucide-react'
 import { format } from 'date-fns'
 import { Project, Employee } from '../../../types'
 import { useEmployeeStore } from '../../../store/employeeStore'
@@ -9,6 +9,9 @@ import { EmptyState } from '../../../components/shared/EmptyState'
 import { getTasksDueOnDate } from '../../../utils/taskScheduler'
 import { useT } from '../../../i18n/useT'
 import { Avatar } from '../../../components/shared/Avatar'
+import { ColorSwatches, colorsTakenBy, firstFreeColor } from '../../../components/shared/ColorSwatches'
+import { EditEmployeeDialog } from '../../../components/shared/EditEmployeeDialog'
+import { themeVars } from '../../../lib/personColor'
 
 interface Ctx { project: Project }
 
@@ -18,12 +21,14 @@ interface FormState {
   password: string
   jobTitle: string
   department: string
+  color: string
 }
 
-const emptyForm: FormState = { name: '', email: '', password: '', jobTitle: '', department: '' }
+const emptyForm: FormState = { name: '', email: '', password: '', jobTitle: '', department: '', color: '' }
 
 /** What can be done to somebody on the team, for a card drawn elsewhere. */
 export interface MemberActions {
+  edit: () => void
   removeFromProject: () => void
   toggleActive: () => void
   remove: () => void
@@ -44,7 +49,7 @@ export function ProjectEmployees({
 } = {}) {
   const { t } = useT()
   const { project } = useOutletContext<Ctx>()
-  const { employees, createEmployee, deleteEmployee, setEmployeeActive, addToProject, removeFromProject } = useEmployeeStore()
+  const { employees, allEmployees, createEmployee, deleteEmployee, setEmployeeActive, addToProject, removeFromProject } = useEmployeeStore()
   const { tasks, completionLogs } = useTaskStore()
 
   const [showForm, setShowForm] = useState(false)
@@ -53,6 +58,7 @@ export function ProjectEmployees({
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Employee | null>(null)
+  const [editing, setEditing] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [pageError, setPageError] = useState('')
 
@@ -86,10 +92,16 @@ export function ProjectEmployees({
   // Anyone not already here can be added, including people who work elsewhere.
   const addable = staff.filter((e) => !isOn(e))
 
+  // Everyone's colour, across every project: the team calendar can lay
+  // anybody's week over anybody else's, so a clash anywhere is a clash.
+  const takenBy = useMemo(() => colorsTakenBy(allEmployees), [allEmployees])
+
   const handleCreate = async () => {
-    const { name, email, password, jobTitle, department } = form
-    if (!name.trim() || !email.trim() || !password.trim()) {
-      setError(t('err_nameEmailPassword'))
+    const { name, email, password, jobTitle, department, color } = form
+    // All five: the function refuses a blank job title or department, and
+    // said so as "Missing required fields" only after the round trip.
+    if (!name.trim() || !email.trim() || !password.trim() || !jobTitle.trim() || !department.trim()) {
+      setError(t('employees_requiredFields'))
       return
     }
 
@@ -101,6 +113,7 @@ export function ProjectEmployees({
       jobTitle: jobTitle.trim(),
       department: department.trim(),
       projectId: project.id,
+      calendarColor: color,
     })
     setSubmitting(false)
 
@@ -110,6 +123,9 @@ export function ProjectEmployees({
     }
     setForm(emptyForm)
     setShowForm(false)
+    if (result.warning) {
+      setPageError(t('color_createdWithoutColour').replace('{name}', name.trim()).replace('{reason}', result.warning))
+    }
   }
 
   const addButton = (
@@ -122,7 +138,7 @@ export function ProjectEmployees({
           <UserPlus size={15} />{t('proj_assignExisting')}</button>
       )}
       <button
-        onClick={() => { setForm(emptyForm); setError(''); setShowForm(true) }}
+        onClick={() => { setForm({ ...emptyForm, color: firstFreeColor(takenBy) }); setError(''); setShowForm(true) }}
         className="flex items-center gap-1.5 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors"
       >
         <Plus size={15} />{t('proj_addEmployee')}</button>
@@ -166,6 +182,7 @@ export function ProjectEmployees({
               return (
                 <React.Fragment key={emp.id}>
                   {renderMember(emp, {
+                    edit: () => setEditing(emp),
                     removeFromProject: () => removeFromProject(emp.id, project.id),
                     toggleActive: () => toggleActive(emp),
                     remove: () => setPendingDelete(emp),
@@ -216,6 +233,13 @@ export function ProjectEmployees({
                         promoting would grant nothing the app honours, while
                         still setting the role = 'admin' that the
                         delete-employee function checks. */}
+                    <button
+                      onClick={() => setEditing(emp)}
+                      className="text-text-subtle hover:text-text-main transition-colors p-1 rounded"
+                      title={t('employees_editEmployee')}
+                    >
+                      <Pencil size={14} />
+                    </button>
                     <button
                       onClick={() => removeFromProject(emp.id, project.id)}
                       className="text-text-subtle hover:text-warning transition-colors p-1 rounded"
@@ -282,21 +306,31 @@ export function ProjectEmployees({
       {/* Create employee */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}>
-          <div className="bg-surface rounded-xl border border-border w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-text-main font-semibold text-base">Add employee to {project.name}</h3>
-              <button onClick={() => setShowForm(false)} className="text-text-subtle hover:text-text-main">
+          {/* Drawn in the colour being picked, so the avatar and the button
+              show how their side of the app will look before it exists. */}
+          <div
+            className="bg-surface rounded-xl border border-border w-full max-w-md p-5 max-h-[calc(100vh-2rem)] overflow-y-auto"
+            style={themeVars(form.color)}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-5">
+              <Avatar id={null} name={form.name || '?'} color={form.color} size={44} />
+              <div className="flex-1 min-w-0">
+                <h3 className="text-text-main font-semibold text-base truncate">{t('proj_addEmployee')}</h3>
+                <p className="text-text-subtle text-xs truncate">{project.name}</p>
+              </div>
+              <button onClick={() => setShowForm(false)} className="text-text-subtle hover:text-text-main self-start" title={t('ui_close')}>
                 <X size={18} />
               </button>
             </div>
 
             <div className="space-y-3">
               {([
-                ['Name', 'name', 'text'],
-                ['Email', 'email', 'email'],
-                ['Password', 'password', 'password'],
-                ['Job title', 'jobTitle', 'text'],
-                ['Department', 'department', 'text'],
+                [t('employees_name'), 'name', 'text'],
+                [t('employees_email'), 'email', 'email'],
+                [t('employees_password'), 'password', 'password'],
+                [t('employees_jobTitle'), 'jobTitle', 'text'],
+                [t('employees_department'), 'department', 'text'],
               ] as const).map(([label, key, type]) => (
                 <div key={key}>
                   <label className="text-xs font-medium text-text-muted mb-1 block">{label}</label>
@@ -308,6 +342,15 @@ export function ProjectEmployees({
                   />
                 </div>
               ))}
+
+              <div className="pt-1">
+                <label className="text-xs font-medium text-text-muted mb-2 block">{t('ui_colour')}</label>
+                <ColorSwatches
+                  value={form.color}
+                  onChange={(color) => setForm((f) => ({ ...f, color }))}
+                  takenBy={takenBy}
+                />
+              </div>
 
               {error && <p className="text-danger text-xs">{error}</p>}
 
@@ -358,6 +401,8 @@ export function ProjectEmployees({
           </div>
         </div>
       )}
+
+      {editing && <EditEmployeeDialog employee={editing} onClose={() => setEditing(null)} />}
 
       {/* Delete confirm */}
       {pendingDelete && (

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Eye, Plus } from 'lucide-react'
-import { useEmployeeStore } from '../../store/employeeStore'
+import { ArrowLeft, Eye, Plus, Pencil } from 'lucide-react'
+import { useEmployeeStore, usePersonColor } from '../../store/employeeStore'
 import { useToolStore } from '../../store/toolStore'
 import { useAuthStore } from '../../store/authStore'
 import { TaskManager } from './TaskManager'
@@ -17,7 +17,8 @@ import StarterKit from '@tiptap/starter-kit'
 import { Bold, Italic, List, ListOrdered, Heading2 } from 'lucide-react'
 import { useT } from '../../i18n/useT'
 import { Avatar } from '../../components/shared/Avatar'
-import { CalendarColorPicker } from '../../components/shared/CalendarColorPicker'
+import { EditEmployeeDialog } from '../../components/shared/EditEmployeeDialog'
+import { themeVars } from '../../lib/personColor'
 import { WorkLog } from '../../components/worklog/WorkLog'
 
 // Analytics last: the rest are their work, analytics is the reading of it.
@@ -61,6 +62,9 @@ export function EmployeeProfile() {
   }, { replace: true })
   const [guideSaved, setGuideSaved] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState(false)
+  // Above the early return, as hooks must be.
+  const color = usePersonColor(id)
 
   const emp = allEmployees.find(e => e.id === id)
   // Back goes to the team list of whichever project they belong to.
@@ -117,7 +121,9 @@ export function EmployeeProfile() {
     }`
 
   return (
-    <div className="animate-fade-in">
+    // Their page in their colour: the tabs, buttons and calendar accents all
+    // read primary, which this redraws as them.
+    <div className="animate-fade-in" style={themeVars(color)}>
       <button
         onClick={() => navigate(backTo)}
         className="flex items-center gap-1.5 text-text-muted text-sm hover:text-text-main mb-5 transition-colors"
@@ -133,13 +139,17 @@ export function EmployeeProfile() {
             <p className="text-text-muted text-sm">{emp.jobTitle} · {emp.department}</p>
             <p className="text-text-subtle text-xs mt-1">{emp.email}</p>
             <p className="text-text-subtle text-xs">{t('profile_joined')} {format(parseISO(emp.joinDate), 'EEE d MMM yyyy', dateLocale)}</p>
-
-            {/* What their work is painted on the calendar of tasks. It is on
-                the profile and not in a settings page because the question it
-                answers — which of these three blocks is theirs — is asked
-                while looking at a person. */}
-            <CalendarColorPicker employee={emp} className="mt-3" />
           </div>
+
+          {/* Their details and colour. Set once when they are added, so this
+              is a button and not a form standing on the page. */}
+          <button
+            onClick={() => setEditing(true)}
+            className="flex items-center gap-2 border border-border text-text-muted text-sm font-medium px-4 py-2.5 rounded-lg hover:bg-surface-2 hover:text-text-main transition-colors flex-shrink-0"
+          >
+            <Pencil size={15} />
+            {t('ui_edit')}
+          </button>
 
           {/* Their whole side of FlowDesk, exactly as they see it — not a
               read-only imitation of it. The tabs on this page each show one
@@ -164,6 +174,8 @@ export function EmployeeProfile() {
           )}
         </div>
       </div>
+
+      {editing && <EditEmployeeDialog employee={emp} onClose={() => setEditing(false)} />}
 
       {/* The tabs wrap on a phone rather than running off the edge; a
           row that scrolled sideways was what let the whole page scroll
@@ -248,9 +260,9 @@ export function EmployeeProfile() {
 
       {/* Their week, exactly as they see it: the same CalendarBoard on the
           same board (project + their own owner id), so assigned work is the
-          filled purple block and their own todos are the outlined one. Rendering
-          anything else here would be a second, differently coloured calendar
-          claiming to be theirs.
+          block filled in their colour and their own todos are the outlined
+          one. Rendering anything else here would be a second, differently
+          coloured calendar claiming to be theirs.
 
           Editable, unlike their work log and notes. A manager reschedules
           work and ticks off what they watched get done, and having to leave

@@ -27,12 +27,11 @@ export interface Employee extends User {
   managerId: string | null
   projectId: string | null
   /**
-   * What their work is painted on the calendar of tasks, set on their
-   * profile. Null means nobody has chosen one.
-   *
-   * It decides nothing else. Avatars colour themselves, and no other part of
-   * the app reads this — a manager laying three people's weeks over each other
-   * needs to tell whose block is whose, and that is the whole of it.
+   * Their colour, picked when they are added: their avatar, the accent of
+   * their side of the app and of their profile, and their work on every
+   * calendar. Null means nobody has picked one and the default is used.
+   * (Named for the calendar it was first added for; the column is
+   * users.calendar_color.)
    */
   calendarColor?: string | null
 }

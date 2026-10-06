@@ -1,13 +1,12 @@
 import React from 'react'
-import { personColor } from '../../lib/personColor'
+import { usePersonColor } from '../../store/employeeStore'
 
 /**
  * Somebody's initials on their own colour.
  *
- * Every avatar in the app used to be the same green, so a list of people was a
- * column of identical circles and only the letters told them apart. The colour
- * comes from the person's id, so it is the same here as on their blocks in
- * the calendar.
+ * The colour is the one picked for them when they were added, so it is the
+ * same here as on their blocks in the calendar and across their side of the
+ * app. It redraws the moment it is changed.
  */
 export function Avatar({
   id,
@@ -17,8 +16,9 @@ export function Avatar({
   rounded = 'full',
   className = '',
   title,
+  color,
 }: {
-  /** Whose avatar. The colour is derived from this. */
+  /** Whose avatar. The colour is looked up from this. */
   id: string | null | undefined
   /** Preferred, when the record carries them. */
   initials?: string | null
@@ -28,7 +28,10 @@ export function Avatar({
   rounded?: 'full' | 'lg' | '2xl'
   className?: string
   title?: string
+  /** Drawn in this instead of their saved colour: a preview while picking. */
+  color?: string
 }) {
+  const saved = usePersonColor(id)
   const letters =
     initials?.trim() ||
     (name ?? '')
@@ -49,7 +52,7 @@ export function Avatar({
       style={{
         width: size,
         height: size,
-        backgroundColor: personColor(id),
+        backgroundColor: color ?? saved,
       }}
     >
       <span

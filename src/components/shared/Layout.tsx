@@ -3,6 +3,9 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { ViewAsBanner } from './ViewAsBanner'
 import { UpdateBanner } from './UpdateBanner'
+import { useAuthStore } from '../../store/authStore'
+import { usePersonColor } from '../../store/employeeStore'
+import { themeVars } from '../../lib/personColor'
 
 export function Layout() {
   const location = useLocation()
@@ -10,8 +13,15 @@ export function Layout() {
   // that is meant to fill the frame.
   const isChat = location.pathname.endsWith('/chat')
 
+  // An employee's side of the app is drawn in their own colour — the logo,
+  // the selected page, every button and accent. Whoever the app is behaving
+  // as, so the owner opening it as them sees exactly what they see.
+  const currentUser = useAuthStore((s) => s.currentUser)
+  const color = usePersonColor(currentUser?.id)
+  const theme = currentUser?.role === 'employee' ? themeVars(color) : undefined
+
   return (
-    <div className="flex h-screen bg-bg overflow-hidden">
+    <div className="flex h-screen bg-bg overflow-hidden" style={theme}>
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Above everything, including the sidebar's own chrome: forgetting

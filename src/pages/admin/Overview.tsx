@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import {
-  Users, CheckCircle2, Timer, Ban, Flame, LogOut, UserX, UserCheck, Trash2, Activity,
+  Users, CheckCircle2, Timer, Ban, Flame, LogOut, UserX, UserCheck, Trash2, Activity, Pencil,
 } from 'lucide-react'
 import { useTaskStore } from '../../store/taskStore'
 import { useEmployeeStore } from '../../store/employeeStore'
@@ -147,6 +147,9 @@ export function Overview() {
           {/* Shown on hover, so the card reads as the person's day and not
               as a row of buttons. */}
           <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onClick={stop}>
+            <button onClick={actions.edit} className="text-text-subtle hover:text-text-main p-1 rounded" title={t('employees_editEmployee')}>
+              <Pencil size={13} />
+            </button>
             <button onClick={actions.removeFromProject} className="text-text-subtle hover:text-warning p-1 rounded" title={t('proj_removeFromThisProjectKeepsThe')}>
               <LogOut size={13} />
             </button>

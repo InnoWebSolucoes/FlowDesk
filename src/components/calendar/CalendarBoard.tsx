@@ -14,7 +14,7 @@ import { useEmployeeStore } from '../../store/employeeStore'
 import { useAuthStore } from '../../store/authStore'
 import { useDayOrderStore, DayItemKind, DayBoard } from '../../store/dayOrderStore'
 import { taskOccurrences, TaskOccurrence, statusRowsFrom } from '../../utils/taskScheduler'
-import { calendarColorOf, todoOwner } from '../../lib/personColor'
+import { personColor, todoOwner } from '../../lib/personColor'
 import { CalendarItemPanel } from './CalendarItemPanel'
 import { TaskPeekPanel, PeekStatus } from './TaskPeekPanel'
 import { TaskEditDialog, NewTaskDialog } from '../shared/TaskEditDialog'
@@ -155,12 +155,12 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
   const { employees, allEmployees } = useEmployeeStore()
   const currentUserId = useAuthStore((s) => s.currentUser?.id)
   /**
-   * What to paint each person's work. Read from the unscoped list: the board
-   * draws whoever owns the work, and on a project page `employees` is narrowed
-   * to that project, so a colour looked up there would be missed for anybody
-   * outside it and the block would fall back to the old purple.
+   * What to paint each person's work: their own colour, the same one as their
+   * avatar. Read from the unscoped list: the board draws whoever owns the
+   * work, and on a project page `employees` is narrowed to that project, so a
+   * colour looked up there would be missed for anybody outside it.
    */
-  const colorOf = (id: string | null | undefined) => calendarColorOf(id, allEmployees)
+  const colorOf = (id: string | null | undefined) => personColor(id, allEmployees)
   // Only the owner moves assigned work between days. An employee's own
   // board still lets them tick it, not postpone it.
   const canMoveTasks = !readOnly && !!useAuthStore((s) => s.realUser?.isOwner)
@@ -429,7 +429,8 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
       return blocks.sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todos, overlayTodos, calendarEntries, tasks, employees, overlaid, showMine, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay, dayPositions, board],
+    // allEmployees for the colours: changing somebody's redraws their blocks.
+    [todos, overlayTodos, calendarEntries, tasks, employees, allEmployees, overlaid, showMine, ownerId, canOverlay, otherPersonsBoard, occurrencesByDay, dayPositions, board],
   )
 
   // ── Dragging ─────────────────────────────────────────────────────────────
@@ -896,7 +897,7 @@ export function CalendarBoard({ project, ownerId, basePath, readOnly = false }: 
           style={{
             left: dragPoint.x + 12,
             top: dragPoint.y + 12,
-            background: overUnscheduled ? 'var(--color-surface, #fff)' : '#1A5C3A',
+            background: overUnscheduled ? 'var(--color-surface, #fff)' : 'rgb(var(--primary))',
             color: overUnscheduled ? '#dc2626' : '#fff',
             borderColor: overUnscheduled ? '#dc2626' : 'transparent',
           }}
@@ -1698,7 +1699,7 @@ function Unscheduled({
               // Their colour, outlined, exactly as the same todo looks once
               // it has a day — so dragging it onto the calendar changes where
               // it is and nothing else about it.
-              style={{ borderColor: calendarColorOf(todoOwner(t), allEmployees) }}
+              style={{ borderColor: personColor(todoOwner(t), allEmployees) }}
             >
               {!readOnly && (
                 <GripVertical size={12} className="text-text-subtle mt-0.5 flex-shrink-0" />

@@ -4,9 +4,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#1A5C3A',
-        'primary-light': '#E3F0E9',
-        'primary-dark': '#134430',
+        // Variables rather than fixed hexes, so a person's side of the app can
+        // be drawn in their own colour: a wrapper sets the three channels (see
+        // themeVars in lib/personColor) and everything inside follows. The
+        // defaults in index.css are the FlowDesk green.
+        primary: 'rgb(var(--primary) / <alpha-value>)',
+        'primary-light': 'rgb(var(--primary-light) / <alpha-value>)',
+        'primary-dark': 'rgb(var(--primary-dark) / <alpha-value>)',
         surface: '#FFFFFF',
         bg: '#F5F4EF',
         'surface-2': '#ECEAE3',

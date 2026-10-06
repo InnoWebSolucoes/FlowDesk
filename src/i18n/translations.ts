@@ -381,13 +381,21 @@ const en = {
   notif_inactivityAlert: 'Inactivity Alert',
   notif_chatMessage: 'New message',
 
-  // A person's colour on the calendar of tasks
-  color_calendarColour: 'Calendar colour',
-  color_calendarColourHint: 'What their work is painted on the calendar of tasks, so several people on one day can be told apart. It changes nothing else.',
-  color_reset: 'Reset',
-  color_inUse: 'Their work shows in this colour.',
-  color_usingDefault: 'No colour chosen — using the default.',
-  color_couldNotSave: 'Could not save that colour.',
+  // A person's colour
+  color_hint: 'Their avatar, their side of FlowDesk, and their work on every calendar.',
+  color_sameAs: 'Same colour as {names}.',
+  color_couldNotSave: 'Could not save the changes.',
+  color_createdWithoutColour: '{name} was added, but their colour did not save ({reason}). Set it with Edit.',
+  color_name_purple: 'Purple',
+  color_name_indigo: 'Indigo',
+  color_name_blue: 'Blue',
+  color_name_teal: 'Teal',
+  color_name_green: 'Green',
+  color_name_ochre: 'Ochre',
+  color_name_orange: 'Orange',
+  color_name_red: 'Red',
+  color_name_pink: 'Pink',
+  color_name_slate: 'Slate',
 
   // Task status
   status_pending: 'Pending',
@@ -1175,13 +1183,21 @@ const pt: typeof en = {
   notif_inactivityAlert: 'Alerta de Inatividade',
   notif_chatMessage: 'Nova mensagem',
 
-  // A person's colour on the calendar of tasks
-  color_calendarColour: 'Cor no calendário',
-  color_calendarColourHint: 'A cor do trabalho desta pessoa no calendário de tarefas, para distinguir várias pessoas no mesmo dia. Não muda mais nada.',
-  color_reset: 'Repor',
-  color_inUse: 'O trabalho desta pessoa aparece nesta cor.',
-  color_usingDefault: 'Sem cor escolhida — a usar a predefinida.',
-  color_couldNotSave: 'Não foi possível guardar essa cor.',
+  // A person's colour
+  color_hint: 'O avatar, o lado do FlowDesk desta pessoa e o trabalho dela em todos os calendários.',
+  color_sameAs: 'Mesma cor que {names}.',
+  color_couldNotSave: 'Não foi possível guardar as alterações.',
+  color_createdWithoutColour: '{name} foi adicionado, mas a cor não foi guardada ({reason}). Defina-a em Editar.',
+  color_name_purple: 'Roxo',
+  color_name_indigo: 'Índigo',
+  color_name_blue: 'Azul',
+  color_name_teal: 'Verde-azulado',
+  color_name_green: 'Verde',
+  color_name_ochre: 'Ocre',
+  color_name_orange: 'Laranja',
+  color_name_red: 'Vermelho',
+  color_name_pink: 'Rosa',
+  color_name_slate: 'Ardósia',
 
   // Task status
   status_pending: 'Pendente',

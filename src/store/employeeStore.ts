@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 import { Employee, CompletionLog, EmployeeStats, DailyStats, Task } from '../types'
 import { getTasksDueOnDate } from '../utils/taskScheduler'
 import { format, subDays, parseISO } from 'date-fns'
+import { isHexColor, cachedColor, defaultColor, rememberColors } from '../lib/personColor'
 
 interface CreateEmployeeInput {
   name: string
@@ -11,6 +12,8 @@ interface CreateEmployeeInput {
   jobTitle: string
   department: string
   projectId?: string | null
+  /** Their colour, picked in the same form they are added with. */
+  calendarColor?: string | null
 }
 
 interface EmployeeState {
@@ -24,7 +27,11 @@ interface EmployeeState {
   loading: boolean
 
   initialize: () => Promise<void>
-  createEmployee: (input: CreateEmployeeInput) => Promise<{ success: boolean; error?: string }>
+  /**
+   * `warning` is set when the person was created but their colour did not
+   * save: they exist, so it is not a failure, but it should not pass silently.
+   */
+  createEmployee: (input: CreateEmployeeInput) => Promise<{ success: boolean; error?: string; warning?: string }>
   /** Put an existing person on another project, keeping the ones they have. */
   addToProject: (employeeId: string, projectId: string) => Promise<void>
   removeFromProject: (employeeId: string, projectId: string) => Promise<void>
@@ -51,8 +58,7 @@ function toEmployee(row: any): Employee {
     isActive: row.is_active ?? true,
     projectId: row.project_id ?? null,
     projectIds: (row.project_members ?? []).map((m: any) => m.project_id),
-    // Null until somebody picks one, which is what keeps the calendar looking
-    // as it did for anyone nobody has chosen a colour for.
+    // Null until somebody picks one; they are drawn in the default until then.
     calendarColor: row.calendar_color ?? null,
   }
 }
@@ -103,13 +109,15 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
 
     if (!error && data) {
       const all = data.map(toEmployee)
+      // Before the set, so the redraw it causes already sees the new colours.
+      rememberColors(all)
       set((s) => ({ allEmployees: all, employees: scoped(all, s.scopedProjectId), loading: false }))
     } else {
       set({ loading: false })
     }
   },
 
-  createEmployee: async (input) => {
+  createEmployee: async ({ calendarColor, ...input }) => {
     const { data, error } = await supabase.functions.invoke('create-employee', {
       body: input,
     })
@@ -141,8 +149,21 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
       return { success: false, error: data.error }
     }
 
+    // The colour is written here rather than sent to the function, so the
+    // function does not need redeploying for it. Its users row is made by the
+    // signup trigger inside the same insert, so it is there to update by the
+    // time the function answers.
+    let warning: string | undefined
+    if (isHexColor(calendarColor) && data?.id) {
+      const { error: colourErr } = await supabase
+        .from('users')
+        .update({ calendar_color: calendarColor })
+        .eq('id', data.id)
+      if (colourErr) warning = colourErr.message
+    }
+
     await get().initialize()
-    return { success: true }
+    return { success: true, warning }
   },
 
   addToProject: async (employeeId, projectId) => {
@@ -186,6 +207,7 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     set((s) => {
       // Re-derive the scoped list: a project change can move someone in or out.
       const all = s.allEmployees.map((e) => (e.id === id ? { ...e, ...updates } : e))
+      if (updates.calendarColor !== undefined) rememberColors(all)
       return { allEmployees: all, employees: scoped(all, s.scopedProjectId) }
     })
   },
@@ -329,3 +351,16 @@ export const useEmployeeStore = create<EmployeeState>()((set, get) => ({
     }
   },
 }))
+
+/**
+ * Somebody's colour, kept current: it redraws when it is changed.
+ *
+ * Until the team has loaded, last load's copy stands in for it, so their side
+ * of the app does not open in the default and switch a moment later.
+ */
+export function usePersonColor(id: string | null | undefined): string {
+  const loaded = useEmployeeStore((s) => s.allEmployees.length > 0)
+  const chosen = useEmployeeStore((s) => s.allEmployees.find((e) => e.id === id)?.calendarColor)
+  if (isHexColor(chosen)) return chosen
+  return (loaded ? undefined : cachedColor(id)) ?? defaultColor(id)
+}
